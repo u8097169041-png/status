@@ -33,6 +33,7 @@ export default defineConfig({
           root: '.',
           include: ['server/**/*.test.ts', 'shared/**/*.test.ts'],
           environment: 'node',
+          execArgv: ['--disable-warning=ExperimentalWarning'],
         },
       },
       {

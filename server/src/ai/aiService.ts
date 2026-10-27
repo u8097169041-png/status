@@ -44,6 +44,7 @@ function maskKey(key: string): string {
 export class AiService {
   private readonly client: OpenRouterClient;
   private modelCache: { at: number; models: OpenRouterModel[] } | null = null;
+  private modelFailureAt = 0;
   private lastError: { code: string; message: string; at: string } | null = null;
 
   constructor(
@@ -149,19 +150,26 @@ export class AiService {
     };
   }
 
+  /** Preisangaben für ein Modell. Schlägt das Laden fehl, wird es 5 Minuten lang nicht erneut versucht. */
   private async pricingFor(model: string): Promise<OpenRouterModel | null> {
+    const fresh = this.modelCache && Date.now() - this.modelCache.at < MODEL_CACHE_MS;
+    if (!fresh && Date.now() - this.modelFailureAt < 5 * 60_000) {
+      return this.modelCache?.models.find((m) => m.id === model) ?? null;
+    }
     try {
-      const models = await this.cachedModels(false);
+      const models = await this.cachedModels(false, 5_000);
       return models.find((m) => m.id === model) ?? null;
     } catch {
-      return null;
+      this.modelFailureAt = Date.now();
+      return this.modelCache?.models.find((m) => m.id === model) ?? null;
     }
   }
 
-  private async cachedModels(force: boolean): Promise<OpenRouterModel[]> {
+  private async cachedModels(force: boolean, timeoutMs?: number): Promise<OpenRouterModel[]> {
     if (!force && this.modelCache && Date.now() - this.modelCache.at < MODEL_CACHE_MS) return this.modelCache.models;
-    const models = await this.client.listModels();
+    const models = await this.client.listModels(timeoutMs);
     this.modelCache = { at: Date.now(), models };
+    this.modelFailureAt = 0;
     return models;
   }
 

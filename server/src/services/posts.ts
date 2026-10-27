@@ -171,9 +171,8 @@ export function getPostDetail(ctx: AppContext, id: string): PostDetailDto {
     id,
   );
   const byId = new Map<string, CommentDto>();
-  const roots: CommentDto[] = [];
   for (const r of rows) {
-    const dto: CommentDto = {
+    byId.set(r.id, {
       id: r.id,
       postId: r.post_id,
       parentId: r.parent_id,
@@ -183,9 +182,12 @@ export function getPostDetail(ctx: AppContext, id: string): PostDetailDto {
       source: r.source,
       isOwn: r.author_type === 'user',
       replies: [],
-    };
-    byId.set(dto.id, dto);
-    const parent = r.parent_id ? byId.get(r.parent_id) : undefined;
+    });
+  }
+  // Zweiter Durchlauf: unabhängig von der Sortierung korrekt verschachteln.
+  const roots: CommentDto[] = [];
+  for (const dto of byId.values()) {
+    const parent = dto.parentId ? byId.get(dto.parentId) : undefined;
     if (parent) parent.replies.push(dto);
     else roots.push(dto);
   }

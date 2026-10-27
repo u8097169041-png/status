@@ -421,9 +421,10 @@ export function SettingsPage() {
   const [confirmText, setConfirmText] = useState('');
   const [reseedLang, setReseedLang] = useState<Lang | null>(null);
 
+  const loaded = boot !== undefined;
   useEffect(() => {
-    if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'start' });
-  }, [location.hash, boot === undefined]);
+    if (loaded && location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'start' });
+  }, [location.hash, loaded]);
 
   if (!boot) return <Loading />;
   const settings = boot.settings;
