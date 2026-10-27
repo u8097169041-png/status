@@ -386,7 +386,8 @@
 .stamp-label { position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 8px; display: flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 600; background: linear-gradient(transparent, rgba(0, 0, 0, 0.8)); }
 .reward-list, .xp-rules { list-style: none; display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
 .reward { display: flex; align-items: center; gap: var(--space-3); }
-.reward.locked { opacity: 0.55; }
+.reward.locked .reward-swatch { opacity: 0.35; }
+.reward.locked strong { color: var(--text-muted); }
 .reward-swatch { width: 28px; height: 28px; border-radius: 8px; flex: none; }
 .reward-swatch.title { background: var(--surface-3); border: 1px dashed var(--border-strong); }
 .reward-swatch.accent { background: var(--accent); }

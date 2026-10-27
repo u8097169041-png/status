@@ -23,7 +23,14 @@ export function QuestItem({ quest }: { quest: QuestProgressDto }) {
           <span className="badge">+{quest.xp} XP</span>
         </div>
         <div className="row">
-          <div className="progress progress-sm grow" role="progressbar" aria-valuemin={0} aria-valuemax={quest.target} aria-valuenow={quest.current}>
+          <div
+            className="progress progress-sm grow"
+            role="progressbar"
+            aria-label={td(`quests.${quest.id}`, quest.id)}
+            aria-valuemin={0}
+            aria-valuemax={quest.target}
+            aria-valuenow={quest.current}
+          >
             <span style={{ width: `${pct}%` }} />
           </div>
           <span className="xsmall faint">
@@ -64,7 +71,14 @@ export function LevelBar({ level, xp, current, next, progress }: { level: number
           {xp - current}/{next - current} XP
         </span>
       </div>
-      <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+      <div
+        className="progress"
+        role="progressbar"
+        aria-label={t('progress.level', { level })}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress * 100)}
+      >
         <span style={{ width: `${Math.round(progress * 100)}%` }} />
       </div>
       <span className="xsmall faint">{t('progress.toNext', { xp: next - xp, level: level + 1 })}</span>

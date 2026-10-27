@@ -60,7 +60,14 @@ export function AchievementGrid({ achievements }: { achievements: ProgressDto['a
             {unlocked ? (
               <span className="xsmall success-text">{formatDate(a.unlockedAt!, locale)}</span>
             ) : (
-              <div className="progress progress-sm" role="progressbar" aria-valuemin={0} aria-valuemax={a.target} aria-valuenow={a.current}>
+              <div
+                className="progress progress-sm"
+                role="progressbar"
+                aria-label={td(`achievements.${a.id}`, a.id)}
+                aria-valuemin={0}
+                aria-valuemax={a.target}
+                aria-valuenow={a.current}
+              >
                 <span style={{ width: `${(a.current / a.target) * 100}%` }} />
               </div>
             )}

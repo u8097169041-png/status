@@ -230,6 +230,8 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   Filter, Demo-Chat mit Erinnerung, Weltsimulation, Ereigniskarten, Beziehungen, Storylines, Charakter- und
   Weltgenerator, Quests, Sprachwechsel, Schlüsselschutz, mobile Ansicht, vollständiges Löschen sowie der KI-Pfad
   gegen einen lokalen OpenRouter-Nachbau (`e2e/mock-openrouter.mjs`).
+- **Barrierefreiheit:** Während der Entwicklung wurden alle Seiten (Desktop und Mobil) mit axe-core auf WCAG 2 A/AA
+  geprüft; gefundene Probleme wurden behoben. Diese Prüfung ist nicht Teil der automatischen Testsuite.
 
 ---
 

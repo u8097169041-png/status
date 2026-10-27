@@ -230,7 +230,7 @@ function Conversation({ characterId }: { characterId: string }) {
             </span>
           </span>
         </Link>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMemoryOpen(true)}>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMemoryOpen(true)} aria-label={t('chats.memory')}>
           <Brain aria-hidden /> <span className="hide-mobile">{t('chats.memory')}</span>
         </button>
         <button type="button" className="icon-btn" onClick={() => setPreviewOpen(true)} aria-label={t('chats.preview')} title={t('chats.preview')}>

@@ -72,7 +72,7 @@ export function EventItem({ event, worldName }: { event: WorldEventDto; worldNam
         {(event.participants.length > 0 || event.effects.length > 0) && (
           <div className="event-footer">
             {event.participants.length > 0 && (
-              <span className="avatar-stack" aria-label={event.participants.map((p) => p.name).join(', ')}>
+              <span className="avatar-stack" role="img" aria-label={event.participants.map((p) => p.name).join(', ')}>
                 {event.participants.map((p) => (
                   <Avatar key={p.id} name={p.name} hue={p.avatarHue} glyph={p.avatarGlyph} size="xs" decorative />
                 ))}

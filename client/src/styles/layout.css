@@ -336,11 +336,7 @@
 @media (min-width: 1100px) {
   .rail {
     display: flex;
-    position: sticky;
-    top: var(--space-5);
     align-self: start;
-    max-height: calc(100vh - var(--space-6));
-    overflow-y: auto;
   }
 }
 .content-column {
