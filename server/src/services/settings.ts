@@ -6,6 +6,7 @@ import { badRequest } from '../lib/errors';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   language: 'de',
+  onboardingDone: false,
   ai: {
     enabled: true,
     chatModel: '',
@@ -47,6 +48,7 @@ const modelId = z
 export const settingsPatchSchema = z
   .object({
     language: z.enum(LANGUAGES),
+    onboardingDone: z.boolean(),
     ai: z
       .object({
         enabled: z.boolean(),
@@ -102,6 +104,7 @@ export function getSettings(db: DB): AppSettings {
   }
   return {
     language: LANGUAGES.includes(stored.language as Lang) ? (stored.language as Lang) : DEFAULT_SETTINGS.language,
+    onboardingDone: typeof stored.onboardingDone === 'boolean' ? stored.onboardingDone : DEFAULT_SETTINGS.onboardingDone,
     ai: { ...DEFAULT_SETTINGS.ai, ...stored.ai },
     simulation: { ...DEFAULT_SETTINGS.simulation, ...stored.simulation },
     memory: { ...DEFAULT_SETTINGS.memory, ...stored.memory },
@@ -124,6 +127,7 @@ export function updateSettings(db: DB, input: unknown): AppSettings {
   const current = getSettings(db);
   const next: AppSettings = {
     language: patch.language ?? current.language,
+    onboardingDone: patch.onboardingDone ?? current.onboardingDone,
     ai: { ...current.ai, ...patch.ai },
     simulation: { ...current.simulation, ...patch.simulation },
     memory: { ...current.memory, ...patch.memory },

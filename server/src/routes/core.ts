@@ -9,6 +9,7 @@ import { getProfile, updateProfile } from '../services/profile';
 import { claimQuest, currentXp, getProgress } from '../services/progress';
 import { getSettings, updateSettings } from '../services/settings';
 import { simulationStatus } from '../services/simulation';
+import { contentLanguage, hasUserActivity } from '../services/meta';
 import { param } from './helpers';
 
 export function coreRoutes(ctx: AppContext): Router {
@@ -26,6 +27,8 @@ export function coreRoutes(ctx: AppContext): Router {
       level: levelInfo(currentXp(ctx)),
       unreadNotifications: unreadCount(ctx),
       version: ctx.config.version,
+      contentLanguage: contentLanguage(ctx),
+      hasUserActivity: hasUserActivity(ctx),
     };
     res.json(body);
   });

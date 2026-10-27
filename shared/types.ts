@@ -397,6 +397,7 @@ export interface PrivacySettings {
 
 export interface AppSettings {
   language: Lang;
+  onboardingDone: boolean;
   ai: AiSettings;
   simulation: SimulationSettings;
   memory: MemorySettings;
@@ -483,6 +484,10 @@ export interface BootstrapDto {
   level: LevelInfo;
   unreadNotifications: number;
   version: string;
+  /** Sprache, in der die Demo-Inhalte angelegt wurden. */
+  contentLanguage: Lang;
+  /** Ob bereits eigene Inhalte oder Fortschritt existieren (für das Onboarding). */
+  hasUserActivity: boolean;
 }
 
 export interface TrendingTag {

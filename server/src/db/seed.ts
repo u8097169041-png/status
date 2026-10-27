@@ -244,6 +244,11 @@ export function seedDatabase(db: DB, now: Date, lang: Lang): void {
       `INSERT INTO meta (key, value) VALUES ('seeded_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       now.toISOString(),
     );
+    run(
+      db,
+      `INSERT INTO meta (key, value) VALUES ('content_language', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      lang,
+    );
   });
 }
 

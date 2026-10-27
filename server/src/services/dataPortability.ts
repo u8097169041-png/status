@@ -4,6 +4,7 @@ import type { AppContext } from '../context';
 import { all, schemaVersion } from '../db/database';
 import { DATA_TABLES, seedDatabase, wipeAllData } from '../db/seed';
 import { badRequest } from '../lib/errors';
+import { getSettings } from './settings';
 
 /** Tabellen, die nie exportiert werden (lokal gespeicherter API-Schlüssel). */
 const EXCLUDED_FROM_EXPORT = new Set(['secrets']);
@@ -36,7 +37,7 @@ const resetSchema = z.object({
 export function resetAllData(ctx: AppContext, input: unknown): void {
   const parsed = resetSchema.safeParse(input);
   if (!parsed.success) throw badRequest('confirmation_required', 'Bitte bestätige das Löschen mit „RESET“.');
-  const language = parsed.data.language ?? 'de';
+  const language = parsed.data.language ?? getSettings(ctx.db).language;
   wipeAllData(ctx.db);
   // Gelöschte Inhalte auch physisch aus der Datenbankdatei entfernen.
   ctx.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');

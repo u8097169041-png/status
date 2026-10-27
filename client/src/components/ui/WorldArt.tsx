@@ -1,0 +1,315 @@
+import { useId, useMemo } from 'react';
+import type { ArtStyle } from '../../../../shared/constants';
+import { createRng } from '../../lib/rng';
+
+interface WorldArtProps {
+  seed: string;
+  style: ArtStyle;
+  hue: number;
+  className?: string;
+  label?: string;
+}
+
+const W = 400;
+const H = 200;
+
+function hsl(h: number, s: number, l: number, a = 1) {
+  return `hsl(${((h % 360) + 360) % 360} ${s}% ${l}% / ${a})`;
+}
+
+function hillPath(rng: ReturnType<typeof createRng>, base: number, amplitude: number, segments: number): string {
+  const step = W / segments;
+  let d = `M0 ${H} L0 ${base + rng.range(-amplitude, amplitude)}`;
+  for (let i = 1; i <= segments; i++) {
+    const x = i * step;
+    const y = base + rng.range(-amplitude, amplitude);
+    d += ` Q ${x - step / 2} ${y + rng.range(-amplitude, amplitude)} ${x} ${y}`;
+  }
+  return `${d} L${W} ${H} Z`;
+}
+
+function wavePath(base: number, amplitude: number, wavelength: number, phase: number): string {
+  let d = `M0 ${H} L0 ${base}`;
+  for (let x = 0; x <= W + wavelength; x += wavelength) {
+    d += ` Q ${x + wavelength / 4 + phase} ${base - amplitude} ${x + wavelength / 2 + phase} ${base}`;
+    d += ` T ${x + wavelength + phase} ${base}`;
+  }
+  return `${d} L${W} ${H} Z`;
+}
+
+function gearPath(cx: number, cy: number, r: number, teeth: number): string {
+  const points: string[] = [];
+  const inner = r * 0.82;
+  for (let i = 0; i < teeth * 2; i++) {
+    const angle = (Math.PI * i) / teeth;
+    const radius = i % 2 === 0 ? r : inner;
+    const spread = (Math.PI / teeth) * 0.35;
+    points.push(`${cx + radius * Math.cos(angle - spread)},${cy + radius * Math.sin(angle - spread)}`);
+    points.push(`${cx + radius * Math.cos(angle + spread)},${cy + radius * Math.sin(angle + spread)}`);
+  }
+  return `M${points.join(' L')} Z`;
+}
+
+/** Prozedural erzeugte Titelgrafik einer Welt – deterministisch je Seed. */
+export function WorldArt({ seed, style, hue, className, label }: WorldArtProps) {
+  const uid = useId().replace(/:/g, '');
+  const content = useMemo(() => {
+    const rng = createRng(`${seed}:${style}:${hue}`);
+    const sky = `sky-${uid}`;
+    const glow = `glow-${uid}`;
+    const blur = `blur-${uid}`;
+    const els: React.ReactNode[] = [];
+    let defs: React.ReactNode = null;
+
+    if (style === 'city') {
+      defs = (
+        <>
+          <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={hsl(hue + 230, 45, 7)} />
+            <stop offset="0.65" stopColor={hsl(hue, 60, 22)} />
+            <stop offset="1" stopColor={hsl(hue + 20, 75, 38)} />
+          </linearGradient>
+          <radialGradient id={glow}>
+            <stop offset="0" stopColor={hsl(hue + 20, 100, 80, 0.9)} />
+            <stop offset="1" stopColor={hsl(hue + 20, 100, 60, 0)} />
+          </radialGradient>
+        </>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      const mx = rng.range(60, 340);
+      els.push(<circle key="glow" cx={mx} cy={55} r={60} fill={`url(#${glow})`} />);
+      els.push(<circle key="moon" cx={mx} cy={55} r={16} fill={hsl(hue + 20, 100, 88, 0.9)} />);
+      for (const [layer, minH, maxH, light] of [
+        [0, 50, 120, 14],
+        [1, 30, 90, 8],
+      ] as const) {
+        let x = -10;
+        let i = 0;
+        while (x < W) {
+          const w = rng.range(layer === 0 ? 16 : 24, layer === 0 ? 34 : 52);
+          const h = rng.range(minH, maxH);
+          const y = H - h;
+          els.push(<rect key={`b${layer}-${i}`} x={x} y={y} width={w + 1} height={h} fill={hsl(hue + 220, 35, light)} />);
+          if (layer === 1) {
+            for (let wy = y + 8; wy < H - 6; wy += 9) {
+              for (let wx = x + 5; wx < x + w - 5; wx += 7) {
+                if (rng.next() < 0.33) {
+                  els.push(
+                    <rect
+                      key={`w${i}-${wx}-${wy}`}
+                      x={wx}
+                      y={wy}
+                      width={2.6}
+                      height={3.4}
+                      fill={hsl(rng.next() < 0.7 ? hue : hue + 160, 100, 70, rng.range(0.4, 0.95))}
+                    />,
+                  );
+                }
+              }
+            }
+          }
+          x += w + rng.range(1, 5);
+          i++;
+        }
+      }
+      for (let i = 0; i < 60; i++) {
+        const x = rng.range(0, W);
+        const y = rng.range(0, H);
+        els.push(<line key={`r${i}`} x1={x} y1={y} x2={x - 3} y2={y + 10} stroke={hsl(hue, 60, 85, 0.12)} strokeWidth={0.8} />);
+      }
+    } else if (style === 'cosmic') {
+      defs = (
+        <>
+          <radialGradient id={sky} cx="0.3" cy="0.3" r="1">
+            <stop offset="0" stopColor={hsl(hue + 20, 50, 14)} />
+            <stop offset="1" stopColor={hsl(hue + 30, 60, 4)} />
+          </radialGradient>
+          <radialGradient id={glow} cx="0.35" cy="0.35" r="0.75">
+            <stop offset="0" stopColor={hsl(hue, 70, 68)} />
+            <stop offset="0.6" stopColor={hsl(hue + 15, 60, 32)} />
+            <stop offset="1" stopColor={hsl(hue + 30, 70, 10)} />
+          </radialGradient>
+          <filter id={blur}>
+            <feGaussianBlur stdDeviation="18" />
+          </filter>
+        </>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      for (let i = 0; i < 3; i++) {
+        els.push(
+          <ellipse
+            key={`n${i}`}
+            cx={rng.range(40, 360)}
+            cy={rng.range(30, 170)}
+            rx={rng.range(60, 120)}
+            ry={rng.range(25, 55)}
+            fill={hsl(hue + rng.range(-50, 60), 80, 50, 0.32)}
+            filter={`url(#${blur})`}
+          />,
+        );
+      }
+      for (let i = 0; i < 90; i++) {
+        els.push(
+          <circle key={`s${i}`} cx={rng.range(0, W)} cy={rng.range(0, H)} r={rng.range(0.3, 1.4)} fill={`rgba(255,255,255,${rng.range(0.3, 0.95)})`} />,
+        );
+      }
+      const px = rng.range(250, 330);
+      const py = rng.range(110, 150);
+      const pr = rng.range(55, 75);
+      els.push(<circle key="planet" cx={px} cy={py} r={pr} fill={`url(#${glow})`} />);
+      for (let i = 0; i < 4; i++) {
+        els.push(
+          <ellipse
+            key={`band${i}`}
+            cx={px}
+            cy={py - pr * 0.5 + i * pr * 0.3}
+            rx={pr * Math.sqrt(1 - Math.pow((-0.5 + i * 0.3) * 1, 2)) * 0.98}
+            ry={3}
+            fill={hsl(hue + 40, 60, 80, 0.12)}
+          />,
+        );
+      }
+      els.push(
+        <ellipse
+          key="ring"
+          cx={px}
+          cy={py}
+          rx={pr * 1.6}
+          ry={pr * 0.32}
+          fill="none"
+          stroke={hsl(hue + 40, 70, 80, 0.45)}
+          strokeWidth={2.5}
+          transform={`rotate(-14 ${px} ${py})`}
+        />,
+      );
+    } else if (style === 'forest') {
+      defs = (
+        <>
+          <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={hsl(hue + 100, 40, 10)} />
+            <stop offset="1" stopColor={hsl(hue + 20, 45, 30)} />
+          </linearGradient>
+          <radialGradient id={glow}>
+            <stop offset="0" stopColor={hsl(60, 90, 85, 0.8)} />
+            <stop offset="1" stopColor={hsl(60, 90, 70, 0)} />
+          </radialGradient>
+        </>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      const mx = rng.range(80, 320);
+      els.push(<circle key="glow" cx={mx} cy={50} r={50} fill={`url(#${glow})`} />);
+      els.push(<circle key="moon" cx={mx} cy={50} r={13} fill={hsl(55, 80, 90, 0.9)} />);
+      [
+        [95, 18, 22],
+        [125, 14, 16],
+        [158, 10, 10],
+      ].forEach(([base, amp, light], layer) => {
+        els.push(<path key={`h${layer}`} d={hillPath(rng, base, amp, 6)} fill={hsl(hue, 35, light)} />);
+        const trees = layer === 2 ? 22 : 14;
+        for (let i = 0; i < trees; i++) {
+          const x = rng.range(-10, W + 10);
+          const h = rng.range(20, 44) * (1 + layer * 0.25);
+          const w = h * 0.42;
+          const y = base + rng.range(-4, 8);
+          els.push(<polygon key={`t${layer}-${i}`} points={`${x},${y - h} ${x - w / 2},${y + 4} ${x + w / 2},${y + 4}`} fill={hsl(hue, 35, light - 2)} />);
+        }
+      });
+      for (let i = 0; i < 26; i++) {
+        els.push(<circle key={`f${i}`} cx={rng.range(0, W)} cy={rng.range(90, 190)} r={rng.range(0.8, 1.8)} fill={hsl(70, 100, 70, rng.range(0.5, 1))} />);
+      }
+    } else if (style === 'ocean') {
+      defs = (
+        <>
+          <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={hsl(hue + 40, 50, 12)} />
+            <stop offset="0.55" stopColor={hsl(hue + 10, 55, 34)} />
+            <stop offset="1" stopColor={hsl(hue - 20, 70, 55)} />
+          </linearGradient>
+          <radialGradient id={glow}>
+            <stop offset="0" stopColor={hsl(45, 100, 85, 0.9)} />
+            <stop offset="1" stopColor={hsl(45, 100, 70, 0)} />
+          </radialGradient>
+        </>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      const sx = rng.range(90, 310);
+      els.push(<circle key="glow" cx={sx} cy={92} r={60} fill={`url(#${glow})`} />);
+      els.push(<circle key="sun" cx={sx} cy={92} r={20} fill={hsl(45, 100, 88, 0.95)} />);
+      const ix = rng.range(30, 120);
+      els.push(<path key="island" d={`M${ix - 40} 112 Q ${ix} ${88} ${ix + 50} 112 Z`} fill={hsl(hue + 30, 40, 14)} />);
+      els.push(<rect key="lh" x={ix + 6} y={78} width={6} height={22} fill={hsl(hue + 30, 30, 85)} />);
+      els.push(<circle key="lhl" cx={ix + 9} cy={77} r={4} fill={hsl(50, 100, 75)} />);
+      [
+        [110, 4, 46, 30],
+        [130, 6, 60, 24],
+        [152, 7, 70, 18],
+        [175, 8, 90, 12],
+      ].forEach(([base, amp, len, light], i) => {
+        els.push(<path key={`wv${i}`} d={wavePath(base, amp, len, rng.range(-30, 0))} fill={hsl(hue, 60, light, 0.95)} />);
+      });
+      for (let i = 0; i < 12; i++) {
+        els.push(<rect key={`ref${i}`} x={sx - rng.range(5, 30)} y={115 + i * 6} width={rng.range(10, 60)} height={1.4} fill={hsl(45, 100, 85, 0.35)} />);
+      }
+    } else if (style === 'gears') {
+      defs = (
+        <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={hsl(hue + 200, 25, 10)} />
+          <stop offset="0.7" stopColor={hsl(hue, 55, 26)} />
+          <stop offset="1" stopColor={hsl(hue + 10, 75, 45)} />
+        </linearGradient>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      for (let i = 0; i < 4; i++) {
+        const cx = rng.range(20, 380);
+        const cy = rng.range(110, 210);
+        const r = rng.range(30, 70);
+        els.push(<path key={`g${i}`} d={gearPath(cx, cy, r, rng.int(9, 14))} fill={hsl(hue, 40, rng.range(12, 20))} />);
+        els.push(<circle key={`gh${i}`} cx={cx} cy={cy} r={r * 0.3} fill={hsl(hue + 200, 25, 10)} />);
+      }
+      for (let i = 0; i < 6; i++) {
+        els.push(<circle key={`sm${i}`} cx={rng.range(0, W)} cy={rng.range(20, 90)} r={rng.range(12, 28)} fill={hsl(hue, 20, 70, 0.08)} />);
+      }
+      const ax = rng.range(120, 280);
+      const ay = rng.range(40, 70);
+      els.push(<ellipse key="ship" cx={ax} cy={ay} rx={44} ry={14} fill={hsl(hue, 50, 55)} />);
+      els.push(<ellipse key="shipHi" cx={ax - 6} cy={ay - 4} rx={30} ry={5} fill={hsl(hue, 70, 75, 0.5)} />);
+      els.push(<rect key="gondola" x={ax - 12} y={ay + 14} width={24} height={7} rx={2} fill={hsl(hue + 10, 40, 22)} />);
+      els.push(<line key="rope1" x1={ax - 10} y1={ay + 12} x2={ax - 8} y2={ay + 15} stroke={hsl(hue, 30, 30)} />);
+      els.push(<line key="rope2" x1={ax + 10} y1={ay + 12} x2={ax + 8} y2={ay + 15} stroke={hsl(hue, 30, 30)} />);
+    } else {
+      // dunes
+      defs = (
+        <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={hsl(hue + 230, 40, 14)} />
+          <stop offset="0.6" stopColor={hsl(hue, 70, 40)} />
+          <stop offset="1" stopColor={hsl(hue + 15, 85, 62)} />
+        </linearGradient>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      const sx = rng.range(80, 320);
+      els.push(<circle key="sun" cx={sx} cy={100} r={36} fill={hsl(hue + 25, 100, 70, 0.9)} />);
+      [
+        [120, 14, 30],
+        [145, 16, 22],
+        [170, 12, 14],
+      ].forEach(([base, amp, light], i) => {
+        els.push(<path key={`d${i}`} d={hillPath(rng, base, amp, 3)} fill={hsl(hue, 55, light)} />);
+      });
+    }
+    return { defs, els };
+  }, [seed, style, hue, uid]);
+
+  return (
+    <svg
+      className={className}
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="xMidYMid slice"
+      role={label ? 'img' : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+    >
+      <defs>{content.defs}</defs>
+      {content.els}
+    </svg>
+  );
+}
