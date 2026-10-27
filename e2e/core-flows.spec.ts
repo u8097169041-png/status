@@ -86,6 +86,24 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await expect(page.getByText('Mein erster Testbeitrag (bearbeitet)')).toBeVisible();
   });
 
+  test('Story erstellen und fremde Stories ansehen', async () => {
+    await page.goto('/feed');
+    await page.locator('.story-ring.add').click();
+    const dialog = page.getByRole('dialog', { name: 'Story erstellen' });
+    await dialog.getByLabel('Was möchtest du für 24 Stunden teilen?').fill('Story aus dem Test');
+    await dialog.getByRole('button', { name: 'Veröffentlichen' }).click();
+    await expect(page.getByText('Story veröffentlicht')).toBeVisible();
+    await page.getByRole('button', { name: 'Story von KITO-7' }).click();
+    const viewer = page.getByRole('dialog', { name: 'Story von KITO-7' });
+    await expect(viewer).toBeVisible();
+    await page.waitForTimeout(500);
+    await expect(viewer.locator('.story-head')).toContainText('KITO-7');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Deine Story' }).click();
+    await expect(page.locator('.story-text')).toHaveText('Story aus dem Test');
+    await page.keyboard.press('Escape');
+  });
+
   test('Feed nach Thema filtern', async () => {
     await page.goto('/feed?tag=e2etest');
     await expect(page.locator('article.post-card')).toHaveCount(1);

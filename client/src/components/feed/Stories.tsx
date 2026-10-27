@@ -205,7 +205,8 @@ export function StoriesBar() {
   const { data: stories } = useStories();
   const { data: boot } = useBootstrap();
   const [creating, setCreating] = useState(false);
-  const [viewing, setViewing] = useState<number | null>(null);
+  // Reihenfolge beim Öffnen einfrieren: „gesehen“ sortiert sonst während des Ansehens um.
+  const [viewing, setViewing] = useState<{ groups: StoryGroup[]; index: number } | null>(null);
   const groups = useMemo(() => groupStories(stories ?? []), [stories]);
   const ownIndex = groups.findIndex((g) => g.key === 'user');
 
@@ -215,12 +216,20 @@ export function StoriesBar() {
         <button
           type="button"
           className="story-ring add"
-          onClick={() => (ownIndex >= 0 ? setViewing(ownIndex) : setCreating(true))}
+          onClick={() => (ownIndex >= 0 ? setViewing({ groups, index: ownIndex }) : setCreating(true))}
           aria-label={ownIndex >= 0 ? t('stories.yours') : t('stories.create')}
         >
           {boot && <Avatar name={boot.profile.displayName} hue={boot.profile.avatarHue} glyph={boot.profile.avatarGlyph} size="lg" decorative />}
         </button>
-        <button type="button" className="story-add" onClick={() => setCreating(true)} aria-label={t('stories.create')}>
+        {/* Ohne eigene Story erstellt bereits der Ring eine neue – das Plus ist dann nur Dekoration. */}
+        <button
+          type="button"
+          className="story-add"
+          onClick={() => setCreating(true)}
+          aria-label={t('stories.create')}
+          aria-hidden={ownIndex < 0 ? true : undefined}
+          tabIndex={ownIndex < 0 ? -1 : undefined}
+        >
           <Plus />
         </button>
         <span className="story-name">{t('stories.yours')}</span>
@@ -235,7 +244,7 @@ export function StoriesBar() {
               <button
                 type="button"
                 className={`story-ring ${g.seen ? 'seen' : ''}`}
-                onClick={() => setViewing(index)}
+                onClick={() => setViewing({ groups, index })}
                 aria-label={t('stories.viewer', { name: author.name })}
               >
                 <Avatar name={author.name} hue={author.avatarHue} glyph={author.avatarGlyph} size="lg" decorative />
@@ -245,7 +254,7 @@ export function StoriesBar() {
           );
         })}
       {creating && <StoryCreateModal onClose={() => setCreating(false)} />}
-      {viewing !== null && <StoryViewer groups={groups} startIndex={viewing} onClose={() => setViewing(null)} />}
+      {viewing && <StoryViewer groups={viewing.groups} startIndex={viewing.index} onClose={() => setViewing(null)} />}
     </section>
   );
 }

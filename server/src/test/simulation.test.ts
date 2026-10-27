@@ -61,9 +61,21 @@ describe('Weltsimulation', () => {
     expect(ok.events[0].title).toBe('Ein Meteor schlägt ein');
   });
 
+  it('hält die Weltmetriken auch über lange Zeit in einem lebendigen Bereich', async () => {
+    const ctx = createTestContext();
+    for (let i = 0; i < 60; i++) await simulateWorld(ctx, 'w-neon', 'auto');
+    const w = get<{ harmony: number; tension: number; discovery: number }>(ctx.db, `SELECT harmony, tension, discovery FROM worlds WHERE id = 'w-neon'`)!;
+    for (const value of [w.harmony, w.tension, w.discovery]) {
+      expect(value).toBeGreaterThan(15);
+      expect(value).toBeLessThan(90);
+    }
+    const kinds = all<{ kind: string }>(ctx.db, `SELECT DISTINCT kind FROM world_events WHERE world_id = 'w-neon' AND source = 'sim'`);
+    expect(kinds.length).toBeGreaterThanOrEqual(6);
+  });
+
   it('kann Geschichten bis zum Abschluss vorantreiben', async () => {
     const ctx = createTestContext();
-    for (let i = 0; i < 25; i++) await simulateWorld(ctx, 'w-tide', 'manual');
+    for (let i = 0; i < 40; i++) await simulateWorld(ctx, 'w-tide', 'manual');
     const resolved = all<{ id: string }>(ctx.db, `SELECT id FROM storylines WHERE world_id = 'w-tide' AND status = 'resolved'`);
     expect(resolved.length).toBeGreaterThan(0);
     expect(get(ctx.db, `SELECT 1 FROM achievements WHERE id = 'chronicler'`)).toBeTruthy();

@@ -773,7 +773,18 @@ export const de = {
     logEmpty: 'Noch keine KI-Anfragen.',
     estimated: 'geschätzt',
     lastError: 'Letzter Fehler: {message}',
+    colTime: 'Zeitpunkt',
+    colModel: 'Modell',
+    colStatus: 'Status',
     purposes: 'Zweck',
+  },
+  aiPurposes: {
+    chat: 'Chat',
+    summary: 'Zusammenfassung',
+    world: 'Weltaktivität',
+    reaction: 'Reaktion',
+    generator: 'Weltgenerator',
+    test: 'Verbindungstest',
   },
   simSettings: {
     auto: 'Automatische Weltsimulation',

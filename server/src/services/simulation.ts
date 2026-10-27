@@ -202,7 +202,7 @@ function progressStorylines(
     const stages = parseJson<string[]>(s.stages, []);
     if (stages.length === 0) continue;
     const isForced = forced !== null && !forcedUsed && s.theme === forced;
-    const chance = 0.2 + (themes.has(s.theme) ? 0.3 : 0) + state.metrics[s.theme] / 400;
+    const chance = 0.12 + (themes.has(s.theme) ? 0.18 : 0) + state.metrics[s.theme] / 600;
     if (!isForced && !rng.chance(chance)) continue;
     if (isForced) forcedUsed = true;
     const stage = Math.min(s.stage + 1, stages.length - 1);
@@ -489,9 +489,9 @@ export async function simulateWorld(
         });
       }
       resolved = progressStorylines(ctx, state, rng, chars, themes, null, events, posts);
-      // Sanfte Rückkehr der Metriken zur Mitte verhindert dauerhafte Extremwerte.
+      // Proportionale Rückkehr zur Mitte (15 % pro Tag) verhindert, dass Welten dauerhaft in Extremwerten verharren.
       for (const m of ['harmony', 'tension', 'discovery'] as WorldMetric[]) {
-        state.metrics[m] = clampMetric(state.metrics[m] + Math.sign(50 - state.metrics[m]));
+        state.metrics[m] = clampMetric(state.metrics[m] + Math.round((50 - state.metrics[m]) * 0.15));
       }
       if (chars.length && rng.chance(0.35)) {
         const c = rng.pick(chars);

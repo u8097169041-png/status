@@ -60,6 +60,7 @@ function RelationshipsTab({ world }: { world: WorldDetail }) {
   const showError = useErrorToast();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<RelationshipDto | null>(null);
+  const [removing, setRemoving] = useState<RelationshipDto | null>(null);
   return (
     <div className="stack">
       <div className="row-between">
@@ -104,9 +105,7 @@ function RelationshipsTab({ world }: { world: WorldDetail }) {
                 type="button"
                 className="icon-btn"
                 aria-label={`${t('common.remove')}: ${r.a.name} & ${r.b.name}`}
-                onClick={() => {
-                  if (window.confirm(t('relationship.confirmDelete'))) removeRelationship.mutate(r.id, { onError: showError });
-                }}
+                onClick={() => setRemoving(r)}
               >
                 <X />
               </button>
@@ -116,6 +115,17 @@ function RelationshipsTab({ world }: { world: WorldDetail }) {
       )}
       {adding && <RelationshipModal world={world} onClose={() => setAdding(false)} />}
       {editing && <RelationshipModal world={world} relationship={editing} onClose={() => setEditing(null)} />}
+      {removing && (
+        <ConfirmDialog
+          title={`${removing.a.name} & ${removing.b.name}`}
+          text={t('relationship.confirmDelete')}
+          confirmLabel={t('common.remove')}
+          danger
+          busy={removeRelationship.isPending}
+          onCancel={() => setRemoving(null)}
+          onConfirm={() => removeRelationship.mutate(removing.id, { onSuccess: () => setRemoving(null), onError: showError })}
+        />
+      )}
     </div>
   );
 }
@@ -125,6 +135,7 @@ function GroupsTab({ world }: { world: WorldDetail }) {
   const { removeGroup, removeMember, setMember } = useWorldActions(world.id);
   const showError = useErrorToast();
   const [creating, setCreating] = useState(false);
+  const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
   return (
     <div className="stack">
       <div className="row-between">
@@ -147,9 +158,7 @@ function GroupsTab({ world }: { world: WorldDetail }) {
                     type="button"
                     className="icon-btn"
                     aria-label={t('common.delete')}
-                    onClick={() => {
-                      if (window.confirm(t('group.confirmDelete'))) removeGroup.mutate(g.id, { onError: showError });
-                    }}
+                    onClick={() => setRemoving({ id: g.id, name: g.name })}
                   >
                     <Trash2 />
                   </button>
@@ -198,6 +207,17 @@ function GroupsTab({ world }: { world: WorldDetail }) {
         </div>
       )}
       {creating && <GroupModal world={world} onClose={() => setCreating(false)} />}
+      {removing && (
+        <ConfirmDialog
+          title={removing.name}
+          text={t('group.confirmDelete')}
+          confirmLabel={t('common.delete')}
+          danger
+          busy={removeGroup.isPending}
+          onCancel={() => setRemoving(null)}
+          onConfirm={() => removeGroup.mutate(removing.id, { onSuccess: () => setRemoving(null), onError: showError })}
+        />
+      )}
     </div>
   );
 }

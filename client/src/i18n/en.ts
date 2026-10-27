@@ -772,7 +772,18 @@ export const en: Dictionary = {
     logEmpty: 'No AI requests yet.',
     estimated: 'estimated',
     lastError: 'Last error: {message}',
+    colTime: 'Time',
+    colModel: 'Model',
+    colStatus: 'Status',
     purposes: 'Purpose',
+  },
+  aiPurposes: {
+    chat: 'Chat',
+    summary: 'Summary',
+    world: 'World activity',
+    reaction: 'Reaction',
+    generator: 'World generator',
+    test: 'Connection test',
   },
   simSettings: {
     auto: 'Automatic world simulation',

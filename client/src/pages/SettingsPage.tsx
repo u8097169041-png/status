@@ -368,19 +368,19 @@ function AiSection({ settings, save }: { settings: AppSettings; save: (patch: De
               <table className="usage-table">
                 <thead>
                   <tr>
-                    <th>{t('aiSettings.usageToday')}</th>
+                    <th>{t('aiSettings.colTime')}</th>
                     <th>{t('aiSettings.purposes')}</th>
-                    <th>Model</th>
+                    <th>{t('aiSettings.colModel')}</th>
                     <th>{t('aiSettings.tokens')}</th>
                     <th>{t('aiSettings.cost')}</th>
-                    <th>Status</th>
+                    <th>{t('aiSettings.colStatus')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usage.data.entries.map((e) => (
                     <tr key={e.id}>
                       <td>{formatDateTime(e.createdAt, locale)}</td>
-                      <td>{e.purpose}</td>
+                      <td>{td(`aiPurposes.${e.purpose}`, e.purpose)}</td>
                       <td className="truncate max-w">{e.model}</td>
                       <td>{e.promptTokens + e.completionTokens}</td>
                       <td>
