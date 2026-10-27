@@ -1,0 +1,338 @@
+/**
+ * Versionierte Datenbankmigrationen. Neue Änderungen immer als neuen Eintrag
+ * mit höherer Versionsnummer anhängen – bestehende Einträge nie verändern.
+ */
+export interface Migration {
+  version: number;
+  name: string;
+  sql: string;
+}
+
+export const MIGRATIONS: Migration[] = [
+  {
+    version: 1,
+    name: 'initial-schema',
+    sql: `
+CREATE TABLE settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE secrets (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE user_profile (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  display_name TEXT NOT NULL,
+  handle TEXT NOT NULL,
+  bio TEXT NOT NULL DEFAULT '',
+  avatar_hue INTEGER NOT NULL DEFAULT 265,
+  avatar_glyph TEXT NOT NULL DEFAULT 'initials',
+  title_reward TEXT NOT NULL DEFAULT 'title-newcomer',
+  accent_reward TEXT NOT NULL DEFAULT 'accent-violet',
+  xp INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE worlds (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  tagline TEXT NOT NULL DEFAULT '',
+  genre TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  lore TEXT NOT NULL DEFAULT '',
+  atmosphere TEXT NOT NULL DEFAULT '',
+  rules TEXT NOT NULL DEFAULT '[]',
+  art_style TEXT NOT NULL,
+  hue INTEGER NOT NULL,
+  is_custom INTEGER NOT NULL DEFAULT 0,
+  day INTEGER NOT NULL DEFAULT 1,
+  harmony INTEGER NOT NULL DEFAULT 50,
+  tension INTEGER NOT NULL DEFAULT 30,
+  discovery INTEGER NOT NULL DEFAULT 40,
+  tick_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE characters (
+  id TEXT PRIMARY KEY,
+  world_id TEXT REFERENCES worlds(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  handle TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  tagline TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT '',
+  personality TEXT NOT NULL DEFAULT '[]',
+  interests TEXT NOT NULL DEFAULT '[]',
+  background TEXT NOT NULL DEFAULT '',
+  writing_style TEXT NOT NULL DEFAULT 'casual',
+  style_notes TEXT NOT NULL DEFAULT '',
+  rules TEXT NOT NULL DEFAULT '[]',
+  avatar_hue INTEGER NOT NULL,
+  avatar_glyph TEXT NOT NULL DEFAULT 'initials',
+  is_custom INTEGER NOT NULL DEFAULT 0,
+  is_real_person_sim INTEGER NOT NULL DEFAULT 0,
+  mood TEXT NOT NULL DEFAULT 'neutral',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_characters_world ON characters(world_id);
+
+CREATE TABLE relationships (
+  id TEXT PRIMARY KEY,
+  world_id TEXT REFERENCES worlds(id) ON DELETE CASCADE,
+  a_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  b_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  affinity INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  CHECK (a_id < b_id),
+  UNIQUE (a_id, b_id)
+);
+CREATE INDEX idx_relationships_world ON relationships(world_id);
+
+CREATE TABLE groups (
+  id TEXT PRIMARY KEY,
+  world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  hue INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE group_members (
+  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (group_id, character_id)
+);
+
+CREATE TABLE storylines (
+  id TEXT PRIMARY KEY,
+  world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  stages TEXT NOT NULL DEFAULT '[]',
+  stage INTEGER NOT NULL DEFAULT 0,
+  theme TEXT NOT NULL DEFAULT 'discovery',
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE world_events (
+  id TEXT PRIMARY KEY,
+  world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  day INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL,
+  effects TEXT NOT NULL DEFAULT '[]',
+  participants TEXT NOT NULL DEFAULT '[]',
+  storyline_id TEXT REFERENCES storylines(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_events_world ON world_events(world_id, created_at);
+
+CREATE TABLE posts (
+  id TEXT PRIMARY KEY,
+  author_type TEXT NOT NULL CHECK (author_type IN ('user', 'character')),
+  character_id TEXT REFERENCES characters(id) ON DELETE CASCADE,
+  world_id TEXT REFERENCES worlds(id) ON DELETE SET NULL,
+  content TEXT NOT NULL DEFAULT '',
+  repost_of TEXT REFERENCES posts(id) ON DELETE SET NULL,
+  repost_of_deleted INTEGER NOT NULL DEFAULT 0,
+  event_id TEXT REFERENCES world_events(id) ON DELETE SET NULL,
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  edited_at TEXT
+);
+CREATE INDEX idx_posts_created ON posts(created_at);
+CREATE INDEX idx_posts_character ON posts(character_id);
+CREATE INDEX idx_posts_world ON posts(world_id);
+
+CREATE TABLE post_tags (
+  post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  tag TEXT NOT NULL,
+  PRIMARY KEY (post_id, tag)
+);
+CREATE INDEX idx_post_tags_tag ON post_tags(tag);
+
+CREATE TABLE user_likes (
+  post_id TEXT PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE character_likes (
+  post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (post_id, character_id)
+);
+
+CREATE TABLE bookmarks (
+  post_id TEXT PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE comments (
+  id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  parent_id TEXT REFERENCES comments(id) ON DELETE CASCADE,
+  author_type TEXT NOT NULL CHECK (author_type IN ('user', 'character')),
+  character_id TEXT REFERENCES characters(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_comments_post ON comments(post_id, created_at);
+
+CREATE TABLE stories (
+  id TEXT PRIMARY KEY,
+  author_type TEXT NOT NULL CHECK (author_type IN ('user', 'character')),
+  character_id TEXT REFERENCES characters(id) ON DELETE CASCADE,
+  world_id TEXT REFERENCES worlds(id) ON DELETE SET NULL,
+  content TEXT NOT NULL,
+  style INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX idx_stories_expires ON stories(expires_at);
+
+CREATE TABLE story_views (
+  story_id TEXT PRIMARY KEY REFERENCES stories(id) ON DELETE CASCADE,
+  viewed_at TEXT NOT NULL
+);
+
+CREATE TABLE chats (
+  character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+  memory_enabled INTEGER NOT NULL DEFAULT 1,
+  memory_window INTEGER NOT NULL DEFAULT 12,
+  summarized_upto INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  character_id TEXT NOT NULL REFERENCES chats(character_id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  source TEXT NOT NULL,
+  model TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_chat_messages_chat ON chat_messages(character_id, id);
+
+CREATE TABLE chat_memories (
+  id TEXT PRIMARY KEY,
+  character_id TEXT NOT NULL REFERENCES chats(character_id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('fact', 'summary')),
+  source TEXT NOT NULL CHECK (source IN ('rule', 'ai', 'user')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_chat_memories_chat ON chat_memories(character_id);
+
+CREATE TABLE activity_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  day TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (action, ref, day)
+);
+CREATE INDEX idx_activity_day ON activity_log(day, action);
+
+CREATE TABLE xp_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL UNIQUE,
+  action TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  day TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_xp_day ON xp_events(day, action);
+
+CREATE TABLE quest_claims (
+  quest_id TEXT NOT NULL,
+  period TEXT NOT NULL,
+  claimed_at TEXT NOT NULL,
+  PRIMARY KEY (quest_id, period)
+);
+
+CREATE TABLE achievements (
+  id TEXT PRIMARY KEY,
+  unlocked_at TEXT NOT NULL
+);
+
+CREATE TABLE encounters (
+  character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+  first_at TEXT NOT NULL
+);
+
+CREATE TABLE world_visits (
+  world_id TEXT PRIMARY KEY REFERENCES worlds(id) ON DELETE CASCADE,
+  first_at TEXT NOT NULL
+);
+
+CREATE TABLE notifications (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  params TEXT NOT NULL DEFAULT '{}',
+  link TEXT,
+  read INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_notifications_created ON notifications(created_at);
+
+CREATE TABLE scheduled_jobs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  due_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_jobs_due ON scheduled_jobs(status, due_at);
+
+CREATE TABLE ai_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL,
+  day TEXT NOT NULL,
+  month TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL,
+  cost_estimated INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  error_code TEXT,
+  duration_ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_ai_usage_day ON ai_usage(day);
+CREATE INDEX idx_ai_usage_month ON ai_usage(month);
+
+CREATE TABLE simulation_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  world_id TEXT,
+  trigger TEXT NOT NULL,
+  day TEXT NOT NULL,
+  events INTEGER NOT NULL DEFAULT 0,
+  ai_calls INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_simulation_log_day ON simulation_log(day, trigger);
+`,
+  },
+];

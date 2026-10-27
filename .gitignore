@@ -1,0 +1,31 @@
+# Abhängigkeiten
+node_modules/
+
+# Build-Ausgaben
+dist/
+*.tsbuildinfo
+
+# Lokale Daten (Datenbank, lokal gespeicherte Schlüssel) – niemals committen
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Umgebungsvariablen mit Geheimnissen
+.env
+.env.*
+!.env.example
+
+# Tests
+test-results/
+playwright-report/
+coverage/
+
+# Editor / Betriebssystem
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
