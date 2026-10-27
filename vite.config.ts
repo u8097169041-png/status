@@ -37,6 +37,7 @@ export default defineConfig({
         },
       },
       {
+        extends: false,
         plugins: [react()],
         test: {
           name: 'client',
