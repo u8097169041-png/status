@@ -14,7 +14,7 @@ export function AiModeBadge({ status, compact }: { status: AiStatusDto | undefin
     return (
       <Link to="/settings#ai" className={`badge ${isAi ? 'badge-ai' : 'badge-demo'}`} title={hint}>
         {isAi ? <Bot aria-hidden /> : <Cpu aria-hidden />}
-        {isAi ? t('mode.ai') : t('mode.demo')}
+        <span className="mode-label">{isAi ? t('mode.ai') : t('mode.demo')}</span>
       </Link>
     );
   }
