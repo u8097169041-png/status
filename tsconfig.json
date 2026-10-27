@@ -17,5 +17,5 @@
     "allowImportingTsExtensions": false,
     "noEmit": true
   },
-  "include": ["server/**/*.ts", "shared/**/*.ts", "e2e/**/*.ts", "vite.config.ts", "playwright.config.ts"]
+  "include": ["server/**/*.ts", "shared/**/*.ts", "vite.config.ts", "playwright.config.ts"]
 }

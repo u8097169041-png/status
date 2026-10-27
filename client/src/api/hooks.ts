@@ -35,6 +35,7 @@ import type {
   SimulationResult,
   SimulationStatusDto,
   StoryDto,
+  StorylineDto,
   TrendingTag,
   TriggerEventInput,
   UserProfileDto,
@@ -471,6 +472,11 @@ export function useWorldActions(id: string) {
     addGroup: useMutation({
       mutationFn: (input: { name: string; description: string; hue: number; memberIds: string[] }) =>
         post<GroupDto>(`/worlds/${id}/groups`, input),
+      onSuccess: () => refreshWorld(qc, id),
+    }),
+    addStoryline: useMutation({
+      mutationFn: (input: { title: string; summary: string; stages: string[]; theme: 'harmony' | 'tension' | 'discovery' }) =>
+        post<StorylineDto>(`/worlds/${id}/storylines`, input),
       onSuccess: () => refreshWorld(qc, id),
     }),
     removeGroup: useMutation({

@@ -240,6 +240,17 @@ export const de = {
     removed: 'Beziehung entfernt',
     confirmDelete: 'Diese Beziehung entfernen?',
     affinityValue: 'Zuneigung {value}',
+    edit: 'Beziehung bearbeiten',
+  },
+  storyline: {
+    create: 'Geschichte beginnen',
+    title: 'Titel',
+    summary: 'Worum geht es?',
+    stages: 'Kapitel (mindestens 2)',
+    stagePlaceholder: 'Nächstes Kapitel …',
+    theme: 'Thema',
+    themeHint: 'Ereignisse mit passendem Thema treiben die Geschichte schneller voran.',
+    created: 'Geschichte begonnen',
   },
   group: {
     create: 'Gruppe gründen',

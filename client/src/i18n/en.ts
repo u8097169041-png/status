@@ -239,6 +239,17 @@ export const en: Dictionary = {
     removed: 'Relationship removed',
     confirmDelete: 'Remove this relationship?',
     affinityValue: 'Affinity {value}',
+    edit: 'Edit relationship',
+  },
+  storyline: {
+    create: 'Start a story',
+    title: 'Title',
+    summary: 'What is it about?',
+    stages: 'Chapters (at least 2)',
+    stagePlaceholder: 'Next chapter …',
+    theme: 'Theme',
+    themeHint: 'Events with a matching theme move the story forward faster.',
+    created: 'Story started',
   },
   group: {
     create: 'Found group',

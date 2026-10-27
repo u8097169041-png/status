@@ -135,6 +135,24 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
 
     await page.getByRole('tab', { name: /Beziehungen/ }).click();
     await expect(page.getByRole('img', { name: 'Beziehungsnetz' })).toBeVisible();
+    await page.getByRole('button', { name: /Beziehung bearbeiten: Lord Percival Ashgrove & Theodora/ }).click();
+    const relDialog = page.getByRole('dialog', { name: 'Beziehung bearbeiten' });
+    await relDialog.getByLabel('Art').selectOption('ally');
+    await relDialog.getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.getByText('Beziehung aktualisiert')).toBeVisible();
+    await expect(page.locator('.relationship-row').filter({ hasText: 'Lord Percival Ashgrove & Theodora' })).toContainText('Bündnis');
+
+    await page.getByRole('tab', { name: 'Überblick' }).click();
+    await page.getByRole('button', { name: 'Geschichte beginnen' }).click();
+    const storyDialog = page.getByRole('dialog', { name: 'Geschichte beginnen' });
+    await storyDialog.getByLabel('Titel').fill('Der verschwundene Zeppelin');
+    const stageInput = storyDialog.getByPlaceholder('Nächstes Kapitel …');
+    await stageInput.fill('Ein Zeppelin verschwindet');
+    await stageInput.press('Enter');
+    await stageInput.fill('Die Spur führt zum Uhrturm');
+    await stageInput.press('Enter');
+    await storyDialog.getByRole('button', { name: 'Erstellen' }).click();
+    await expect(page.locator('.storyline').filter({ hasText: 'Der verschwundene Zeppelin' })).toBeVisible();
   });
 
   test('Eigenen Charakter erstellen', async () => {

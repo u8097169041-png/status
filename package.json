@@ -2,7 +2,7 @@
   "name": "socialverse",
   "version": "0.1.0",
   "private": true,
-  "description": "SocialVerse – lokale Social-Media-Simulation mit KI-Charakteren und lebendigen Welten",
+  "description": "SocialVerse \u2013 lokale Social-Media-Simulation mit KI-Charakteren und lebendigen Welten",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -15,7 +15,7 @@
     "build:client": "vite build",
     "build:server": "node scripts/build-server.mjs",
     "start": "node --disable-warning=ExperimentalWarning dist/server/index.js",
-    "typecheck": "tsc -p tsconfig.json && tsc -p client/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p client/tsconfig.json && tsc -p e2e/tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",

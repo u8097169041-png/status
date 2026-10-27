@@ -29,9 +29,9 @@ import { EventTimeline } from '../components/worlds/EventTimeline';
 import { MetricBars } from '../components/worlds/MetricBars';
 import { RelationshipGraph, statusColor } from '../components/worlds/RelationshipGraph';
 import { StorylineCard } from '../components/worlds/StorylineCard';
-import { GroupModal, RelationshipModal, TriggerEventModal } from '../components/worlds/WorldDialogs';
+import { GroupModal, RelationshipModal, StorylineModal, TriggerEventModal } from '../components/worlds/WorldDialogs';
 import { useI18n } from '../i18n';
-import type { WorldDetail } from '../../../shared/types';
+import type { RelationshipDto, WorldDetail } from '../../../shared/types';
 
 type Tab = 'overview' | 'residents' | 'relationships' | 'groups' | 'events' | 'posts';
 
@@ -59,6 +59,7 @@ function RelationshipsTab({ world }: { world: WorldDetail }) {
   const { removeRelationship } = useWorldActions(world.id);
   const showError = useErrorToast();
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<RelationshipDto | null>(null);
   return (
     <div className="stack">
       <div className="row-between">
@@ -96,10 +97,13 @@ function RelationshipsTab({ world }: { world: WorldDetail }) {
                   {r.note && <span className="truncate">{r.note}</span>}
                 </div>
               </div>
+              <button type="button" className="icon-btn" aria-label={`${t('relationship.edit')}: ${r.a.name} & ${r.b.name}`} onClick={() => setEditing(r)}>
+                <Edit3 />
+              </button>
               <button
                 type="button"
                 className="icon-btn"
-                aria-label={t('common.remove')}
+                aria-label={`${t('common.remove')}: ${r.a.name} & ${r.b.name}`}
                 onClick={() => {
                   if (window.confirm(t('relationship.confirmDelete'))) removeRelationship.mutate(r.id, { onError: showError });
                 }}
@@ -111,6 +115,7 @@ function RelationshipsTab({ world }: { world: WorldDetail }) {
         </ul>
       )}
       {adding && <RelationshipModal world={world} onClose={() => setAdding(false)} />}
+      {editing && <RelationshipModal world={world} relationship={editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
@@ -209,6 +214,7 @@ export function WorldPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [storylineOpen, setStorylineOpen] = useState(false);
   const visitHandled = useRef<string | null>(null);
 
   useEffect(() => {
@@ -339,7 +345,12 @@ export function WorldPage() {
                   )}
                 </div>
                 <section className="section">
-                  <h2>{t('worlds.storylines')}</h2>
+                  <div className="section-header">
+                    <h2>{t('worlds.storylines')}</h2>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStorylineOpen(true)}>
+                      <Plus aria-hidden /> {t('storyline.create')}
+                    </button>
+                  </div>
                   {world.storylines.length === 0 ? (
                     <p className="muted small">{t('worlds.noStorylines')}</p>
                   ) : (
@@ -418,6 +429,7 @@ export function WorldPage() {
       </div>
 
       {triggerOpen && <TriggerEventModal world={world} onClose={() => setTriggerOpen(false)} />}
+      {storylineOpen && <StorylineModal world={world} onClose={() => setStorylineOpen(false)} />}
       {confirmDelete && (
         <ConfirmDialog
           title={t('worlds.deleteWorld')}

@@ -1,12 +1,12 @@
 import { Check, Compass, Flame, Handshake, HeartHandshake, MessageSquareWarning, PartyPopper, PenLine, Star, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { LIMITS, RELATIONSHIP_KINDS, type RelationshipKind } from '../../../../shared/constants';
-import type { CharacterSummary, WorldDetail } from '../../../../shared/types';
+import type { CharacterSummary, RelationshipDto, WorldDetail } from '../../../../shared/types';
 import { useEventCards, useWorldActions } from '../../api/hooks';
 import { useI18n, type TKey } from '../../i18n';
 import { useErrorToast, useProgressFeedback } from '../progress/useProgressFeedback';
 import { Avatar } from '../ui/Avatar';
-import { HuePicker, SelectField, TextArea, TextField } from '../ui/Form';
+import { HuePicker, ListEditor, SelectField, TextArea, TextField } from '../ui/Form';
 import { Modal } from '../ui/Modal';
 import { useToast } from '../ui/Toast';
 
@@ -163,52 +163,62 @@ export function TriggerEventModal({ world, onClose }: { world: WorldDetail; onCl
   );
 }
 
-export function RelationshipModal({ world, onClose }: { world: WorldDetail; onClose: () => void }) {
+export function RelationshipModal({
+  world,
+  relationship,
+  onClose,
+}: {
+  world: WorldDetail;
+  relationship?: RelationshipDto;
+  onClose: () => void;
+}) {
   const { t, td } = useI18n();
-  const { addRelationship } = useWorldActions(world.id);
+  const { addRelationship, updateRelationship } = useWorldActions(world.id);
   const showError = useErrorToast();
   const { push } = useToast();
-  const [aId, setAId] = useState(world.characters[0]?.id ?? '');
-  const [bId, setBId] = useState(world.characters[1]?.id ?? '');
-  const [kind, setKind] = useState<RelationshipKind>('friend');
-  const [affinity, setAffinity] = useState(30);
-  const [note, setNote] = useState('');
+  const [aId, setAId] = useState(relationship?.a.id ?? world.characters[0]?.id ?? '');
+  const [bId, setBId] = useState(relationship?.b.id ?? world.characters[1]?.id ?? '');
+  const [kind, setKind] = useState<RelationshipKind>(relationship?.kind ?? 'friend');
+  const [affinity, setAffinity] = useState(relationship?.affinity ?? 30);
+  const [note, setNote] = useState(relationship?.note ?? '');
   const options = world.characters.map((c) => ({ value: c.id, label: c.name }));
+  const busy = addRelationship.isPending || updateRelationship.isPending;
+  const submit = () => {
+    const callbacks = {
+      onSuccess: () => {
+        push('success', relationship ? t('relationship.updated') : t('relationship.created'));
+        onClose();
+      },
+      onError: showError,
+    };
+    if (relationship) updateRelationship.mutate({ relId: relationship.id, kind, affinity, note }, callbacks);
+    else addRelationship.mutate({ aId, bId, kind, affinity, note }, callbacks);
+  };
   return (
     <Modal
-      title={t('relationship.add')}
+      title={relationship ? t('relationship.edit') : t('relationship.add')}
       onClose={onClose}
       footer={
         <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             {t('common.cancel')}
           </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!aId || !bId || aId === bId || addRelationship.isPending}
-            onClick={() =>
-              addRelationship.mutate(
-                { aId, bId, kind, affinity, note },
-                {
-                  onSuccess: () => {
-                    push('success', t('relationship.created'));
-                    onClose();
-                  },
-                  onError: showError,
-                },
-              )
-            }
-          >
-            {t('common.create')}
+          <button type="button" className="btn btn-primary" disabled={!aId || !bId || aId === bId || busy} onClick={submit}>
+            {relationship ? t('common.save') : t('common.create')}
           </button>
         </>
       }
     >
-      <div className="form-grid two">
-        <SelectField label={t('relationship.a')} value={aId} onChange={setAId} options={options} />
-        <SelectField label={t('relationship.b')} value={bId} onChange={setBId} options={options} />
-      </div>
+      {relationship ? (
+        <p className="small">
+          <strong>{relationship.a.name}</strong> & <strong>{relationship.b.name}</strong>
+        </p>
+      ) : (
+        <div className="form-grid two">
+          <SelectField label={t('relationship.a')} value={aId} onChange={setAId} options={options} />
+          <SelectField label={t('relationship.b')} value={bId} onChange={setBId} options={options} />
+        </div>
+      )}
       <SelectField
         label={t('relationship.kind')}
         value={kind}
@@ -222,6 +232,60 @@ export function RelationshipModal({ world, onClose }: { world: WorldDetail; onCl
         <input id="rel-affinity" type="range" min={-100} max={100} value={affinity} onChange={(e) => setAffinity(Number(e.target.value))} />
       </div>
       <TextField label={t('relationship.note')} value={note} onChange={setNote} max={LIMITS.characterShortText} />
+    </Modal>
+  );
+}
+
+export function StorylineModal({ world, onClose }: { world: WorldDetail; onClose: () => void }) {
+  const { t } = useI18n();
+  const { addStoryline } = useWorldActions(world.id);
+  const showError = useErrorToast();
+  const { push } = useToast();
+  const [title, setTitle] = useState('');
+  const [summary, setSummary] = useState('');
+  const [stages, setStages] = useState<string[]>([]);
+  const [theme, setTheme] = useState<'harmony' | 'tension' | 'discovery'>('discovery');
+  return (
+    <Modal
+      title={t('storyline.create')}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!title.trim() || stages.length < 2 || addStoryline.isPending}
+            onClick={() =>
+              addStoryline.mutate(
+                { title, summary, stages, theme },
+                {
+                  onSuccess: () => {
+                    push('success', t('storyline.created'));
+                    onClose();
+                  },
+                  onError: showError,
+                },
+              )
+            }
+          >
+            {t('common.create')}
+          </button>
+        </>
+      }
+    >
+      <TextField label={t('storyline.title')} value={title} onChange={setTitle} max={LIMITS.eventTitle} />
+      <TextArea label={t('storyline.summary')} value={summary} onChange={setSummary} max={LIMITS.eventDescription} rows={3} />
+      <ListEditor label={t('storyline.stages')} values={stages} onChange={setStages} placeholder={t('storyline.stagePlaceholder')} max={8} maxLength={LIMITS.worldRule} />
+      <SelectField
+        label={t('storyline.theme')}
+        value={theme}
+        onChange={setTheme}
+        hint={t('storyline.themeHint')}
+        options={(['harmony', 'tension', 'discovery'] as const).map((m) => ({ value: m, label: t(`metrics.${m}`) }))}
+      />
     </Modal>
   );
 }
