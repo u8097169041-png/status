@@ -139,11 +139,11 @@ function ModelRow({ label, value, placeholder, onPick, onClear }: { label: strin
       <span className="field-label">{label}</span>
       <div className="row">
         <code className="model-id grow truncate">{value || placeholder}</code>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={onPick}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={onPick} aria-label={`${t('aiSettings.chooseModel')}: ${label}`}>
           {t('aiSettings.chooseModel')}
         </button>
         {onClear && value && (
-          <button type="button" className="icon-btn" onClick={onClear} aria-label={t('common.remove')}>
+          <button type="button" className="icon-btn" onClick={onClear} aria-label={`${t('common.remove')}: ${label}`}>
             <X />
           </button>
         )}

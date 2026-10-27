@@ -9,6 +9,7 @@ const dataDir = mkdtempSync(join(tmpdir(), 'socialverse-e2e-'));
 const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'dist/server/index.js'], {
   stdio: 'inherit',
   env: { ...process.env, PORT: port, HOST: '127.0.0.1', DATA_DIR: dataDir, OPENROUTER_API_KEY: '' },
+  cwd: process.cwd(),
 });
 const cleanup = () => {
   child.kill();
