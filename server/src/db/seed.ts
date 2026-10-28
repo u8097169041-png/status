@@ -17,9 +17,20 @@ import {
   SEED_WORLDS,
   type L,
 } from '../content/seedWorlds';
+import { buildEndings } from '../content/arcEndings';
+import {
+  SEED_CHARACTERS_V3,
+  SEED_EVENTS_V3,
+  SEED_GROUPS_V3,
+  SEED_POSTS_V3,
+  SEED_RELATIONSHIPS_V3,
+  SEED_STORIES_V3,
+  SEED_STORYLINES_V3,
+  SEED_WORLDS_V3,
+} from '../content/seedWorlds3';
 import { extractTags } from '../lib/text';
 import { addHours, addMinutes } from '../lib/time';
-import { get, run, tx, type DB } from './database';
+import { all, get, run, tx, type DB } from './database';
 import { DEFAULT_SETTINGS, getSettings, saveSettings } from '../services/settings';
 import { STORY_LIFETIME_HOURS } from '../../../shared/constants';
 
@@ -42,16 +53,16 @@ export function seedIfEmpty(db: DB, now: Date, lang: Lang = 'de'): boolean {
 }
 
 /** Version der mitgelieferten Inhalte. Erhöhen, wenn neue Welten oder Daten nachgetragen werden. */
-export const CONTENT_VERSION = 2;
+export const CONTENT_VERSION = 3;
 
-const ALL_WORLDS = [...SEED_WORLDS, ...SEED_WORLDS_V2];
-const ALL_CHARACTERS = [...SEED_CHARACTERS, ...SEED_CHARACTERS_V2];
-const ALL_RELATIONSHIPS = [...SEED_RELATIONSHIPS, ...SEED_RELATIONSHIPS_V2];
-const ALL_GROUPS = [...SEED_GROUPS, ...SEED_GROUPS_V2];
-const ALL_STORYLINES = [...SEED_STORYLINES, ...SEED_STORYLINES_V2];
-const ALL_EVENTS = [...SEED_EVENTS, ...SEED_EVENTS_V2];
-const ALL_POSTS = [...SEED_POSTS, ...SEED_POSTS_V2];
-const ALL_STORIES = [...SEED_STORIES, ...SEED_STORIES_V2];
+const ALL_WORLDS = [...SEED_WORLDS, ...SEED_WORLDS_V2, ...SEED_WORLDS_V3];
+const ALL_CHARACTERS = [...SEED_CHARACTERS, ...SEED_CHARACTERS_V2, ...SEED_CHARACTERS_V3];
+const ALL_RELATIONSHIPS = [...SEED_RELATIONSHIPS, ...SEED_RELATIONSHIPS_V2, ...SEED_RELATIONSHIPS_V3];
+const ALL_GROUPS = [...SEED_GROUPS, ...SEED_GROUPS_V2, ...SEED_GROUPS_V3];
+const ALL_STORYLINES = [...SEED_STORYLINES, ...SEED_STORYLINES_V2, ...SEED_STORYLINES_V3];
+const ALL_EVENTS = [...SEED_EVENTS, ...SEED_EVENTS_V2, ...SEED_EVENTS_V3];
+const ALL_POSTS = [...SEED_POSTS, ...SEED_POSTS_V2, ...SEED_POSTS_V3];
+const ALL_STORIES = [...SEED_STORIES, ...SEED_STORIES_V2, ...SEED_STORIES_V3];
 
 function setMeta(db: DB, key: string, value: string): void {
   run(db, `INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value);
@@ -155,11 +166,12 @@ function insertWorldContent(db: DB, worldIds: Set<string>, now: Date, lang: Lang
     }
   }
 
+  const worldName = new Map(ALL_WORLDS.map((w) => [w.id, t(w.name)]));
   for (const s of ALL_STORYLINES.filter((x) => worldIds.has(x.worldId))) {
     run(
       db,
-      `INSERT INTO storylines (id, world_id, title, summary, stages, stage, theme, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+      `INSERT INTO storylines (id, world_id, title, summary, stages, stage, theme, status, endings, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
       s.id,
       s.worldId,
       t(s.title),
@@ -167,6 +179,7 @@ function insertWorldContent(db: DB, worldIds: Set<string>, now: Date, lang: Lang
       JSON.stringify(s.stages.map(t)),
       s.stage,
       s.theme,
+      JSON.stringify(buildEndings(s.id, t(s.title), worldName.get(s.worldId) ?? '', lang)),
       at(24 * 7),
       at(24),
     );
@@ -305,6 +318,20 @@ export function applyContentUpdates(db: DB, now: Date): boolean {
       ).map((c) => c.worldId);
       insertWorldContent(db, new Set(missing.filter((id) => !conflicts.includes(id))), now, lang);
     }
+    if (current < 3) {
+      const missing = SEED_WORLDS_V3.filter((w) => !get(db, 'SELECT 1 FROM worlds WHERE id = ?', w.id)).map((w) => w.id);
+      const conflicts = SEED_CHARACTERS_V3.filter(
+        (c) => missing.includes(c.worldId) && get(db, 'SELECT 1 FROM characters WHERE id = ? OR handle = ?', c.id, c.handle),
+      ).map((c) => c.worldId);
+      insertWorldContent(db, new Set(missing.filter((id) => !conflicts.includes(id))), now, lang);
+      // Bestehende Geschichten erhalten mögliche Enden.
+      for (const s of all<{ id: string; title: string; world: string }>(
+        db,
+        `SELECT s.id, s.title, w.name AS world FROM storylines s JOIN worlds w ON w.id = s.world_id WHERE s.endings = '[]'`,
+      )) {
+        run(db, 'UPDATE storylines SET endings = ? WHERE id = ?', JSON.stringify(buildEndings(s.id, s.title, s.world, lang)), s.id);
+      }
+    }
     setMeta(db, 'content_version', String(CONTENT_VERSION));
   });
   return true;
@@ -323,6 +350,9 @@ export const DATA_TABLES = [
   'conversation_memories',
   'conversation_messages',
   'conversations',
+  'quests',
+  'player_skills',
+  'action_uses',
   'decisions',
   'players',
   'group_members',

@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { COIN_REWARDS } from '../../../shared/economy';
 import { LIMITS, type Lang, type WorldMetric } from '../../../shared/constants';
 import { clampMetric } from '../../../shared/relationships';
-import type { CharacterRef, DecisionDto, DecisionEffectsDto, DecisionResult, EventEffect } from '../../../shared/types';
+import { SKILL_RULES, type SkillId } from '../../../shared/skills';
+import type { ArcPath, CharacterRef, DecisionDto, DecisionEffectsDto, DecisionResult, EventEffect } from '../../../shared/types';
 import type { AppContext } from '../context';
 import {
   DECISION_REACTIONS,
@@ -26,6 +27,9 @@ import { addCharacterLike, insertCharacterPost } from './posts';
 import { mergeDelta, recordAction } from './progress';
 import { getLanguage } from './settings';
 import { adjustAffinity } from './society';
+import { addArcScore, resolveArc } from './arcs';
+import { refreshQuests } from './quests';
+import { requireSkill, skillLevels } from './skills';
 import { grantCoins } from './wallet';
 
 /** Gespeicherte Option mit konkret aufgelösten Auswirkungen. */
@@ -34,6 +38,9 @@ interface StoredOption {
   label: string;
   outcome: string;
   effects: DecisionEffectsDto & { storylineId?: string };
+  requires?: { skill: SkillId; level: number };
+  arcPath?: ArcPath;
+  arcWeight?: number;
 }
 
 interface DecisionRow {
@@ -64,8 +71,10 @@ interface Npc {
   prominent: number;
 }
 
-function toDecision(r: DecisionRow): DecisionDto {
+function toDecision(r: DecisionRow, skills: Record<SkillId, number>): DecisionDto {
   const options = parseJson<StoredOption[]>(r.options, []);
+  // Strategie 2: Ergebnis vorab sehen.
+  const preview = skills.strategy >= 2;
   return {
     id: r.id,
     worldId: r.world_id,
@@ -77,6 +86,10 @@ function toDecision(r: DecisionRow): DecisionDto {
       id: o.id,
       label: o.label,
       effects: { ...o.effects, storylineId: undefined } as DecisionEffectsDto,
+      requires: o.requires,
+      locked: Boolean(o.requires && skills[o.requires.skill] < o.requires.level),
+      arcPath: r.storyline_id ? o.arcPath : undefined,
+      outcomePreview: preview && r.status === 'pending' ? o.outcome : undefined,
     })),
     status: r.status,
     chosenOptionId: r.chosen_option,
@@ -112,7 +125,7 @@ export function listDecisions(
       ORDER BY status = 'resolved', COALESCE(resolved_at, created_at) DESC LIMIT ?`,
     ...params,
     filters.limit ?? 50,
-  ).map(toDecision);
+  ).map((r) => toDecision(r, skillLevels(ctx, r.player_id)));
 }
 
 function pendingCount(ctx: AppContext, playerId: string): number {
@@ -169,6 +182,9 @@ function instantiate(
       id: o.id,
       label: fill(o.label[lang], vars),
       outcome: fill(o.outcome[lang], vars),
+      requires: o.requires,
+      arcPath: o.arcPath,
+      arcWeight: o.arcWeight,
       effects: {
         reputation: o.reputation,
         influence: o.influence,
@@ -298,7 +314,14 @@ export function chooseOption(ctx: AppContext, decisionId: string, input: unknown
     if (!player.is_active) throw new AppError(409, 'player_inactive', 'Diese Entscheidung gehört zu einer Figur, die du gerade nicht spielst.');
     const option = parseJson<StoredOption[]>(row.options, []).find((o) => o.id === parsed.data.optionId);
     if (!option) throw badRequest('invalid_option', 'Diese Option gibt es nicht.');
+    // Zusätzliche Lösungswege nur mit der passenden Fähigkeit.
+    requireSkill(ctx, player.id, option.requires);
     const e = option.effects;
+    // Die Wahl lenkt den Handlungsbogen; mit Strategie 3 zählt sie doppelt.
+    if (row.storyline_id && option.arcPath) {
+      const weight = (option.arcWeight ?? 1) * (skillLevels(ctx, player.id).strategy >= 3 ? SKILL_RULES.strategyArcWeight : 1);
+      addArcScore(ctx, row.storyline_id, option.arcPath, weight);
+    }
     const playerChar = getCharacterRow(ctx, player.character_id);
     const effects: EventEffect[] = [];
 
@@ -324,9 +347,11 @@ export function chooseOption(ctx: AppContext, decisionId: string, input: unknown
       }
     }
 
+    let resolvedArc: string | null = null;
     if (e.storylineId) {
       const effect = advanceStorylineNow(ctx, e.storylineId, lang);
       if (effect) effects.push(effect);
+      if (effect?.type === 'storyline' && effect.resolved) resolvedArc = effect.storylineId;
     }
 
     const world = get<{ day: number; name: string }>(ctx.db, 'SELECT day, name FROM worlds WHERE id = ?', row.world_id)!;
@@ -374,12 +399,16 @@ export function chooseOption(ctx: AppContext, decisionId: string, input: unknown
       ctx.now().toISOString(),
       row.id,
     );
+    // Erst nach dem Speichern der Wahl: Ende bestimmen und Beteiligte belohnen.
+    if (resolvedArc) resolveArc(ctx, resolvedArc, lang);
     return { row, player };
   });
 
+  // Folgen der Entscheidung können neue Nebenquests auslösen (z. B. Wiedergutmachung, Gefallen einfordern).
+  refreshQuests(ctx, result.player.id);
   let progress = recordAction(ctx, 'decide', decisionId, result.player.id);
   const coins = grantCoins(ctx, `decision:${decisionId}`, COIN_REWARDS.decision, 'decision');
   progress = mergeDelta(progress, { xpGained: 0, coinsGained: coins, levelUp: null, achievementsUnlocked: [] });
-  const decision = toDecision(get<DecisionRow>(ctx.db, 'SELECT * FROM decisions WHERE id = ?', decisionId)!);
+  const decision = toDecision(get<DecisionRow>(ctx.db, 'SELECT * FROM decisions WHERE id = ?', decisionId)!, skillLevels(ctx, result.player.id));
   return { decision, player: toPlayer(ctx, getPlayerRow(ctx, result.player.id)), progress };
 }

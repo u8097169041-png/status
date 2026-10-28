@@ -452,4 +452,62 @@ DROP TABLE chat_messages;
 DROP TABLE chats;
 `,
   },
+  {
+    version: 3,
+    name: 'quests-skills-arcs',
+    sql: `
+-- Rolle und Hauptziel der Spielfigur (leer = wird beim ersten Zugriff aus Rolle und Welt bestimmt).
+ALTER TABLE players ADD COLUMN archetype TEXT NOT NULL DEFAULT '';
+ALTER TABLE players ADD COLUMN goal_type TEXT NOT NULL DEFAULT '';
+
+-- Fähigkeiten je Spielfigur.
+CREATE TABLE player_skills (
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  skill_id TEXT NOT NULL,
+  level INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (player_id, skill_id)
+);
+
+-- Haupt-, Neben- und Ereignisquests je Spielfigur. dedupe_key verhindert doppelte Quests.
+CREATE TABLE quests (
+  id TEXT PRIMARY KEY,
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('main', 'side', 'event')),
+  template TEXT NOT NULL,
+  dedupe_key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  paths TEXT NOT NULL,
+  params TEXT NOT NULL DEFAULT '{}',
+  stage INTEGER NOT NULL DEFAULT 0,
+  xp INTEGER NOT NULL,
+  coins INTEGER NOT NULL DEFAULT 0,
+  rewards TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'expired')),
+  completed_path INTEGER,
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  expires_day INTEGER,
+  UNIQUE (player_id, dedupe_key)
+);
+CREATE INDEX idx_quests_player ON quests(player_id, status);
+
+-- Begrenzte Aktionen (Dialogoptionen, Boni): einmal pro Tag (day = Datum) oder einmalig (day = 'once').
+CREATE TABLE action_uses (
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  day TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (player_id, action, ref, day)
+);
+
+-- Handlungsbögen mit mehreren Enden.
+ALTER TABLE storylines ADD COLUMN endings TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE storylines ADD COLUMN path_scores TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE storylines ADD COLUMN ending_id TEXT;
+`,
+  },
 ];

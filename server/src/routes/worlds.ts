@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { AppContext } from '../context';
+import { requireActivePlayer } from '../services/players';
 import { listEventCards, simulateWorld, triggerEvent } from '../services/simulation';
 import {
   createGroup,
@@ -39,6 +40,8 @@ export function worldRoutes(ctx: AppContext): Router {
     res.status(204).end();
   });
   r.get('/worlds/:id/events', (req, res) => {
+    // Weltinterne Ereignisse erst nach dem Beitritt.
+    requireActivePlayer(ctx, param(req, 'id'));
     res.json(listEvents(ctx, param(req, 'id'), 30, q(req, 'before', 40)));
   });
   r.post('/worlds/:id/simulate', async (req, res) => {

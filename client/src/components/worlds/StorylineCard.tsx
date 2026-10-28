@@ -1,4 +1,4 @@
-import { BookOpen, CheckCircle2 } from 'lucide-react';
+import { BookOpen, CheckCircle2, GitBranch } from 'lucide-react';
 import type { StorylineDto } from '../../../../shared/types';
 import { useI18n } from '../../i18n';
 
@@ -25,6 +25,28 @@ export function StorylineCard({ storyline, worldName }: { storyline: StorylineDt
         ))}
       </ol>
       <p className="small">{storyline.stages[storyline.stage]}</p>
+      {storyline.endings.length > 0 && (
+        <div className="storyline-endings">
+          <span className="xsmall muted row">
+            <GitBranch aria-hidden className="icon-xs" /> {resolved ? t('storyline.endingReached') : t('storyline.endings')}
+          </span>
+          <ul className="arc-endings">
+            {storyline.endings
+              .filter((e) => !resolved || e.id === storyline.endingId)
+              .map((e) => (
+                <li
+                  key={e.id}
+                  className={`arc-ending-chip path-${e.path} ${e.id === storyline.endingId ? 'reached' : ''} ${e.id === storyline.forecastEndingId ? 'forecast' : ''}`}
+                  title={e.description}
+                >
+                  {e.title}
+                  {e.id === storyline.forecastEndingId && ` · ${t('storyline.forecast')}`}
+                </li>
+              ))}
+          </ul>
+          {resolved && <p className="xsmall muted">{storyline.endings.find((e) => e.id === storyline.endingId)?.description}</p>}
+        </div>
+      )}
     </div>
   );
 }

@@ -2,18 +2,19 @@ import { ArrowLeft, Check, Drama, LogIn, UserPlus, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { LIMITS, type AvatarGlyph } from '../../../shared/constants';
+import { ARCHETYPE_PROFILE, GOAL_TYPES, archetypeFor, type GoalType } from '../../../shared/skills';
 import type { CharacterSummary, JoinWorldInput } from '../../../shared/types';
 import { ApiError } from '../api/client';
 import { usePlayActions, usePlayers, useWorld } from '../api/hooks';
 import { VerifiedBadge } from '../components/play/PlayUI';
 import { useErrorToast, useProgressFeedback } from '../components/progress/useProgressFeedback';
 import { Avatar } from '../components/ui/Avatar';
-import { GlyphPicker, HuePicker, ListEditor, TagInput, TextArea, TextField } from '../components/ui/Form';
+import { GlyphPicker, HuePicker, ListEditor, TagInput, TextArea, TextField, Toggle } from '../components/ui/Form';
 import { ConfirmDialog } from '../components/ui/Modal';
 import { EmptyState, ErrorState, SkeletonList } from '../components/ui/States';
 import { useToast } from '../components/ui/Toast';
 import { WorldArt } from '../components/ui/WorldArt';
-import { useI18n } from '../i18n';
+import { useI18n, type TKey } from '../i18n';
 
 type Mode = 'custom' | 'existing';
 
@@ -73,6 +74,9 @@ export function JoinWorldPage() {
   const [hue, setHue] = useState(205);
   const [glyph, setGlyph] = useState<AvatarGlyph>('initials');
   const [confirmSwitch, setConfirmSwitch] = useState(false);
+  const [goalType, setGoalType] = useState<GoalType | null>(null);
+  const [realPerson, setRealPerson] = useState(false);
+  const [realPersonConfirmed, setRealPersonConfirmed] = useState(false);
   const [nameError, setNameError] = useState(false);
 
   if (query.isPending)
@@ -93,6 +97,8 @@ export function JoinWorldPage() {
     );
 
   const world = query.data.world;
+  // Vorschlag für das Hauptziel passend zu Rolle und Weltkategorie (wie im Backend).
+  const suggestedGoal = ARCHETYPE_PROFILE[archetypeFor(role, world.category)].defaultGoal;
   const active = players.data?.find((p) => p.isActive) ?? null;
   const playedIds = new Set((players.data ?? []).filter((p) => !p.isActive).map((p) => p.character.id));
   // Wählbar sind Figuren der Welt, die keine eigenen Spielfiguren sind und gerade nicht gespielt werden.
@@ -111,7 +117,8 @@ export function JoinWorldPage() {
     }
     return {
       mode,
-      character: { name, role, background, personality, goals, avatarHue: hue, avatarGlyph: glyph },
+      character: { name, role, background, personality, goals, avatarHue: hue, avatarGlyph: glyph, isRealPersonSim: realPerson },
+      goalType: goalType ?? suggestedGoal,
       confirmSwitch: Boolean(active),
     };
   };
@@ -136,7 +143,7 @@ export function JoinWorldPage() {
     );
   };
 
-  const ready = mode === 'existing' ? Boolean(characterId) : name.trim().length > 0;
+  const ready = mode === 'existing' ? Boolean(characterId) : name.trim().length > 0 && (!realPerson || realPersonConfirmed);
 
   return (
     <div className="page join-page" style={{ '--world-hue': world.hue } as React.CSSProperties}>
@@ -197,6 +204,38 @@ export function JoinWorldPage() {
           <div className="stack-sm">
             <ListEditor label={t('play.goals')} values={goals} onChange={setGoals} max={LIMITS.playerGoals} maxLength={LIMITS.characterRule} />
             <span className="field-hint">{t('play.goalsHint')}</span>
+          </div>
+          <fieldset className="goal-picker">
+            <legend className="field-label">{t('play.goalType')}</legend>
+            <span className="field-hint">{t('play.goalTypeHint')}</span>
+            <div className="goal-grid" role="radiogroup" aria-label={t('play.goalType')}>
+              {GOAL_TYPES.map((g) => {
+                const selected = (goalType ?? suggestedGoal) === g;
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={`goal-option ${selected ? 'selected' : ''}`}
+                    onClick={() => setGoalType(g)}
+                  >
+                    <strong className="small">{t(`goals.${g}` as TKey)}</strong>
+                    <span className="xsmall muted">{t(`goals.${g}Desc` as TKey)}</span>
+                    {g === suggestedGoal && <span className="badge badge-player">{t('play.suggested')}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+          <div className="real-person-box stack-sm">
+            <Toggle label={t('play.realPerson')} hint={t('play.realPersonHint')} checked={realPerson} onChange={(v) => { setRealPerson(v); setRealPersonConfirmed(false); }} />
+            {realPerson && (
+              <label className="row small">
+                <input type="checkbox" checked={realPersonConfirmed} onChange={(e) => setRealPersonConfirmed(e.target.checked)} />
+                {t('play.realPersonConfirm')}
+              </label>
+            )}
           </div>
           <div className="form-grid two">
             <HuePicker label={t('profile.avatarColor')} value={hue} onChange={setHue} />

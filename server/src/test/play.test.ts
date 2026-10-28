@@ -22,7 +22,7 @@ describe('Entdecken', () => {
   it('zeigt Vorschauen ohne globale Stories, mit Kategorien, bekannten Figuren und Szenarien', async () => {
     const ctx = createTestContext();
     const discover = getDiscover(ctx);
-    expect(Object.keys(discover).sort()).toEqual(['featuredWorld', 'figures', 'recentEvents', 'scenarios', 'worlds']);
+    expect(Object.keys(discover).sort()).toEqual(['featuredWorld', 'figures', 'popular', 'scenarios', 'worlds']);
     const categories = new Set(discover.worlds.map((w) => w.category));
     for (const c of ['politics', 'celebrity', 'business', 'sports', 'entertainment', 'scenario', 'fiction']) {
       expect(categories.has(c as never)).toBe(true);
@@ -62,7 +62,9 @@ describe('Beitritt und Spielfiguren', () => {
     expect(progress.xpGained).toBeGreaterThan(0);
     expect(activeWorldId(ctx)).toBe('w-capital');
     // Einstiegsentscheidung und Ankunftsereignis
-    expect(listDecisions(ctx, { playerId: player.id, status: 'pending' })).toHaveLength(1);
+    // Einstiegsentscheidung plus eine Entscheidung zur laufenden Geschichte (für die Nebenquest „Mitreden“)
+    const pending = listDecisions(ctx, { playerId: player.id, status: 'pending' });
+    expect(pending.map((d) => d.kind).sort()).toEqual(['intro', 'storyline']);
     expect(get(ctx.db, `SELECT 1 FROM world_events WHERE world_id = 'w-capital' AND kind = 'arrival'`)).toBeTruthy();
   });
 
@@ -85,7 +87,9 @@ describe('Beitritt und Spielfiguren', () => {
     // Zurückwechseln setzt den alten Spielstand fort
     const back = activatePlayer(ctx, first.id);
     expect(back.isActive).toBe(true);
-    expect(back.followers).toBe(first.followers);
+    // Werte der alten Figur bleiben erhalten (plus Follower durch ihren Beitrag).
+    expect(back.followers).toBeGreaterThanOrEqual(first.followers);
+    expect(back.reputation).toBe(first.reputation);
     expect(listPlayers(ctx, 'w-capital').filter((p) => p.isActive)).toHaveLength(1);
   });
 
@@ -109,7 +113,7 @@ describe('Beitritt und Spielfiguren', () => {
     expect(boot.body.activeWorld.id).toBe('w-arena');
     expect(boot.body.activePlayer.character.name).toBe('Sam Kick');
     expect(boot.body.joinedWorlds).toHaveLength(1);
-    expect(boot.body.pendingDecisions).toBe(1);
+    expect(boot.body.pendingDecisions).toBe(2);
     const conflict = await request(app).post('/api/worlds/w-arena/join').set(W).send({ mode: 'existing', characterId: 'c-zoe' }).expect(409);
     expect(conflict.body.error.code).toBe('already_joined');
     await request(app).put('/api/session/world').set(W).send({ worldId: 'w-neon' }).expect(409);

@@ -8,7 +8,8 @@ import { cleanText, fill, truncate } from '../lib/text';
 import { loadPromptCharacter } from './characterContext';
 import type { DueJob } from './jobs';
 import { getProfileRow } from './mappers';
-import { controlledCharacterIds } from './players';
+import { adjustPlayerStats, controlledCharacterIds } from './players';
+import { evaluateQuests } from './quests';
 import { notify } from './notifications';
 import { addCharacterLike, insertCharacterComment } from './posts';
 import { checkAchievements } from './progress';
@@ -53,7 +54,7 @@ function actorHandle(ctx: AppContext, playerId: string | null): string {
 }
 
 /** Figuren derselben Welt reagieren mit Likes und einem Kommentar auf einen Beitrag der Spielfigur. */
-async function reactToPost(ctx: AppContext, postId: string): Promise<void> {
+async function reactToPost(ctx: AppContext, postId: string, boost = 0): Promise<void> {
   const post = get<{ id: string; content: string; world_id: string | null; author_type: string; player_id: string | null }>(
     ctx.db,
     'SELECT id, content, world_id, author_type, player_id FROM posts WHERE id = ?',
@@ -82,7 +83,8 @@ async function reactToPost(ctx: AppContext, postId: string): Promise<void> {
     return { c, score };
   });
   scored.sort((a, b) => b.score - a.score);
-  const likers = scored.slice(0, rng.int(1, 3)).map((s) => s.c);
+  // Medienkompetenz und Statements bringen zusätzliche Reaktionen.
+  const likers = scored.slice(0, rng.int(1, 3) + Math.max(0, Math.min(5, boost))).map((s) => s.c);
   const commenter = scored[0].c;
   const user = { handle: actorHandle(ctx, post.player_id) };
 
@@ -101,11 +103,16 @@ async function reactToPost(ctx: AppContext, postId: string): Promise<void> {
     });
   }
   tx(ctx.db, () => {
-    for (const liker of likers) addCharacterLike(ctx, postId, liker.id);
+    let newLikes = 0;
+    for (const liker of likers) if (addCharacterLike(ctx, postId, liker.id)) newLikes++;
+    // Jede Reaktion bringt der Spielfigur ein paar Follower.
+    if (post.player_id && newLikes > 0) adjustPlayerStats(ctx, post.player_id, { followers: 2 * newLikes });
     insertCharacterComment(ctx, { postId, parentId: null, characterId: commenter.id, content: comment, source });
     notify(ctx, 'postReaction', { names: likers.map((l) => l.name).join(', '), count: likers.length }, `/posts/${postId}`, post.world_id);
     notify(ctx, 'postComment', { name: commenter.name }, `/posts/${postId}`, post.world_id);
     checkAchievements(ctx);
+    // Reaktionen können Quests abschließen (z. B. „Gesprächsstoff liefern“).
+    if (post.player_id) evaluateQuests(ctx, post.player_id);
   });
 }
 
@@ -163,7 +170,7 @@ async function replyToComment(ctx: AppContext, postId: string, commentId: string
 
 export async function runJob(ctx: AppContext, job: DueJob): Promise<void> {
   const payload = parseJson<Record<string, string>>(job.payload, {});
-  if (job.kind === 'reactToPost' && payload.postId) await reactToPost(ctx, payload.postId);
+  if (job.kind === 'reactToPost' && payload.postId) await reactToPost(ctx, payload.postId, Number(payload.boost ?? 0) || 0);
   else if (job.kind === 'replyToComment' && payload.postId && payload.commentId) {
     await replyToComment(ctx, payload.postId, payload.commentId);
   }

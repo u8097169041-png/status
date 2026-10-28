@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { AVATAR_GLYPHS, LIMITS, type Lang } from '../../../shared/constants';
+import { levelInfo } from '../../../shared/progress';
+import { GOAL_TYPES } from '../../../shared/skills';
 import type { JoinWorldInput, PlayerDto, ProgressDelta } from '../../../shared/types';
 import { PLAYER_TEXT } from '../content/decisionTemplates';
 import type { AppContext } from '../context';
@@ -12,7 +14,9 @@ import { createIntroDecision } from './decisions';
 import { toCharacterRef, toCharacterSummary } from './mappers';
 import { notify } from './notifications';
 import { mergeDelta, recordAction, recordWorldVisit } from './progress';
+import { refreshQuests } from './quests';
 import { getLanguage } from './settings';
+import { ensureRole, skillLevels, skillPoints } from './skills';
 
 export interface PlayerRow {
   id: string;
@@ -27,6 +31,8 @@ export interface PlayerRow {
   joined_at: string;
   last_active_at: string;
   retired_at: string | null;
+  archetype: string;
+  goal_type: string;
 }
 
 export function getPlayerRow(ctx: AppContext, id: string): PlayerRow {
@@ -47,6 +53,7 @@ export function requireActivePlayer(ctx: AppContext, worldId: string): PlayerRow
 }
 
 export function toPlayer(ctx: AppContext, row: PlayerRow): PlayerDto {
+  const role = ensureRole(ctx, row);
   const character = getCharacterRow(ctx, row.character_id);
   const world = get<{ name: string; hue: number }>(ctx.db, 'SELECT name, hue FROM worlds WHERE id = ?', row.world_id);
   const pending =
@@ -72,6 +79,11 @@ export function toPlayer(ctx: AppContext, row: PlayerRow): PlayerDto {
     lastActiveAt: row.last_active_at,
     retiredAt: row.retired_at,
     pendingDecisions: pending,
+    level: levelInfo(row.xp),
+    archetype: role.archetype,
+    goalType: role.goalType,
+    skills: skillLevels(ctx, row.id),
+    skillPoints: skillPoints(ctx, row),
   };
 }
 
@@ -124,8 +136,10 @@ const joinSchema = z.object({
       goals: z.array(z.string().trim().min(1).max(LIMITS.characterRule)).max(LIMITS.playerGoals).default([]),
       avatarHue: z.number().int().min(0).max(359).default(200),
       avatarGlyph: z.enum(AVATAR_GLYPHS).default('initials'),
+      isRealPersonSim: z.boolean().default(false),
     })
     .optional(),
+  goalType: z.enum(GOAL_TYPES).optional(),
   confirmSwitch: z.boolean().optional(),
 });
 
@@ -204,7 +218,7 @@ export function joinWorld(ctx: AppContext, worldId: string, raw: unknown): { pla
           goals: ch.goals.map(cleanText).filter(Boolean),
           avatarHue: ch.avatarHue,
           avatarGlyph: ch.avatarGlyph,
-          isRealPersonSim: false,
+          isRealPersonSim: Boolean(ch.isRealPersonSim),
         },
         { strictHandle: false, isPlayer: true },
       );
@@ -214,14 +228,15 @@ export function joinWorld(ctx: AppContext, worldId: string, raw: unknown): { pla
     if (reactivate) {
       id = reactivate.id;
       run(ctx.db, 'UPDATE players SET is_active = 1, retired_at = NULL, last_active_at = ? WHERE id = ?', now, id);
+      if (input.goalType) run(ctx.db, 'UPDATE players SET goal_type = ? WHERE id = ?', input.goalType, id);
     } else {
       id = newId('pl');
       const c = getCharacterRow(ctx, characterId);
       const famous = input.mode === 'existing' && Boolean(c.prominent);
       run(
         ctx.db,
-        `INSERT INTO players (id, world_id, character_id, mode, is_active, reputation, influence, followers, xp, joined_at, last_active_at)
-         VALUES (?, ?, ?, ?, 1, ?, ?, ?, 0, ?, ?)`,
+        `INSERT INTO players (id, world_id, character_id, mode, is_active, reputation, influence, followers, xp, joined_at, last_active_at, goal_type)
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?, 0, ?, ?, ?)`,
         id,
         worldId,
         characterId,
@@ -231,11 +246,13 @@ export function joinWorld(ctx: AppContext, worldId: string, raw: unknown): { pla
         famous ? 12000 : input.mode === 'existing' ? 900 : 25,
         now,
         now,
+        input.goalType ?? '',
       );
     }
     run(ctx.db, 'UPDATE user_profile SET active_world_id = ? WHERE id = 1', worldId);
     arrivalEvent(ctx, worldId, characterId, lang, Boolean(existingActive));
     if (!reactivate) createIntroDecision(ctx, worldId, id);
+    refreshQuests(ctx, id);
     notify(ctx, 'joinedWorld', { world: get<{ name: string }>(ctx.db, 'SELECT name FROM worlds WHERE id = ?', worldId)!.name }, '/feed', worldId);
     return id;
   });

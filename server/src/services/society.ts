@@ -1,13 +1,15 @@
 import { z } from 'zod';
 import { LIMITS, RELATIONSHIP_KINDS, type RelationshipKind } from '../../../shared/constants';
 import { clampAffinity, relationshipStatus } from '../../../shared/relationships';
-import type { GroupDto, RelationshipDto, StorylineDto } from '../../../shared/types';
+import type { ArcEndingDto, GroupDto, RelationshipDto, StorylineDto } from '../../../shared/types';
+import { buildEndings } from '../content/arcEndings';
 import type { AppContext } from '../context';
 import { all, get, parseJson, run, tx } from '../db/database';
 import { badRequest, conflict, notFound } from '../lib/errors';
 import { newId } from '../lib/ids';
 import { cleanText } from '../lib/text';
 import { toCharacterRef } from './mappers';
+import { getLanguage } from './settings';
 
 interface RelationshipRow {
   id: string;
@@ -266,6 +268,9 @@ interface StorylineRow {
   theme: string;
   status: 'active' | 'resolved';
   updated_at: string;
+  endings: string;
+  ending_id: string | null;
+  path_scores: string;
 }
 
 export function toStoryline(r: StorylineRow): StorylineDto {
@@ -278,6 +283,8 @@ export function toStoryline(r: StorylineRow): StorylineDto {
     stage: r.stage,
     status: r.status,
     updatedAt: r.updated_at,
+    endings: parseJson<ArcEndingDto[]>(r.endings, []),
+    endingId: r.ending_id,
   };
 }
 
@@ -304,14 +311,22 @@ export function createStoryline(ctx: AppContext, worldId: string, input: unknown
   const now = ctx.now().toISOString();
   run(
     ctx.db,
-    `INSERT INTO storylines (id, world_id, title, summary, stages, stage, theme, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, 'active', ?, ?)`,
+    `INSERT INTO storylines (id, world_id, title, summary, stages, stage, theme, status, endings, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?, 'active', ?, ?, ?)`,
     id,
     worldId,
     cleanText(parsed.data.title),
     cleanText(parsed.data.summary),
     JSON.stringify(parsed.data.stages.map(cleanText)),
     parsed.data.theme,
+    JSON.stringify(
+      buildEndings(
+        id,
+        cleanText(parsed.data.title),
+        get<{ name: string }>(ctx.db, 'SELECT name FROM worlds WHERE id = ?', worldId)!.name,
+        getLanguage(ctx.db),
+      ),
+    ),
     now,
     now,
   );

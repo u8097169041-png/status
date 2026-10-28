@@ -1,7 +1,8 @@
-import { CheckCircle2, Circle, Gift, Hourglass, Scale } from 'lucide-react';
-import { useState } from 'react';
-import type { DecisionDto, WorldQuestProgressDto } from '../../../shared/types';
-import { useChooseOption, useClaimWorldQuest, useDecisions, useProgress, useWorldActions, useWorldQuests } from '../api/hooks';
+import { CheckCircle2, Circle, Crown, Gift, Hourglass, Lock, Scale, Sparkles } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { ArcPath, DecisionDto, WorldQuestProgressDto } from '../../../shared/types';
+import { useChooseOption, useClaimWorldQuest, useDecisions, useProgress, useQuestBoard, useWorldActions, useWorldQuests } from '../api/hooks';
+import { LevelCard, QuestCard } from '../components/play/QuestUI';
 import { EffectChips, NotJoinedState, PlayerStatusBar, useActivePlay } from '../components/play/PlayUI';
 import { QuestItem } from '../components/progress/QuestItem';
 import { useErrorToast, useProgressFeedback } from '../components/progress/useProgressFeedback';
@@ -10,7 +11,13 @@ import { ConfirmDialog } from '../components/ui/Modal';
 import { RelativeTime } from '../components/ui/RelativeTime';
 import { EmptyState, ErrorState, SkeletonList } from '../components/ui/States';
 import { useToast } from '../components/ui/Toast';
-import { useI18n } from '../i18n';
+import { useI18n, type TKey } from '../i18n';
+
+const ARC_PATH_LABEL: Record<ArcPath, TKey> = {
+  bold: 'tasks.arcBold',
+  diplomatic: 'tasks.arcDiplomatic',
+  neutral: 'tasks.arcNeutral',
+};
 
 function DecisionCard({ decision }: { decision: DecisionDto }) {
   const { t } = useI18n();
@@ -40,12 +47,28 @@ function DecisionCard({ decision }: { decision: DecisionDto }) {
       <p className="small">{decision.description}</p>
       <ul className="decision-options">
         {decision.options.map((o) => (
-          <li key={o.id} className="decision-option">
+          <li key={o.id} className={`decision-option ${o.locked ? 'locked' : ''} ${o.requires ? 'skill-option' : ''}`}>
             <div className="grow min-w-0 stack-xs">
-              <strong className="small">{o.label}</strong>
+              <strong className="small row wrap">
+                {o.label}
+                {o.requires && (
+                  <span className={`badge ${o.locked ? '' : 'badge-player'}`}>
+                    {o.locked ? <Lock aria-hidden /> : <Sparkles aria-hidden />}
+                    {t('tasks.lockedOption', { skill: t(`skills.${o.requires.skill}` as TKey), level: o.requires.level })}
+                  </span>
+                )}
+                {o.arcPath && <span className={`badge arc-path path-${o.arcPath}`}>{t(ARC_PATH_LABEL[o.arcPath])}</span>}
+              </strong>
               <EffectChips effects={o.effects} />
+              {o.outcomePreview && <span className="xsmall muted">{t('tasks.preview', { text: o.outcomePreview })}</span>}
             </div>
-            <button type="button" className="btn btn-secondary btn-sm" disabled={choose.isPending} onClick={() => setConfirm({ id: o.id, label: o.label })}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={choose.isPending || o.locked}
+              onClick={() => setConfirm({ id: o.id, label: o.label })}
+            >
+              {o.locked ? <Lock aria-hidden /> : null}
               {t('tasks.choose')}
             </button>
           </li>
@@ -141,6 +164,17 @@ export function TasksPage() {
   const resolved = useDecisions(worldId, 'resolved');
   const quests = useWorldQuests(worldId);
   const progress = useProgress();
+  const board = useQuestBoard(worldId);
+  const feedbackBoard = useProgressFeedback();
+  // Beim Laden abgeschlossene Quests (z. B. durch die Simulation) einmal anzeigen.
+  const shownProgress = useRef<unknown>(null);
+  useEffect(() => {
+    if (board.data && shownProgress.current !== board.data.progress) {
+      shownProgress.current = board.data.progress;
+      feedbackBoard(board.data.progress);
+    }
+  }, [board.data, feedbackBoard]);
+  const mediaLevel = board.data?.player.skills.media ?? 0;
   const { simulate } = useWorldActions(worldId ?? '');
   const feedback = useProgressFeedback();
   const showError = useErrorToast();
@@ -180,9 +214,24 @@ export function TasksPage() {
           {simulate.isPending ? <span className="spinner" aria-hidden /> : <Hourglass aria-hidden />} {t('tasks.advanceTime')}
         </button>
       </header>
+      {board.data && <LevelCard player={board.data.player} />}
       <PlayerStatusBar player={player} coins={boot.coins} />
       <div className="with-rail">
         <div className="stack">
+          <section className="section" aria-labelledby="tasks-main">
+            <div className="section-header">
+              <h2 id="tasks-main">{t('questBoard.main')}</h2>
+            </div>
+            {board.isPending && <SkeletonList count={1} height={200} />}
+            {board.isError && <ErrorState error={board.error} onRetry={() => void board.refetch()} />}
+            {board.data &&
+              (board.data.main ? (
+                <QuestCard quest={board.data.main} highlight mediaLevel={mediaLevel} />
+              ) : (
+                <EmptyState icon={Crown} title={t('questBoard.mainDone')} />
+              ))}
+          </section>
+
           <section className="section" aria-labelledby="tasks-decisions">
             <div className="section-header">
               <h2 id="tasks-decisions">{t('tasks.decisions')}</h2>
@@ -195,6 +244,48 @@ export function TasksPage() {
                 <DecisionCard key={d.id} decision={d} />
               ))}
             </div>
+          </section>
+
+          <section className="section" aria-labelledby="tasks-side">
+            <div className="section-header">
+              <h2 id="tasks-side">{t('questBoard.side')}</h2>
+            </div>
+            {board.data && board.data.side.length === 0 && <p className="small muted">{t('questBoard.sideEmpty')}</p>}
+            <div className="quest-grid">
+              {board.data?.side.map((q) => (
+                <QuestCard key={q.id} quest={q} mediaLevel={mediaLevel} />
+              ))}
+            </div>
+          </section>
+
+          <section className="section" aria-labelledby="tasks-events">
+            <div className="section-header">
+              <h2 id="tasks-events">{t('questBoard.events')}</h2>
+            </div>
+            {board.data && board.data.events.length === 0 && <p className="small muted">{t('questBoard.eventsEmpty')}</p>}
+            {board.data?.events.map((q) => (
+              <QuestCard key={q.id} quest={q} mediaLevel={mediaLevel} />
+            ))}
+            {board.data && board.data.events.length > 0 && <p className="xsmall faint">{t('questBoard.reactHint')}</p>}
+          </section>
+
+          <section className="section" aria-labelledby="tasks-completed">
+            <div className="section-header">
+              <h2 id="tasks-completed">{t('questBoard.completed')}</h2>
+            </div>
+            {board.data && board.data.completed.length === 0 && <p className="small muted">{t('questBoard.completedEmpty')}</p>}
+            <ul className="completed-quests">
+              {board.data?.completed.map((q) => (
+                <li key={q.id} className="card card-tight row">
+                  <CheckCircle2 aria-hidden className="icon-sm success-text" />
+                  <span className="grow min-w-0">
+                    <strong className="small block truncate">{q.title}</strong>
+                    <span className="xsmall muted">{q.kind === 'main' ? t('questBoard.main') : q.kind === 'event' ? t('questBoard.events') : t('questBoard.side')}</span>
+                  </span>
+                  <span className="badge">+{q.xp} XP</span>
+                </li>
+              ))}
+            </ul>
           </section>
 
           <section className="section" aria-labelledby="tasks-history">
@@ -224,7 +315,7 @@ export function TasksPage() {
         <aside className="rail rail-visible-mobile">
           <section className="card">
             <div className="card-title">
-              <h2>{t('tasks.worldQuests')}</h2>
+              <h2>{t('questBoard.worldMilestones')}</h2>
             </div>
             <p className="xsmall muted">{t('tasks.worldQuestsHint')}</p>
             {quests.isError && <ErrorState error={quests.error} onRetry={() => void quests.refetch()} />}

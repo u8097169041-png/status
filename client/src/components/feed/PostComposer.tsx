@@ -16,6 +16,7 @@ export function PostComposer({ worldId }: { worldId: string }) {
   const showError = useErrorToast();
   const { push } = useToast();
   const [content, setContent] = useState('');
+  const [statement, setStatement] = useState(false);
   const id = useId();
   const me = boot?.activePlayer?.worldId === worldId ? boot.activePlayer : null;
   const worldName = me?.worldName;
@@ -24,11 +25,12 @@ export function PostComposer({ worldId }: { worldId: string }) {
   const submit = () => {
     if (!content.trim() || tooLong) return;
     create.mutate(
-      { content, worldId },
+      { content, worldId, statement: statement || undefined },
       {
         onSuccess: (r) => {
           setContent('');
-          push('success', t('composer.posted'), t('composer.hint'));
+          setStatement(false);
+          push('success', t('composer.posted'), `${t('composer.reach', { followers: r.reach.followers })} · ${t('composer.hint')}`);
           feedback(r.progress);
         },
         onError: showError,
@@ -64,7 +66,15 @@ export function PostComposer({ worldId }: { worldId: string }) {
           }}
         />
         <div className="composer-footer">
-          <span className="xsmall muted truncate">{me ? t('play.postingAs', { name: me.character.name }) : ''}</span>
+          <span className="row wrap composer-meta">
+            <span className="xsmall muted truncate">{me ? t('play.postingAs', { name: me.character.name }) : ''}</span>
+            {me && me.skills.media >= 2 && (
+              <label className="statement-toggle xsmall" title={t('composer.statementHint')}>
+                <input type="checkbox" checked={statement} onChange={(e) => setStatement(e.target.checked)} />
+                {t('composer.statement')}
+              </label>
+            )}
+          </span>
           <div className="row">
             {content.length > 0 && (
               <span className={`char-count ${tooLong ? 'over' : ''}`}>

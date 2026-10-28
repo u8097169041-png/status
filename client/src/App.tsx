@@ -27,6 +27,7 @@ import { ProgressPage } from './pages/ProgressPage';
 import { SearchPage } from './pages/SearchPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ShopPage } from './pages/ShopPage';
+import { SkillsPage } from './pages/SkillsPage';
 import { TasksPage } from './pages/TasksPage';
 import { WorldCreatePage, WorldEditPage } from './pages/WorldCreatePage';
 import { WorldPage } from './pages/WorldPage';
@@ -101,6 +102,7 @@ export function App() {
                 <Route path="/activity" element={<ActivityPage />} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/shop" element={<ShopPage />} />
+                <Route path="/skills" element={<SkillsPage />} />
                 <Route path="/world-settings" element={<WorldSettingsPage />} />
                 <Route path="/posts/:id" element={<PostPage />} />
                 <Route path="/worlds" element={<WorldsPage />} />

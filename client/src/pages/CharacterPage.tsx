@@ -3,7 +3,7 @@ import { VerifiedBadge } from '../components/play/PlayUI';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../api/client';
-import { useCharacter, useCharacterMutations } from '../api/hooks';
+import { useBootstrap, useCharacter, useCharacterMutations } from '../api/hooks';
 import { FeedList } from '../components/feed/FeedList';
 import { useErrorToast, useProgressFeedback } from '../components/progress/useProgressFeedback';
 import { Avatar, hueGradient } from '../components/ui/Avatar';
@@ -20,6 +20,7 @@ type Tab = 'posts' | 'about' | 'relations' | 'interactions';
 export function CharacterPage() {
   const { id = '' } = useParams();
   const { t, td } = useI18n();
+  const { data: boot } = useBootstrap();
   const navigate = useNavigate();
   const query = useCharacter(id, true);
   const { remove } = useCharacterMutations();
@@ -58,6 +59,8 @@ export function CharacterPage() {
   const c = query.data.character;
   // Eigene Spielfiguren und aktuell gespielte Figuren: kein Chat mit sich selbst, kein erneutes Übernehmen.
   const controlled = c.isPlayer || c.playedByYou;
+  // Beiträge einer Welt gibt es erst nach dem Beitritt.
+  const joinedWorld = Boolean(c.worldId && boot?.joinedWorlds.some((j) => j.world.id === c.worldId));
   return (
     <div className="page page-narrow">
       <Link to="/characters" className="back-link">
@@ -137,7 +140,12 @@ export function CharacterPage() {
         ]}
       />
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="stack tab-panel">
-        {tab === 'posts' && <FeedList filters={{ character: c.id }} emptyText={t('characters.postsEmpty')} />}
+        {tab === 'posts' && (
+          <FeedList
+            filters={{ character: c.id }}
+            emptyText={c.worldId && !joinedWorld ? t('play.previewHint', { world: c.worldName ?? '' }) : t('characters.postsEmpty')}
+          />
+        )}
         {tab === 'about' && (
           <div className="stack">
             {c.description && (

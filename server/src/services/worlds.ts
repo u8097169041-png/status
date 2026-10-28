@@ -1,12 +1,17 @@
 import { z } from 'zod';
 import { ART_STYLES, GENRES, LIMITS, categoryOfGenre, type ArtStyle, type Genre } from '../../../shared/constants';
-import type { ProgressDelta, WorldDetail, WorldEventDto, WorldInput, WorldSummary } from '../../../shared/types';
+import type { CharacterRef, ProgressDelta, WorldDetail, WorldEventDto, WorldInput, WorldSummary } from '../../../shared/types';
 import type { AppContext } from '../context';
 import { all, get, parseJson, run, tx } from '../db/database';
 import { badRequest, forbidden, notFound } from '../lib/errors';
 import { newId } from '../lib/ids';
 import { cleanText } from '../lib/text';
+import { forecastEnding } from './arcs';
 import { listCharacters } from './characters';
+import { toCharacterRef } from './mappers';
+import { getActivePlayerRow } from './players';
+import { getLanguage } from './settings';
+import { skillLevel } from './skills';
 import { emptyDelta, recordAction, recordWorldVisit } from './progress';
 import { groupsForWorld, relationshipsForWorld, storylinesForWorld } from './society';
 
@@ -44,7 +49,16 @@ const WORLD_SELECT = `
     EXISTS (SELECT 1 FROM players pl WHERE pl.world_id = w.id AND pl.is_active = 1) AS joined
   FROM worlds w`;
 
-function toSummary(r: WorldRow): WorldSummary {
+function castOf(ctx: AppContext, worldId: string): CharacterRef[] {
+  return all<{ id: string; name: string; avatar_hue: number; avatar_glyph: string }>(
+    ctx.db,
+    `SELECT id, name, avatar_hue, avatar_glyph FROM characters WHERE world_id = ? AND is_player = 0
+      ORDER BY prominent DESC, is_custom, name LIMIT 5`,
+    worldId,
+  ).map(toCharacterRef);
+}
+
+function toSummary(ctx: AppContext, r: WorldRow): WorldSummary {
   return {
     id: r.id,
     name: r.name,
@@ -61,11 +75,19 @@ function toSummary(r: WorldRow): WorldSummary {
     lastEventTitle: r.last_event_title,
     category: categoryOfGenre(r.genre),
     joined: Boolean(r.joined),
+    cast: castOf(ctx, r.id),
+    postsToday:
+      get<{ n: number }>(
+        ctx.db,
+        'SELECT COUNT(*) AS n FROM posts WHERE world_id = ? AND created_at >= ?',
+        r.id,
+        new Date(ctx.now().getTime() - 24 * 3600_000).toISOString(),
+      )?.n ?? 0,
   };
 }
 
 export function listWorlds(ctx: AppContext): WorldSummary[] {
-  return all<WorldRow>(ctx.db, `${WORLD_SELECT} ORDER BY w.is_custom DESC, last_event_at DESC, w.name`).map(toSummary);
+  return all<WorldRow>(ctx.db, `${WORLD_SELECT} ORDER BY w.is_custom DESC, last_event_at DESC, w.name`).map((r) => toSummary(ctx, r));
 }
 
 export function getWorldRow(ctx: AppContext, id: string): WorldRow {
@@ -75,7 +97,7 @@ export function getWorldRow(ctx: AppContext, id: string): WorldRow {
 }
 
 export function getWorldSummary(ctx: AppContext, id: string): WorldSummary {
-  return toSummary(getWorldRow(ctx, id));
+  return toSummary(ctx, getWorldRow(ctx, id));
 }
 
 interface EventRow {
@@ -135,10 +157,14 @@ export function getWorld(ctx: AppContext, id: string, opts: { recordVisit?: bool
 } {
   const row = getWorldRow(ctx, id);
   const progress = opts.recordVisit ? recordWorldVisit(ctx, id) : emptyDelta();
+  const player = getActivePlayerRow(ctx, id);
+  // Strategie 2: Prognose, auf welches Ende die Geschichten zusteuern.
+  const forecastFor = player && skillLevel(ctx, player.id, 'strategy') >= 2;
+  const lang = getLanguage(ctx.db);
   return {
     progress,
     world: {
-      ...toSummary(row),
+      ...toSummary(ctx, row),
       description: row.description,
       lore: row.lore,
       atmosphere: row.atmosphere,
@@ -147,8 +173,12 @@ export function getWorld(ctx: AppContext, id: string, opts: { recordVisit?: bool
       characters: listCharacters(ctx, { worldId: id }),
       relationships: relationshipsForWorld(ctx, id),
       groups: groupsForWorld(ctx, id),
-      storylines: storylinesForWorld(ctx, id).map(({ theme: _theme, ...s }) => s),
-      recentEvents: listEvents(ctx, id, 15),
+      storylines: storylinesForWorld(ctx, id).map(({ theme: _theme, ...s }) => ({
+        ...s,
+        forecastEndingId: forecastFor && s.status === 'active' ? forecastEnding(ctx, s.id, lang) : undefined,
+      })),
+      // Weltinterne Ereignisse erst nach dem Beitritt.
+      recentEvents: player ? listEvents(ctx, id, 15) : [],
     },
   };
 }

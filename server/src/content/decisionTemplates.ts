@@ -1,4 +1,6 @@
 import type { WorldMetric } from '../../../shared/constants';
+import type { SkillId } from '../../../shared/skills';
+import type { ArcPath } from '../../../shared/types';
 import type { L } from './seedWorlds';
 
 /**
@@ -19,6 +21,11 @@ export interface OptionTemplate {
   /** Bei Beitritt: Zuneigung zu bis zu zwei bekannten Figuren. */
   networkAffinity?: number;
   advanceStoryline?: boolean;
+  /** Nur wählbar mit dieser Fähigkeit (zusätzliche Lösungswege). */
+  requires?: { skill: SkillId; level: number };
+  /** Richtung, in die die Option einen Handlungsbogen lenkt, und Gewicht dieser Stimme. */
+  arcPath?: ArcPath;
+  arcWeight?: number;
 }
 
 export interface DecisionTemplate {
@@ -71,6 +78,18 @@ export const INTRO_DECISION: DecisionTemplate = {
       networkAffinity: 10,
       metrics: { harmony: 3 },
     },
+    {
+      id: 'charm',
+      label: { de: 'Mit Charme den Raum erobern', en: 'Win the room with charm' },
+      outcome: {
+        de: '{player} gewinnt mit Witz und Wärme sofort Sympathien – bei Bekannten wie bei Fremden.',
+        en: '{player} wins sympathy right away with wit and warmth – from acquaintances and strangers alike.',
+      },
+      reputation: 6,
+      followers: 60,
+      networkAffinity: 15,
+      requires: { skill: 'charisma', level: 1 },
+    },
   ],
 };
 
@@ -109,6 +128,29 @@ export const DECISION_TEMPLATES: DecisionTemplate[] = [
         outcome: { de: '{player} lehnt ab. {npc} ist enttäuscht.', en: '{player} declines. {npc} is disappointed.' },
         influence: 2,
         affinity: [{ target: 'npc', delta: -10 }],
+      },
+      {
+        id: 'charm-help',
+        label: { de: 'Mit Charme Unterstützer mobilisieren', en: 'Rally supporters with charm' },
+        outcome: {
+          de: '{player} überzeugt andere, gemeinsam mit anzupacken. {npc} ist begeistert – und {player} hat kaum Aufwand.',
+          en: '{player} convinces others to pitch in together. {npc} is delighted – and it costs {player} little.',
+        },
+        reputation: 6,
+        affinity: [{ target: 'npc', delta: 14 }],
+        metrics: { harmony: 4 },
+        requires: { skill: 'charisma', level: 1 },
+      },
+      {
+        id: 'fair-deal',
+        label: { de: 'Fairen Deal aushandeln', en: 'Negotiate a fair deal' },
+        outcome: {
+          de: '{player} handelt eine Vereinbarung aus, von der beide profitieren. {npc} fühlt sich ernst genommen.',
+          en: '{player} negotiates an agreement that benefits both. {npc} feels taken seriously.',
+        },
+        influence: 5,
+        affinity: [{ target: 'npc', delta: 6 }],
+        requires: { skill: 'negotiation', level: 1 },
       },
     ],
   },
@@ -157,6 +199,34 @@ export const DECISION_TEMPLATES: DecisionTemplate[] = [
         metrics: { tension: -6, harmony: 4 },
         reputation: 4,
       },
+      {
+        id: 'compromise',
+        label: { de: 'Einen Kompromiss aushandeln', en: 'Broker a compromise' },
+        outcome: {
+          de: '{player} verhandelt eine Lösung, die beide Seiten unterschreiben. {a} und {b} reden wieder miteinander.',
+          en: '{player} negotiates a solution both sides sign. {a} and {b} are talking again.',
+        },
+        affinity: [
+          { target: 'a', delta: 10 },
+          { target: 'b', delta: 10 },
+        ],
+        metrics: { tension: -9, harmony: 5 },
+        reputation: 6,
+        influence: 2,
+        requires: { skill: 'negotiation', level: 1 },
+      },
+      {
+        id: 'public-statement',
+        label: { de: 'Mit einem klugen Statement die Debatte drehen', en: 'Turn the debate with a smart statement' },
+        outcome: {
+          de: '{player} findet die richtigen Worte für die Öffentlichkeit. Die Aufmerksamkeit liegt plötzlich bei {player}.',
+          en: '{player} finds the right words for the public. Suddenly all attention is on {player}.',
+        },
+        followers: 150,
+        influence: 4,
+        metrics: { tension: -3 },
+        requires: { skill: 'media', level: 2 },
+      },
     ],
   },
   {
@@ -178,6 +248,7 @@ export const DECISION_TEMPLATES: DecisionTemplate[] = [
         influence: 5,
         metrics: { tension: 3 },
         advanceStoryline: true,
+        arcPath: 'bold',
       },
       {
         id: 'support',
@@ -188,6 +259,7 @@ export const DECISION_TEMPLATES: DecisionTemplate[] = [
         },
         reputation: 5,
         metrics: { harmony: 3 },
+        arcPath: 'diplomatic',
       },
       {
         id: 'stay-out',
@@ -197,6 +269,34 @@ export const DECISION_TEMPLATES: DecisionTemplate[] = [
           en: '{player} watches the developments from a safe distance.',
         },
         metrics: { discovery: 2 },
+        arcPath: 'neutral',
+      },
+      {
+        id: 'prepared',
+        label: { de: 'Vorbereitet eingreifen', en: 'Step in prepared' },
+        outcome: {
+          de: '{player} hat die Lage analysiert und greift im richtigen Moment ein – ohne Chaos zu stiften.',
+          en: '{player} has analysed the situation and steps in at the right moment – without causing chaos.',
+        },
+        influence: 7,
+        reputation: 2,
+        advanceStoryline: true,
+        arcPath: 'bold',
+        requires: { skill: 'strategy', level: 1 },
+      },
+      {
+        id: 'broker',
+        label: { de: 'Alle Seiten an einen Tisch holen', en: 'Bring all sides to the table' },
+        outcome: {
+          de: '{player} vermittelt zwischen allen Beteiligten. „{storyline}“ steuert auf eine Einigung zu.',
+          en: '{player} mediates between everyone involved. "{storyline}" is heading for an agreement.',
+        },
+        reputation: 6,
+        metrics: { harmony: 4, tension: -4 },
+        advanceStoryline: true,
+        arcPath: 'diplomatic',
+        arcWeight: 2,
+        requires: { skill: 'negotiation', level: 2 },
       },
     ],
   },
@@ -225,6 +325,28 @@ export const DECISION_TEMPLATES: DecisionTemplate[] = [
         label: { de: 'Bescheiden ablehnen', en: 'Modestly decline' },
         outcome: { de: '{player} lehnt dankend ab und gilt als bodenständig.', en: '{player} politely declines and is seen as down to earth.' },
         reputation: 3,
+      },
+      {
+        id: 'campaign',
+        label: { de: 'Eine Medienkampagne daraus machen', en: 'Turn it into a media campaign' },
+        outcome: {
+          de: '{player} plant den Auftritt crossmedial. Ausschnitte gehen viral, die Reichweite explodiert.',
+          en: '{player} plans the appearance across channels. Clips go viral and reach explodes.',
+        },
+        followers: 220,
+        influence: 4,
+        requires: { skill: 'media', level: 1 },
+      },
+      {
+        id: 'timing',
+        label: { de: 'Den perfekten Zeitpunkt abwarten', en: 'Wait for the perfect moment' },
+        outcome: {
+          de: '{player} wartet geduldig und tritt genau dann auf, als alle hinsehen. Der Einfluss wächst spürbar.',
+          en: '{player} waits patiently and appears exactly when everyone is watching. Influence grows noticeably.',
+        },
+        influence: 9,
+        reputation: 2,
+        requires: { skill: 'strategy', level: 1 },
       },
     ],
   },

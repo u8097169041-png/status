@@ -18,6 +18,8 @@ import { AppError, notFound } from '../lib/errors';
 import { dayKey } from '../lib/time';
 import { COIN_REWARDS } from '../../../shared/economy';
 import { notify } from './notifications';
+import { evaluateQuests } from './quests';
+import { playerLevel } from './skills';
 import { grantCoins } from './wallet';
 
 export function emptyDelta(): ProgressDelta {
@@ -25,11 +27,14 @@ export function emptyDelta(): ProgressDelta {
 }
 
 export function mergeDelta(a: ProgressDelta, b: ProgressDelta): ProgressDelta {
+  const quests = [...(a.questsCompleted ?? []), ...(b.questsCompleted ?? [])];
   return {
     xpGained: a.xpGained + b.xpGained,
     coinsGained: (a.coinsGained ?? 0) + (b.coinsGained ?? 0),
     levelUp: b.levelUp ?? a.levelUp,
     achievementsUnlocked: [...a.achievementsUnlocked, ...b.achievementsUnlocked],
+    playerLevelUp: b.playerLevelUp ?? a.playerLevelUp ?? null,
+    questsCompleted: quests.length ? quests : undefined,
   };
 }
 
@@ -66,6 +71,7 @@ export function recordAction(ctx: AppContext, action: XpAction, ref: string, pla
     const now = ctx.now();
     const day = dayKey(now);
     const levelBefore = levelForXp(currentXp(ctx));
+    const playerBefore = playerId ? playerLevel(ctx, playerId) : 0;
     run(
       ctx.db,
       `INSERT OR IGNORE INTO activity_log (action, ref, day, created_at) VALUES (?, ?, ?, ?)`,
@@ -81,7 +87,17 @@ export function recordAction(ctx: AppContext, action: XpAction, ref: string, pla
         get<{ n: number }>(ctx.db, `SELECT COUNT(*) AS n FROM xp_events WHERE day = ? AND action = ?`, day, action)?.n ?? 0;
       if (awardedToday < rule.dailyCap) gained = grantXp(ctx, `${action}:${ref}`, action, rule.xp, playerId);
     }
-    return finalizeDelta(ctx, levelBefore, gained);
+    let delta = finalizeDelta(ctx, levelBefore, gained);
+    if (playerId) {
+      // Jede Aktion der Spielfigur kann Quests voranbringen oder abschließen.
+      delta = mergeDelta(delta, evaluateQuests(ctx, playerId));
+      const playerAfter = playerLevel(ctx, playerId);
+      if (playerAfter > playerBefore && !delta.playerLevelUp) {
+        delta.playerLevelUp = playerAfter;
+        notify(ctx, 'playerLevelUp', { level: playerAfter }, '/skills');
+      }
+    }
+    return delta;
   });
 }
 

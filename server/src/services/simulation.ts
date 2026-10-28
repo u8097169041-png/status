@@ -36,6 +36,9 @@ import { checkAchievements, emptyDelta, recordAction } from './progress';
 import { getLanguage, getSettings } from './settings';
 import { adjustAffinity, toStoryline } from './society';
 import { insertCharacterStory } from './stories';
+import { buildEndings } from '../content/arcEndings';
+import { resolveArc } from './arcs';
+import { refreshWorldQuests } from './quests';
 import { cardUnlocked } from './wallet';
 import { getWorldRow, getWorldSummary, toEvent } from './worlds';
 
@@ -251,6 +254,7 @@ function progressStorylines(
     }
     if (resolved) {
       resolvedCount++;
+      resolveArc(ctx, s.id, state.lang);
       notify(ctx, 'storylineResolved', { title: s.title, world: state.world.name }, `/worlds/${state.world.id}`, state.world.id);
     }
   }
@@ -268,14 +272,15 @@ function progressStorylines(
     const id = newId('s');
     run(
       ctx.db,
-      `INSERT INTO storylines (id, world_id, title, summary, stages, stage, theme, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, 'active', ?, ?)`,
+      `INSERT INTO storylines (id, world_id, title, summary, stages, stage, theme, status, endings, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?, 'active', ?, ?, ?)`,
       id,
       state.world.id,
       title,
       fill(t(template.summary), { world: state.world.name }),
       JSON.stringify(template.stages.map(t)),
       template.theme,
+      JSON.stringify(buildEndings(id, title, state.world.name, state.lang)),
       now,
       now,
     );
@@ -539,6 +544,8 @@ export async function simulateWorld(
       const created = advanced.length > 0 && createStorylineDecision(ctx, worldId, advanced[0]);
       if (!created) maybeCreateDecision(ctx, worldId, rng);
     });
+    // Neue Ereignisse können Ereignisquests auslösen; Veränderungen können Quests abschließen.
+    refreshWorldQuests(ctx, worldId);
 
     const progress =
       trigger === 'manual' ? recordAction(ctx, 'simulate', `${worldId}:${state.world.tick_count + 1}`) : emptyDelta();
@@ -661,6 +668,7 @@ export async function triggerEvent(
       return commit(ctx, state, events, posts, 'user', 0);
     });
 
+    refreshWorldQuests(ctx, worldId);
     const progress = recordAction(ctx, 'triggerEvent', events[0].id);
     progress.achievementsUnlocked.push(...checkAchievements(ctx).filter((id) => !progress.achievementsUnlocked.includes(id)));
     const saved = all<Parameters<typeof toEvent>[0]>(

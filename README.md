@@ -1,12 +1,12 @@
 # SocialVerse
 
 **SocialVerse** ist eine lokal laufende, interaktive KI-Weltsimulation im Stil eines sozialen Netzwerks.
-Du trittst einer Welt bei – Politik, Promis, Wirtschaft, Sport, Unterhaltung, alternative Szenarien oder Fiktion –
+Du trittst einer Welt bei – Promis, Politik, Internet, Fantasy, Wirtschaft, Sport, Unterhaltung, alternative Szenarien oder Fiktion –
 und spielst dort eine **eigene Figur** oder übernimmst eine **bekannte Figur** dieser Welt. Du postest, chattest,
 triffst Entscheidungen und beeinflusst damit Beziehungen, Ansehen und den Verlauf der Geschichten. Die Figuren
 handeln auch selbstständig weiter – im kostenlosen Demo-Modus komplett ohne KI-Anbieter.
 
-![Entdecken: Welten, bekannte Figuren und Szenarien](docs/screenshots/discover.jpg)
+![Startseite: Weltauswahl mit Kategorien, beliebten Welten und Handlungsbögen](docs/screenshots/discover.jpg)
 
 > **Hinweis:** SocialVerse ist eine lokale Einzelplatz-Anwendung. Es gibt keine Benutzerkonten, keine
 > Online-Infrastruktur und keine Zahlungsfunktionen. Die App ist nicht dafür gedacht, im Internet betrieben zu werden.
@@ -38,15 +38,17 @@ Technische Details zu Aufbau, Datenmodell, Simulation und Erinnerungsstrategie s
 
 | Bereich | Was du tun kannst |
 | --- | --- |
-| **Entdecken** | Weltvorschauen nach Kategorien, „Deine Welten“ zum Weiterspielen, bekannte Figuren, Szenarien (laufende Geschichten), neueste Ereignisse, Tagesquests – bewusst **ohne** Stories |
-| **Beitritt** | Eigene Figur (Name, Beruf/Rolle, Hintergrund, Persönlichkeit, Ziele, Avatar) oder bekannte Figur der Welt übernehmen; kontrollierter Figurenwechsel mit Bestätigung, ohne Datenverlust |
+| **Startseite / Weltauswahl** | Dunkles, mobil optimiertes Layout: Kopfzeile mit Logo, Rollen- und Weltwechsler, Mitteilungen und Einstellungen; Kategorien (Promis, Politik, Internet, Fantasy, … und „Eigene Welten“); horizontal scrollbare Weltkarten mit Titelbild, Kategorie, Beschreibung, Figuren und (simulierter) Aktivität; „Deine Welten“, beliebte Welten, interaktive Handlungsbögen mit möglichen Enden, eigene Welt erstellen, bekannte Figuren. Vor dem Beitritt gibt es **nur** Entdeckung – keine Stories, Beiträge, Quests oder Ereignisse |
+| **Beitritt** | Eigene Figur (Name, Beruf/Rolle, Hintergrund, Persönlichkeit, Ziele, **Hauptziel**, Avatar) oder bekannte Figur der Welt übernehmen; optional als klar gekennzeichnete Simulation einer realen öffentlichen Person; kontrollierter Figurenwechsel mit Bestätigung, ohne Datenverlust |
+| **Quests** | Hauptquest (3 Stufen, passend zu Rolle und Hauptziel), Nebenquests (Beziehungen, Rivalitäten, Kooperationen, Handlungsbögen, Folgen deiner Entscheidungen) und zeitlich begrenzte Ereignis-Quests; Fortschritt, Ziele, alternative Lösungswege und Belohnungen sichtbar |
+| **Level & Fähigkeiten** | Charakterlevel je Spielfigur mit XP-Balken; Fähigkeitspunkte für Charisma, Medienkompetenz, Verhandlung und Strategie mit konkreten Spielwirkungen je Stufe |
 | **Feed** (Welt) | Statusleiste deiner Figur (Ansehen, Einfluss, Follower, Funken, offene Entscheidungen), Stories **nur dieser Welt**, Beiträge als deine Figur; Likes, Kommentare, Reposts, Lesezeichen; Filter nach Figur und Thema |
-| **Aufgaben** | Entscheidungen mit offen angezeigten Auswirkungen, Verlauf getroffener Entscheidungen, Weltaufgaben deiner Figur, Tagesquests und Meilensteine |
-| **Chats** (Welt) | Gespräche deiner Figur mit Figuren derselben Welt; eigene Verläufe und Erinnerung je Spielfigur; „Was wird gesendet?“ |
+| **Aufgaben** | Charakterlevel, hervorgehobene Hauptquest, Entscheidungen mit offen angezeigten Auswirkungen (inkl. fähigkeitsabhängiger Optionen und Weg zum Ende eines Handlungsbogens), Nebenquests, Ereignis-Quests, abgeschlossene Quests, Verlauf, Tagesquests und Meilensteine |
+| **Chats** (Welt) | Gespräche deiner Figur mit Figuren derselben Welt; Dialogoptionen (Smalltalk, Kompliment, persönliches Gespräch, Verhandeln, Kooperation, Fürsprache) mit Zuneigungsanzeige; eigene Verläufe und Erinnerung je Spielfigur; „Was wird gesendet?“ |
 | **Aktivität** | Mitteilungen, Weltgeschehen und deine Entscheidungen |
 | **Profil** | Deine aktive Figur mit Zielen und Werten, alle Spielfiguren mit Spielverlauf („Wieder spielen“), lokales Profil, Beiträge, Lesezeichen, Erfolge |
 | **Weitere Bereiche** | Charaktere, Suche, Shop (Rahmen, Banner, Premium-Ereigniskarten gegen Spielwährung – kein Echtgeld), Weltanpassung, Welten (Generator, Beziehungen, Gruppen, Storylines, Ereigniskarten), Fortschritt, Einstellungen, Datenschutz |
-| **Welten & Figuren** | 11 vorgefertigte, frei erfundene Welten (u. a. Regierungsviertel, Spotlight Boulevard, Unicorn Valley, FC Hafenstadt, Late Night Live, Analog 2026) mit 40 Figuren, Zielen, Beziehungen und Geschichten; eigene Welten und Figuren |
+| **Welten & Figuren** | 12 vorgefertigte, frei erfundene Welten (u. a. Regierungsviertel, Spotlight Boulevard, Trendwelle, Unicorn Valley, FC Hafenstadt, Late Night Live, Analog 2026) mit 44 Figuren, Zielen, Beziehungen und Geschichten mit je drei möglichen Enden; eigene Welten und Figuren |
 | **Einstellungen** | Sprache (Deutsch/Englisch), OpenRouter-Schlüssel, Modellwahl mit Fallbacks, Token-/Anfrage-/Kostenlimits, Verbindungstest, Verbrauchsprotokoll, Simulationssteuerung, Erinnerungsoptionen, Datenexport und vollständiges Löschen |
 
 **Lebendige Welten:** Solange SocialVerse läuft, vergeht in regelmäßigen Abständen in einer Welt nach der anderen
@@ -57,8 +59,8 @@ standardmäßig ausgeschaltet.
 
 ### So funktioniert das Spiel
 
-1. **Welt wählen:** Unter *Entdecken* siehst du Vorschauen. Feed, Stories und Chats einer Welt öffnen sich erst nach
-   dem Beitritt.
+1. **Welt wählen:** Auf der Startseite siehst du Vorschauen. Feed, Stories, Chats, Quests und Ereignisse einer Welt
+   öffnen sich erst nach dem Beitritt – und zeigen dann nur Inhalte dieser Welt.
 2. **Figur wählen:** eigene Figur erstellen oder eine Figur der Welt übernehmen. Pro Welt spielst du genau eine
    Figur; ein Wechsel pausiert die bisherige Figur – Beiträge, Chats, Entscheidungen und Werte bleiben gespeichert,
    und du kannst im Profil jederzeit zurückwechseln.
@@ -71,12 +73,42 @@ standardmäßig ausgeschaltet.
    Premium-Ereigniskarten ausgeben. Es gibt keine Echtgeld-Käufe.
 5. **Gespielte Figuren** handeln nicht autonom: Die Simulation lässt sie weder posten noch an Ereignissen teilnehmen –
    das übernimmst du.
+6. **Rolle und Ziel:** Aus Rolle bzw. Beruf und Weltkategorie ergibt sich ein Archetyp (z. B. Politik, Star, Gründung,
+   Creator, Presse). Er bestimmt, welche Fähigkeiten „zur Rolle passen“ (1 statt 2 Punkte pro Stufe). Das Hauptziel
+   (Reichweite, Unterstützung, Kooperationen, Beziehungen, Rivalitäten lösen, politischer Einfluss) bestimmt die
+   Hauptquest; bekannte Figuren bringen ein passendes Ziel mit.
+7. **Quests:** Beiträge, Kommentare, Stories, Chats, Dialogoptionen, Kooperationen, Reaktionen auf Ereignisse und
+   Entscheidungen bringen Quests voran. Gemessen wird aus den gespeicherten Daten seit Questbeginn; jede Quest wird
+   genau einmal abgeschlossen und belohnt (XP, Funken, Werte). Nebenquests entstehen aus der Lage der Welt:
+   Rivalitäten, angespannte Beziehungen, laufende Handlungsbögen, Folgen deiner Entscheidungen. Ereignis-Quests laufen
+   nach zwei Welttagen ab.
+8. **Level und Fähigkeiten:** Pro Charakterlevel und pro abgeschlossener Hauptquest-Stufe gibt es einen
+   Fähigkeitspunkt (je Welt und Figur getrennt). Stufe 2 und 3 einer Fähigkeit erfordern Charakterlevel 3 bzw. 5.
+
+   | Fähigkeit | Stufe 1 | Stufe 2 | Stufe 3 |
+   | --- | --- | --- | --- |
+   | **Charisma** | Dialogoption „Kompliment“ (+6 Zuneigung, täglich), Charme-Optionen in Entscheidungen; Chats/Kommentare stärken Beziehungen stärker (+1 je Stufe) | „Persönliches Gespräch“ (+8, verrät Ziele der Figur) | „Um Fürsprache bitten“ ab Zuneigung 40 (+100 Follower, +4 Ansehen); alternative Questwege |
+   | **Medienkompetenz** | +10 Follower pro Beitrag je Stufe und eine Reaktion mehr; „Öffentlich reagieren“ auf Ereignisse; Option „Medienkampagne“ | Beitrag als „Statement“ (einmal täglich, +3 Einfluss, mehr Reaktionen); Option „Klug Stellung beziehen“ | Stories bringen +20 Follower; alternativer Weg der Reichweiten-Hauptquest |
+   | **Verhandlung** | Dialogoption „Verhandeln“ bei angespannten Beziehungen; Optionen „Fairer Deal“ und „Kompromiss“ | Kooperationen ab Zuneigung 20 statt 50; Option „Alle Seiten an einen Tisch“ (zählt doppelt für ein diplomatisches Ende) | Stärkeres „Verhandeln“; alternativer Weg der Einfluss-Hauptquest |
+   | **Strategie** | Optionen „Vorbereitet eingreifen“ und „Den perfekten Zeitpunkt abwarten“ | Vorschau der Ergebnisse vor jeder Entscheidung; Prognose des Endes eines Handlungsbogens | Entscheidungen zählen doppelt für das Ende eines Handlungsbogens |
+
+9. **Handlungsbögen:** Jede Geschichte hat drei mögliche Enden (mutig, diplomatisch, neutral). Deine Entscheidungen
+   in dieser Geschichte verschieben das Ergebnis; am Ende entsteht ein Ereignis, und alle Beteiligten erhalten einmalig
+   eine Belohnung.
+10. **Reale öffentliche Personen:** Vorgefertigte Figuren sind frei erfunden. Eine Simulation einer realen
+    öffentlichen Person kannst du selbst anlegen; sie wird dauerhaft als „Fiktive KI-Simulation“ gekennzeichnet,
+    erfordert eine Bestätigung, soll sich nur auf öffentlich bekannte Informationen stützen und ist vor negativen
+    Ereignissen geschützt. Private Absichten werden nicht als Tatsachen dargestellt.
+11. **Simulierte Aktivität:** Angaben wie „Beiträge in 24 h“ oder Ereignisse stammen aus der lokalen Simulation und
+    sind keine Live-Daten.
 
 ![Feed einer Welt mit Statusleiste der Spielfigur und Stories dieser Welt](docs/screenshots/feed.jpg)
 
-![Aufgaben: Entscheidungen mit sichtbaren Auswirkungen und Weltaufgaben](docs/screenshots/aufgaben.jpg)
+![Aufgaben: Charakterlevel, Hauptquest und Entscheidungen mit fähigkeitsabhängigen Optionen](docs/screenshots/aufgaben.jpg)
 
-![Mobile Ansicht mit Weltwechsel, Funken und unterer Navigation](docs/screenshots/mobil.jpg)
+![Fähigkeiten mit konkreten Auswirkungen je Stufe](docs/screenshots/faehigkeiten.jpg)
+
+![Mobile Startseite mit Kategorien, Weltkarten und unterer Navigation](docs/screenshots/mobil.jpg)
 
 ---
 
@@ -262,8 +294,15 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   Ergänzen neuer Welten, Suche; außerdem XP/Level/Quests (inkl. Schutz vor Mehrfachbelohnung), Simulation und
   Ereigniskarten (inkl. Determinismus), Chats und Erinnerung, Demo-Antworten, KI-Anbindung mit simuliertem
   OpenRouter (Fallbacks, Limits, Budget, Kostenschätzung, Zeitüberschreitung), API-Endpunkte (CSRF/Host-Schutz,
-  Schlüssel nie im Frontend, Beitrags-Lebenszyklus, Export/Löschen), Übersetzungsvollständigkeit, XSS-sichere Darstellung.
-- **Ende-zu-Ende (Playwright):** Entdecken ohne Stories, Weltvorschau und Beitritt, eigene und bekannte Figur,
+  Schlüssel nie im Frontend, Beitrags-Lebenszyklus, Export/Löschen), Übersetzungsvollständigkeit, XSS-sichere Darstellung;
+  außerdem Quests passend zu Rolle und Hauptziel, Neben- und Ereignis-Quests (inkl. Ablauf), einmalige
+  Quest- und Bogenbelohnungen, Charakterlevel und Fähigkeitspunkte, Wirkung jeder Fähigkeit (Reichweite,
+  Dialogoptionen, Kooperationsschwelle, gesperrte/freigeschaltete Entscheidungsoptionen, Prognose, alternative
+  Questwege, doppelte Gewichtung), Enden von Handlungsbögen, Persistenz nach Neustart und Trennung zwischen Welten
+  sowie Sperre weltinterner Inhalte ohne Beitritt.
+- **Ende-zu-Ende (Playwright):** Startseite/Weltauswahl (Kategorien, Weltkarten, Navigation vor dem Beitritt,
+  keine weltinternen Inhalte), Quests/Level/Fähigkeiten (Hauptquest, gesperrte Optionen, Fähigkeit steigern,
+  Dialogoption mit Wirkung, Persistenz), Weltvorschau und Beitritt, eigene und bekannte Figur,
   weltgebundene Stories/Feed/Chats, Entscheidung mit Neuladen, Welt- und Figurenwechsel, Navigation (Desktop und
   mobil, ohne horizontales Scrollen), Onboarding, Beiträge (erstellen, liken, merken, bearbeiten, kommentieren),
   Filter, Demo-Chat mit Erinnerung, Weltsimulation, Ereigniskarten, Beziehungen, Storylines, Charakter- und
@@ -297,10 +336,13 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   KI-Pfad ist gegen einen originalgetreuen lokalen Nachbau der API getestet; die Anbindung an den echten Dienst sollte
   einmal mit „Verbindung testen“ geprüft werden.
 - **Einzelplatz:** Ein lokales Profil, keine Benutzerkonten, keine Synchronisation zwischen Geräten.
-- **Layout nach Beschreibung:** Die Oberfläche (Navigation, Feed, Chats, Statusanzeigen) wurde nach der textlichen
-  Vorgabe gestaltet; Referenz-Screenshots lagen nicht vor. Abweichungen im Detail sind daher möglich.
-- **Entscheidungen aus Vorlagen:** Entscheidungen und ihre Auswirkungen entstehen aus festen, zweisprachigen
-  Vorlagen (nachvollziehbar und kostenlos), nicht frei per KI.
+- **Layout nach Beschreibung:** Die Oberfläche (Startseite, Navigation, Feed, Chats, Statusanzeigen) wurde nach der
+  textlichen Vorgabe gestaltet; die Referenz-Screenshots (Status AI) lagen nicht vor. Abweichungen im Detail sind daher möglich.
+- **Entscheidungen und Quests aus Vorlagen:** Entscheidungen, Quests, Enden von Handlungsbögen und ihre Auswirkungen
+  entstehen aus festen, zweisprachigen Vorlagen und Regeln (nachvollziehbar und kostenlos), nicht frei per KI.
+- **Keine vorgefertigten realen Personen:** Aktuelle Ämter und Aussagen realer Personen lassen sich lokal nicht
+  zuverlässig prüfen. Deshalb sind alle mitgelieferten Figuren erfunden; Simulationen realer Personen legst du selbst
+  an (gekennzeichnet, mit Bestätigung).
 - **Demo-Modus:** Lokale Antworten folgen Regeln und Vorlagen – sie sind bewusst einfach und ersetzen keine KI.
 - **Inhaltssprache:** Bereits vorhandene Inhalte werden beim Sprachwechsel nicht übersetzt.
 - **Import:** Ein Datenexport ist möglich, ein Import (Wiederherstellen aus JSON) noch nicht – Backups über den Ordner `data/`.

@@ -8,11 +8,14 @@ import {
   ListChecks,
   MessageCircle,
   MoreHorizontal,
+  PlusCircle,
+  Repeat,
   Search,
   Settings,
   Shield,
   ShoppingBag,
   SlidersHorizontal,
+  Sparkles,
   Trophy,
   UserRound,
   Users,
@@ -38,8 +41,8 @@ interface NavItem {
   end?: boolean;
 }
 
-/** Hauptnavigation: Feed, Aufgaben, Chats, Aktivität, Profil. */
-const PRIMARY: NavItem[] = [
+/** Hauptnavigation in einer Welt: Feed, Aufgaben, Chats, Aktivität, Profil. */
+const PRIMARY_IN_WORLD: NavItem[] = [
   { to: '/feed', label: 'nav.feed', icon: Home },
   { to: '/tasks', label: 'nav.tasks', icon: ListChecks },
   { to: '/chats', label: 'nav.chats', icon: MessageCircle },
@@ -47,13 +50,32 @@ const PRIMARY: NavItem[] = [
   { to: '/profile', label: 'nav.profile', icon: UserRound },
 ];
 
-const SECONDARY: NavItem[] = [
+/** Vor dem Beitritt gibt es nur Entdeckung und Weltauswahl. */
+const PRIMARY_DISCOVERY: NavItem[] = [
+  { to: '/discover', label: 'nav.home', icon: Compass },
+  { to: '/search', label: 'nav.search', icon: Search },
+  { to: '/worlds/new', label: 'nav.create', icon: PlusCircle },
+  { to: '/activity', label: 'nav.activity', icon: Bell },
+  { to: '/profile', label: 'nav.profile', icon: UserRound },
+];
+
+const SECONDARY_IN_WORLD: NavItem[] = [
   { to: '/discover', label: 'nav.discover', icon: Compass },
+  { to: '/skills', label: 'nav.skills', icon: Sparkles },
   { to: '/characters', label: 'nav.characters', icon: Users },
   { to: '/search', label: 'nav.search', icon: Search },
   { to: '/shop', label: 'nav.shop', icon: ShoppingBag },
   { to: '/world-settings', label: 'nav.worldSettings', icon: SlidersHorizontal },
   { to: '/worlds', label: 'nav.worlds', icon: Globe2 },
+  { to: '/progress', label: 'nav.progress', icon: Trophy },
+  { to: '/settings', label: 'nav.settings', icon: Settings },
+  { to: '/privacy', label: 'nav.privacy', icon: Shield },
+];
+
+const SECONDARY_DISCOVERY: NavItem[] = [
+  { to: '/characters', label: 'nav.characters', icon: Users },
+  { to: '/worlds', label: 'nav.worlds', icon: Globe2 },
+  { to: '/shop', label: 'nav.shop', icon: ShoppingBag },
   { to: '/progress', label: 'nav.progress', icon: Trophy },
   { to: '/settings', label: 'nav.settings', icon: Settings },
   { to: '/privacy', label: 'nav.privacy', icon: Shield },
@@ -67,11 +89,12 @@ function WorldSwitcher({ boot, compact }: { boot: BootstrapDto; compact?: boolea
   const showError = useErrorToast();
   const { push } = useToast();
   const world = boot.activeWorld;
+  const me = boot.activePlayer?.character;
   const items = [
     ...boot.joinedWorlds
       .filter((j) => j.world.id !== world?.id)
       .map((j) => ({
-        label: t('play.switchTo', { world: j.world.name }),
+        label: t('nav.playAs', { name: j.player.character.name, world: j.world.name }),
         icon: <Globe2 aria-hidden />,
         onSelect: () =>
           setWorld.mutate(j.world.id, {
@@ -82,16 +105,24 @@ function WorldSwitcher({ boot, compact }: { boot: BootstrapDto; compact?: boolea
             onError: showError,
           }),
       })),
+    ...(world ? [{ label: t('nav.changeRole'), icon: <Repeat aria-hidden />, onSelect: () => navigate(`/worlds/${world.id}/join`) }] : []),
+    { label: t('nav.profile'), icon: <UserRound aria-hidden />, onSelect: () => navigate('/profile') },
     { label: t('nav.findWorld'), icon: <Compass aria-hidden />, onSelect: () => navigate('/discover') },
   ];
   return (
     <Menu
-      label={t('nav.worldSwitcher')}
+      label={t('nav.roleSwitcher')}
       align="start"
       triggerClassName={`world-switcher ${compact ? 'compact' : ''}`}
       trigger={
         <>
-          <span className="world-dot" style={{ background: world ? `hsl(${world.hue} 80% 60%)` : 'var(--text-faint)' }} aria-hidden />
+          {me ? (
+            <span className="role-avatar" style={{ '--world-hue': world?.hue ?? 220 } as React.CSSProperties}>
+              <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} size="xs" decorative />
+            </span>
+          ) : (
+            <span className="world-dot" style={{ background: 'var(--text-faint)' }} aria-hidden />
+          )}
           <span className="world-switcher-text">
             <strong className="truncate">{world?.name ?? t('nav.noWorld')}</strong>
             {!compact && boot.activePlayer && <span className="truncate">{t('play.playingAs', { name: boot.activePlayer.character.name })}</span>}
@@ -117,6 +148,9 @@ export function AppShell({ boot, children }: { boot: BootstrapDto; children: Rea
   }, [lang, boot.profile.accentReward]);
 
   const countFor = (to: string) => (to === '/activity' ? unread : to === '/tasks' ? pending : 0);
+  const inWorld = Boolean(boot.activeWorld);
+  const PRIMARY = inWorld ? PRIMARY_IN_WORLD : PRIMARY_DISCOVERY;
+  const SECONDARY = inWorld ? SECONDARY_IN_WORLD : SECONDARY_DISCOVERY;
 
   const renderLink = (item: NavItem) => {
     const Icon = item.icon;
@@ -182,16 +216,17 @@ export function AppShell({ boot, children }: { boot: BootstrapDto; children: Rea
           </Link>
           <WorldSwitcher boot={boot} compact />
           <div className="topbar-actions">
-            <Link to="/shop" className="coin-chip" aria-label={t('nav.coins', { coins: boot.coins })}>
-              <Coins aria-hidden /> <span>{formatNumber(boot.coins, locale)}</span>
+            <Link to="/activity" className="icon-btn" aria-label={unread > 0 ? t('nav.notificationsCount', { count: unread }) : t('nav.notifications')}>
+              <Bell />
+              {unread > 0 && <span className="dot">{unread > 9 ? '9+' : unread}</span>}
             </Link>
-            <Link to="/search" className="icon-btn" aria-label={t('nav.search')}>
-              <Search />
+            <Link to="/settings" className="icon-btn" aria-label={t('nav.settings')}>
+              <Settings />
             </Link>
             <Menu
               label={t('nav.moreMenu')}
               trigger={<MoreHorizontal />}
-              items={SECONDARY.map((item) => {
+              items={[{ to: '/shop', label: 'nav.shop' as TKey, icon: Coins }, ...SECONDARY.filter((i) => i.to !== '/shop' && i.to !== '/settings')].map((item) => {
                 const Icon = item.icon;
                 return { label: t(item.label), icon: <Icon aria-hidden />, onSelect: () => navigate(item.to) };
               })}
