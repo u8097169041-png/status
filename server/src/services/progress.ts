@@ -16,15 +16,18 @@ import type { AppContext } from '../context';
 import { all, get, run, tx } from '../db/database';
 import { AppError, notFound } from '../lib/errors';
 import { dayKey } from '../lib/time';
+import { COIN_REWARDS } from '../../../shared/economy';
 import { notify } from './notifications';
+import { grantCoins } from './wallet';
 
 export function emptyDelta(): ProgressDelta {
-  return { xpGained: 0, levelUp: null, achievementsUnlocked: [] };
+  return { xpGained: 0, coinsGained: 0, levelUp: null, achievementsUnlocked: [] };
 }
 
 export function mergeDelta(a: ProgressDelta, b: ProgressDelta): ProgressDelta {
   return {
     xpGained: a.xpGained + b.xpGained,
+    coinsGained: (a.coinsGained ?? 0) + (b.coinsGained ?? 0),
     levelUp: b.levelUp ?? a.levelUp,
     achievementsUnlocked: [...a.achievementsUnlocked, ...b.achievementsUnlocked],
   };
@@ -35,7 +38,7 @@ export function currentXp(ctx: AppContext): number {
 }
 
 /** Vergibt XP genau einmal pro Schlüssel. Gibt die tatsächlich vergebene Menge zurück. */
-function grantXp(ctx: AppContext, key: string, action: string, amount: number): number {
+export function grantXp(ctx: AppContext, key: string, action: string, amount: number, playerId?: string | null): number {
   if (amount <= 0) return 0;
   const now = ctx.now();
   const inserted = run(
@@ -49,6 +52,8 @@ function grantXp(ctx: AppContext, key: string, action: string, amount: number): 
   );
   if (inserted.changes === 0) return 0;
   run(ctx.db, 'UPDATE user_profile SET xp = xp + ? WHERE id = 1', amount);
+  // Fortschritt der Spielfigur in ihrer Welt.
+  if (playerId) run(ctx.db, 'UPDATE players SET xp = xp + ? WHERE id = ?', amount, playerId);
   return amount;
 }
 
@@ -56,7 +61,7 @@ function grantXp(ctx: AppContext, key: string, action: string, amount: number): 
  * Protokolliert eine Nutzeraktion für Quests/Erfolge und vergibt XP –
  * unter Beachtung von Tageslimits und ohne Mehrfachbelohnung für dieselbe Aktion.
  */
-export function recordAction(ctx: AppContext, action: XpAction, ref: string): ProgressDelta {
+export function recordAction(ctx: AppContext, action: XpAction, ref: string, playerId?: string | null): ProgressDelta {
   return tx(ctx.db, () => {
     const now = ctx.now();
     const day = dayKey(now);
@@ -74,20 +79,24 @@ export function recordAction(ctx: AppContext, action: XpAction, ref: string): Pr
     if (rule.xp > 0) {
       const awardedToday =
         get<{ n: number }>(ctx.db, `SELECT COUNT(*) AS n FROM xp_events WHERE day = ? AND action = ?`, day, action)?.n ?? 0;
-      if (awardedToday < rule.dailyCap) gained = grantXp(ctx, `${action}:${ref}`, action, rule.xp);
+      if (awardedToday < rule.dailyCap) gained = grantXp(ctx, `${action}:${ref}`, action, rule.xp, playerId);
     }
     return finalizeDelta(ctx, levelBefore, gained);
   });
 }
 
-function finalizeDelta(ctx: AppContext, levelBefore: number, gained: number): ProgressDelta {
+export function finalizeDelta(ctx: AppContext, levelBefore: number, gained: number, coins = 0): ProgressDelta {
   const levelAfter = levelForXp(currentXp(ctx));
-  const delta: ProgressDelta = { xpGained: gained, levelUp: null, achievementsUnlocked: [] };
+  const delta: ProgressDelta = { xpGained: gained, coinsGained: coins, levelUp: null, achievementsUnlocked: [] };
   if (levelAfter > levelBefore) {
     delta.levelUp = levelAfter;
     notify(ctx, 'levelUp', { level: levelAfter }, '/progress');
+    for (let level = levelBefore + 1; level <= levelAfter; level++) {
+      delta.coinsGained! += grantCoins(ctx, `level:${level}`, COIN_REWARDS.levelUpPerLevel * level, `level:${level}`);
+    }
   }
   delta.achievementsUnlocked = checkAchievements(ctx);
+  delta.coinsGained! += delta.achievementsUnlocked.length * COIN_REWARDS.achievement;
   return delta;
 }
 
@@ -127,6 +136,7 @@ export function checkAchievements(ctx: AppContext): string[] {
     if (unlocked.has(a.id)) continue;
     if (metricValue(ctx, a.metric) >= a.target) {
       run(ctx.db, 'INSERT OR IGNORE INTO achievements (id, unlocked_at) VALUES (?, ?)', a.id, ctx.now().toISOString());
+      grantCoins(ctx, `achievement:${a.id}`, COIN_REWARDS.achievement, `achievement:${a.id}`);
       notify(ctx, 'achievement', { id: a.id }, '/progress');
       fresh.push(a.id);
     }
@@ -149,6 +159,7 @@ function questProgress(ctx: AppContext, quest: QuestDef, day: string): QuestProg
     target: quest.target,
     current: Math.min(current, quest.target),
     xp: quest.xp,
+    coins: quest.coins ?? 0,
     completed: current >= quest.target,
     claimed,
   };
@@ -172,7 +183,8 @@ export function claimQuest(ctx: AppContext, questId: string): ProgressDelta {
     );
     const levelBefore = levelForXp(currentXp(ctx));
     const gained = grantXp(ctx, `quest:${quest.id}:${period}`, 'quest', quest.xp);
-    return finalizeDelta(ctx, levelBefore, gained);
+    const coins = grantCoins(ctx, `quest:${quest.id}:${period}`, quest.coins ?? 0, `quest:${quest.id}`);
+    return finalizeDelta(ctx, levelBefore, gained, coins);
   });
 }
 

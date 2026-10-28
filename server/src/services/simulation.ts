@@ -30,13 +30,19 @@ import { loadPromptCharacter } from './characterContext';
 import { getProfileRow, type CharacterRow } from './mappers';
 import { notify } from './notifications';
 import { addCharacterLike, insertCharacterComment, insertCharacterPost } from './posts';
+import { createStorylineDecision, maybeCreateDecision } from './decisions';
+import { activeWorldId } from './players';
 import { checkAchievements, emptyDelta, recordAction } from './progress';
 import { getLanguage, getSettings } from './settings';
 import { adjustAffinity, toStoryline } from './society';
 import { insertCharacterStory } from './stories';
+import { cardUnlocked } from './wallet';
 import { getWorldRow, getWorldSummary, toEvent } from './worlds';
 
-type SimCharacter = Pick<CharacterRow, 'id' | 'name' | 'handle' | 'avatar_hue' | 'avatar_glyph' | 'interests' | 'mood'>;
+type SimCharacter = Pick<CharacterRow, 'id' | 'name' | 'handle' | 'avatar_hue' | 'avatar_glyph' | 'interests' | 'mood' | 'is_real_person_sim'>;
+
+/** Ereignisarten, die Beteiligten Negatives zuschreiben – nicht für Simulationen realer Personen. */
+const NEGATIVE_KINDS = new Set(['conflict', 'rumor', 'rivalry', 'setback']);
 
 interface PlannedPost {
   characterId: string;
@@ -167,15 +173,16 @@ function eligibleTemplates(
   rng: Rng,
   chars: SimCharacter[],
   usedPairs: Set<string>,
-): { template: EventTemplate; pair: [SimCharacter, SimCharacter] | null }[] {
-  const result: { template: EventTemplate; pair: [SimCharacter, SimCharacter] | null }[] = [];
+): { template: EventTemplate; pair: [SimCharacter, SimCharacter] | null; pool: SimCharacter[] }[] {
+  const result: { template: EventTemplate; pair: [SimCharacter, SimCharacter] | null; pool: SimCharacter[] }[] = [];
   for (const template of EVENT_TEMPLATES) {
+    const pool = NEGATIVE_KINDS.has(template.kind) ? chars.filter((c) => !c.is_real_person_sim) : chars;
     if (template.participants === 1) {
-      if (chars.length >= 1) result.push({ template, pair: null });
+      if (pool.length >= 1) result.push({ template, pair: null, pool });
       continue;
     }
-    const pair = pickPair(ctx, rng, chars, template.requires, usedPairs);
-    if (pair) result.push({ template, pair });
+    const pair = pickPair(ctx, rng, pool, template.requires, usedPairs);
+    if (pair) result.push({ template, pair, pool });
   }
   return result;
 }
@@ -190,6 +197,7 @@ function progressStorylines(
   forced: WorldMetric | null,
   events: PlannedEvent[],
   posts: PlannedPost[],
+  advanced: { id: string; title: string; stage: string }[] = [],
 ): number {
   let resolvedCount = 0;
   const storylines = all<Parameters<typeof toStoryline>[0] & { theme: WorldMetric }>(
@@ -216,6 +224,7 @@ function progressStorylines(
       ctx.now().toISOString(),
       s.id,
     );
+    if (!resolved) advanced.push({ id: s.id, title: s.title, stage: stageText });
     const participant = chars.length ? rng.pick(chars) : null;
     const t = (l: L) => l[state.lang];
     events.push({
@@ -242,7 +251,7 @@ function progressStorylines(
     }
     if (resolved) {
       resolvedCount++;
-      notify(ctx, 'storylineResolved', { title: s.title, world: state.world.name }, `/worlds/${state.world.id}`);
+      notify(ctx, 'storylineResolved', { title: s.title, world: state.world.name }, `/worlds/${state.world.id}`, state.world.id);
     }
   }
   // Neue Storyline, wenn keine mehr aktiv ist – damit die Welt lebendig bleibt.
@@ -284,10 +293,14 @@ function progressStorylines(
   return resolvedCount;
 }
 
+/** Figuren, die autonom handeln – ohne die vom Nutzer gesteuerten Spielfiguren. */
 function loadSimCharacters(ctx: AppContext, worldId: string): SimCharacter[] {
   return all<SimCharacter>(
     ctx.db,
-    'SELECT id, name, handle, avatar_hue, avatar_glyph, interests, mood FROM characters WHERE world_id = ? ORDER BY id',
+    `SELECT id, name, handle, avatar_hue, avatar_glyph, interests, mood, is_real_person_sim FROM characters c
+      WHERE world_id = ? AND is_player = 0
+        AND NOT EXISTS (SELECT 1 FROM players pl WHERE pl.character_id = c.id AND pl.is_active = 1)
+      ORDER BY id`,
     worldId,
   );
 }
@@ -436,6 +449,7 @@ export async function simulateWorld(
     const t = (l: L) => l[state.lang];
 
     let resolved = 0;
+    const advanced: { id: string; title: string; stage: string }[] = [];
     const planAndApply = () => {
       const count = chars.length === 0 ? 0 : rng.int(1, settings.simulation.maxEventsPerTick);
       const usedPairs = new Set<string>();
@@ -454,7 +468,7 @@ export async function simulateWorld(
           })),
         );
         const { template } = choice;
-        const a = choice.pair ? choice.pair[0] : rng.pick(chars);
+        const a = choice.pair ? choice.pair[0] : rng.pick(choice.pool);
         const b = choice.pair ? choice.pair[1] : undefined;
         if (b) usedPairs.add(pairKey(a.id, b.id));
         const v = vars(state, rng, a, b);
@@ -488,7 +502,7 @@ export async function simulateWorld(
           context: `${fill(t(template.title), v)} – ${fill(t(template.description), v)}`,
         });
       }
-      resolved = progressStorylines(ctx, state, rng, chars, themes, null, events, posts);
+      resolved = progressStorylines(ctx, state, rng, chars, themes, null, events, posts, advanced);
       // Proportionale Rückkehr zur Mitte (15 % pro Tag) verhindert, dass Welten dauerhaft in Extremwerten verharren.
       for (const m of ['harmony', 'tension', 'discovery'] as WorldMetric[]) {
         state.metrics[m] = clampMetric(state.metrics[m] + Math.round((50 - state.metrics[m]) * 0.15));
@@ -520,6 +534,12 @@ export async function simulateWorld(
       });
     }
 
+    // Die Spielfigur wird an Wendepunkten der Geschichte oder gelegentlich vor eine Entscheidung gestellt.
+    tx(ctx.db, () => {
+      const created = advanced.length > 0 && createStorylineDecision(ctx, worldId, advanced[0]);
+      if (!created) maybeCreateDecision(ctx, worldId, rng);
+    });
+
     const progress =
       trigger === 'manual' ? recordAction(ctx, 'simulate', `${worldId}:${state.world.tick_count + 1}`) : emptyDelta();
     if (resolved > 0) progress.achievementsUnlocked.push(...checkAchievements(ctx));
@@ -539,8 +559,14 @@ export async function simulateWorld(
   });
 }
 
-export function listEventCards(): EventCard[] {
-  return EVENT_CARDS.map((c) => ({ id: c.id, needsTargets: c.needsTargets, metricHints: c.metrics }));
+export function listEventCards(ctx: AppContext): EventCard[] {
+  return EVENT_CARDS.map((c) => ({
+    id: c.id,
+    needsTargets: c.needsTargets,
+    metricHints: c.metrics,
+    shopItem: c.shopItem ?? null,
+    locked: !cardUnlocked(ctx, c.id),
+  }));
 }
 
 const triggerSchema = z.object({
@@ -561,6 +587,9 @@ export async function triggerEvent(
   if (!parsed.success) throw badRequest('invalid_event', 'Ungültiges Ereignis.', parsed.error.issues);
   const card = EVENT_CARDS.find((c) => c.id === parsed.data.cardId);
   if (!card) throw notFound('Ereigniskarte');
+  if (!cardUnlocked(ctx, card.id)) {
+    throw new AppError(403, 'card_locked', 'Diese Ereigniskarte muss zuerst im Shop freigeschaltet werden.');
+  }
   return withWorldLock(worldId, async () => {
     const state = initState(ctx, worldId);
     const chars = loadSimCharacters(ctx, worldId);
@@ -568,6 +597,9 @@ export async function triggerEvent(
     if (targets.some((c) => !c)) throw badRequest('invalid_targets', 'Alle Beteiligten müssen zu dieser Welt gehören.');
     if (targets.length < card.needsTargets) {
       throw badRequest('missing_targets', `Diese Karte benötigt ${card.needsTargets} Beteiligte.`);
+    }
+    if (card.negative && targets.some((c) => c!.is_real_person_sim)) {
+      throw badRequest('real_person_protected', 'Simulationen realer Personen können nicht mit negativen Ereignissen belegt werden.');
     }
     let customTitle = '';
     let customDescription = '';
@@ -688,19 +720,27 @@ export async function maybeRunAutoTick(ctx: AppContext): Promise<boolean> {
   const last = lastAutoTick(ctx);
   const now = ctx.now();
   if (last && addMinutes(new Date(last), s.intervalMinutes) > now) return false;
-  // Die Welt, in der am längsten nichts passiert ist, ist als Nächstes an der Reihe.
-  const world = get<{ id: string }>(
-    ctx.db,
-    `SELECT w.id FROM worlds w
-      WHERE EXISTS (SELECT 1 FROM characters c WHERE c.world_id = w.id)
-      ORDER BY COALESCE((SELECT MAX(e.created_at) FROM world_events e WHERE e.world_id = w.id), '') ASC, w.id
-      LIMIT 1`,
-  );
-  run(
-    ctx.db,
-    `INSERT INTO meta (key, value) VALUES ('sim_last_auto', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-    now.toISOString(),
-  );
+  // Die Welt, in der du gerade spielst, ist jeden zweiten Schritt an der Reihe; sonst die Welt,
+  // in der am längsten nichts passiert ist.
+  const active = activeWorldId(ctx);
+  const lastWorld = get<{ value: string }>(ctx.db, `SELECT value FROM meta WHERE key = 'sim_last_auto_world'`)?.value ?? null;
+  const world =
+    active && lastWorld !== active
+      ? { id: active }
+      : get<{ id: string }>(
+          ctx.db,
+          `SELECT w.id FROM worlds w
+            WHERE EXISTS (SELECT 1 FROM characters c WHERE c.world_id = w.id) AND w.id != ?
+            ORDER BY COALESCE((SELECT MAX(e.created_at) FROM world_events e WHERE e.world_id = w.id), '') ASC, w.id
+            LIMIT 1`,
+          active ?? '',
+        ) ?? (active ? { id: active } : undefined);
+  for (const [key, value] of [
+    ['sim_last_auto', now.toISOString()],
+    ['sim_last_auto_world', world?.id ?? ''],
+  ]) {
+    run(ctx.db, `INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value);
+  }
   if (!world) return false;
   await simulateWorld(ctx, world.id, 'auto');
   return true;

@@ -10,6 +10,9 @@ import { claimQuest, currentXp, getProgress } from '../services/progress';
 import { getSettings, updateSettings } from '../services/settings';
 import { simulationStatus } from '../services/simulation';
 import { contentLanguage, hasUserActivity } from '../services/meta';
+import { activeWorldId, getActivePlayerRow, listPlayers, toPlayer } from '../services/players';
+import { coinBalance } from '../services/wallet';
+import { listWorlds } from '../services/worlds';
 import { param } from './helpers';
 
 export function coreRoutes(ctx: AppContext): Router {
@@ -20,7 +23,17 @@ export function coreRoutes(ctx: AppContext): Router {
   });
 
   r.get('/bootstrap', (_req, res) => {
+    const worldId = activeWorldId(ctx);
+    const activeRow = worldId ? getActivePlayerRow(ctx, worldId) : undefined;
+    const activePlayer = activeRow ? toPlayer(ctx, activeRow) : null;
+    const players = listPlayers(ctx).filter((p) => p.isActive);
+    const worlds = new Map(listWorlds(ctx).map((w) => [w.id, w]));
     const body: BootstrapDto = {
+      activeWorld: worldId ? (worlds.get(worldId) ?? null) : null,
+      activePlayer,
+      joinedWorlds: players.filter((p) => worlds.has(p.worldId)).map((p) => ({ world: worlds.get(p.worldId)!, player: p })),
+      coins: coinBalance(ctx),
+      pendingDecisions: activePlayer?.pendingDecisions ?? 0,
       profile: getProfile(ctx),
       settings: getSettings(ctx.db),
       ai: ctx.ai.status(),

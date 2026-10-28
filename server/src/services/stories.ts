@@ -3,11 +3,12 @@ import { LIMITS, STORY_LIFETIME_HOURS, STORY_STYLES } from '../../../shared/cons
 import type { ProgressDelta, StoryDto } from '../../../shared/types';
 import type { AppContext } from '../context';
 import { all, get, run, tx } from '../db/database';
-import { badRequest, forbidden, notFound } from '../lib/errors';
+import { AppError, badRequest, forbidden, notFound } from '../lib/errors';
 import { newId } from '../lib/ids';
 import { cleanText } from '../lib/text';
 import { addHours } from '../lib/time';
-import { AUTHOR_COLUMNS, characterAuthor, getProfileRow, userAuthor } from './mappers';
+import { AUTHOR_COLUMNS, PLAYER_AUTHOR_COLUMNS, characterAuthor, getProfileRow, userAuthor, type PlayerAuthorColumns } from './mappers';
+import { activeWorldId, requireActivePlayer } from './players';
 import { recordAction } from './progress';
 
 /** Entfernt abgelaufene Stories dauerhaft. */
@@ -15,7 +16,9 @@ export function purgeExpiredStories(ctx: AppContext): number {
   return run(ctx.db, 'DELETE FROM stories WHERE expires_at <= ?', ctx.now().toISOString()).changes;
 }
 
-export function listStories(ctx: AppContext): StoryDto[] {
+/** Stories einer Welt – nur sichtbar, wenn der Nutzer dort mit einer Spielfigur mitspielt. */
+export function listStories(ctx: AppContext, worldId: string): StoryDto[] {
+  requireActivePlayer(ctx, worldId);
   purgeExpiredStories(ctx);
   const profile = getProfileRow(ctx);
   const rows = all<{
@@ -34,16 +37,20 @@ export function listStories(ctx: AppContext): StoryDto[] {
     c_glyph: string | null;
     c_real: number | null;
     c_world: string | null;
-  }>(
+    c_prominent: number | null;
+  } & PlayerAuthorColumns>(
     ctx.db,
-    `SELECT s.*, ${AUTHOR_COLUMNS}, EXISTS (SELECT 1 FROM story_views v WHERE v.story_id = s.id) AS seen
+    `SELECT s.*, ${AUTHOR_COLUMNS}, ${PLAYER_AUTHOR_COLUMNS}, EXISTS (SELECT 1 FROM story_views v WHERE v.story_id = s.id) AS seen
        FROM stories s LEFT JOIN characters c ON c.id = s.character_id
-      WHERE s.expires_at > ? ORDER BY s.created_at DESC`,
+       LEFT JOIN players pl ON pl.id = s.player_id
+       LEFT JOIN characters pc ON pc.id = pl.character_id
+      WHERE s.expires_at > ? AND s.world_id = ? ORDER BY s.created_at DESC`,
     ctx.now().toISOString(),
+    worldId,
   );
   return rows.map((r) => ({
     id: r.id,
-    author: r.author_type === 'user' ? userAuthor(profile) : characterAuthor(r),
+    author: r.author_type === 'user' ? userAuthor(profile, r) : characterAuthor(r),
     worldId: r.world_id,
     content: r.content,
     style: r.style,
@@ -57,6 +64,7 @@ export function listStories(ctx: AppContext): StoryDto[] {
 const storySchema = z.object({
   content: z.string().max(LIMITS.storyContent * 2),
   style: z.number().int().min(0).max(STORY_STYLES - 1).optional(),
+  worldId: z.string().max(80).optional(),
 });
 
 export function createStory(ctx: AppContext, input: unknown): { story: StoryDto; progress: ProgressDelta } {
@@ -65,22 +73,27 @@ export function createStory(ctx: AppContext, input: unknown): { story: StoryDto;
   const content = cleanText(parsed.data.content);
   if (!content) throw badRequest('invalid_content', 'Der Text darf nicht leer sein.');
   if (content.length > LIMITS.storyContent) throw badRequest('invalid_content', 'Der Text ist zu lang.');
+  const worldId = parsed.data.worldId || activeWorldId(ctx);
+  if (!worldId) throw new AppError(409, 'not_joined', 'Tritt zuerst einer Welt bei, um Stories zu teilen.');
+  const player = requireActivePlayer(ctx, worldId);
   const id = newId('st');
   const now = ctx.now();
   const progress = tx(ctx.db, () => {
     run(
       ctx.db,
-      `INSERT INTO stories (id, author_type, character_id, world_id, content, style, created_at, expires_at)
-       VALUES (?, 'user', NULL, NULL, ?, ?, ?, ?)`,
+      `INSERT INTO stories (id, author_type, character_id, world_id, player_id, content, style, created_at, expires_at)
+       VALUES (?, 'user', NULL, ?, ?, ?, ?, ?, ?)`,
       id,
+      worldId,
+      player.id,
       content,
       parsed.data.style ?? 0,
       now.toISOString(),
       addHours(now, STORY_LIFETIME_HOURS).toISOString(),
     );
-    return recordAction(ctx, 'story', id);
+    return recordAction(ctx, 'story', id, player.id);
   });
-  const story = listStories(ctx).find((s) => s.id === id);
+  const story = listStories(ctx, worldId).find((s) => s.id === id);
   if (!story) throw notFound('Story');
   return { story, progress };
 }

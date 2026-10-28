@@ -18,6 +18,8 @@ export const XP_ACTIONS = [
   'simulate',
   'visitWorld',
   'meetCharacter',
+  'joinWorld',
+  'decide',
 ] as const;
 export type XpAction = (typeof XP_ACTIONS)[number];
 
@@ -37,6 +39,8 @@ export const XP_RULES: Record<XpAction, { xp: number; dailyCap: number }> = {
   simulate: { xp: 5, dailyCap: 10 },
   visitWorld: { xp: 5, dailyCap: 20 },
   meetCharacter: { xp: 5, dailyCap: 30 },
+  joinWorld: { xp: 30, dailyCap: 5 },
+  decide: { xp: 10, dailyCap: 15 },
 };
 
 /** Gesamte XP, die für das Erreichen eines Levels nötig sind. */
@@ -82,30 +86,35 @@ export interface QuestDef {
   metric: QuestMetric;
   target: number;
   xp: number;
+  /** Funken (Spielwährung) als zusätzliche Belohnung. */
+  coins?: number;
 }
 
 export const DAILY_QUESTS: QuestDef[] = [
-  { id: 'daily-like', kind: 'daily', metric: { type: 'action', action: 'like' }, target: 3, xp: 20 },
-  { id: 'daily-post', kind: 'daily', metric: { type: 'action', action: 'post' }, target: 1, xp: 25 },
-  { id: 'daily-comment', kind: 'daily', metric: { type: 'action', action: 'comment' }, target: 2, xp: 20 },
-  { id: 'daily-chat', kind: 'daily', metric: { type: 'action', action: 'chat' }, target: 5, xp: 25 },
-  { id: 'daily-chat-distinct', kind: 'daily', metric: { type: 'distinct', action: 'chatWith' }, target: 2, xp: 30 },
-  { id: 'daily-event', kind: 'daily', metric: { type: 'action', action: 'triggerEvent' }, target: 1, xp: 30 },
-  { id: 'daily-simulate', kind: 'daily', metric: { type: 'action', action: 'simulate' }, target: 1, xp: 20 },
-  { id: 'daily-story', kind: 'daily', metric: { type: 'action', action: 'story' }, target: 1, xp: 20 },
+  { id: 'daily-like', kind: 'daily', metric: { type: 'action', action: 'like' }, target: 3, xp: 20, coins: 10 },
+  { id: 'daily-post', kind: 'daily', metric: { type: 'action', action: 'post' }, target: 1, xp: 25, coins: 10 },
+  { id: 'daily-comment', kind: 'daily', metric: { type: 'action', action: 'comment' }, target: 2, xp: 20, coins: 10 },
+  { id: 'daily-chat', kind: 'daily', metric: { type: 'action', action: 'chat' }, target: 5, xp: 25, coins: 10 },
+  { id: 'daily-chat-distinct', kind: 'daily', metric: { type: 'distinct', action: 'chatWith' }, target: 2, xp: 30, coins: 10 },
+  { id: 'daily-event', kind: 'daily', metric: { type: 'action', action: 'triggerEvent' }, target: 1, xp: 30, coins: 10 },
+  { id: 'daily-simulate', kind: 'daily', metric: { type: 'action', action: 'simulate' }, target: 1, xp: 20, coins: 10 },
+  { id: 'daily-decide', kind: 'daily', metric: { type: 'action', action: 'decide' }, target: 1, xp: 25, coins: 10 },
+  { id: 'daily-story', kind: 'daily', metric: { type: 'action', action: 'story' }, target: 1, xp: 20, coins: 10 },
 ];
 
 export const DAILY_QUEST_COUNT = 3;
 
 export const GENERAL_QUESTS: QuestDef[] = [
-  { id: 'first-post', kind: 'general', metric: { type: 'action', action: 'post' }, target: 1, xp: 30 },
-  { id: 'first-chat', kind: 'general', metric: { type: 'action', action: 'chat' }, target: 1, xp: 30 },
-  { id: 'first-character', kind: 'general', metric: { type: 'action', action: 'createCharacter' }, target: 1, xp: 50 },
-  { id: 'first-world', kind: 'general', metric: { type: 'action', action: 'createWorld' }, target: 1, xp: 60 },
-  { id: 'meet-five', kind: 'general', metric: { type: 'distinct', action: 'meetCharacter' }, target: 5, xp: 50 },
-  { id: 'explore-worlds', kind: 'general', metric: { type: 'distinct', action: 'visitWorld' }, target: 5, xp: 50 },
-  { id: 'event-maker', kind: 'general', metric: { type: 'action', action: 'triggerEvent' }, target: 5, xp: 60 },
-  { id: 'reach-level-5', kind: 'general', metric: { type: 'level' }, target: 5, xp: 100 },
+  { id: 'first-join', kind: 'general', metric: { type: 'action', action: 'joinWorld' }, target: 1, xp: 40, coins: 30 },
+  { id: 'first-decision', kind: 'general', metric: { type: 'action', action: 'decide' }, target: 1, xp: 30, coins: 20 },
+  { id: 'first-post', kind: 'general', metric: { type: 'action', action: 'post' }, target: 1, xp: 30, coins: 25 },
+  { id: 'first-chat', kind: 'general', metric: { type: 'action', action: 'chat' }, target: 1, xp: 30, coins: 25 },
+  { id: 'first-character', kind: 'general', metric: { type: 'action', action: 'createCharacter' }, target: 1, xp: 50, coins: 25 },
+  { id: 'first-world', kind: 'general', metric: { type: 'action', action: 'createWorld' }, target: 1, xp: 60, coins: 25 },
+  { id: 'meet-five', kind: 'general', metric: { type: 'distinct', action: 'meetCharacter' }, target: 5, xp: 50, coins: 25 },
+  { id: 'explore-worlds', kind: 'general', metric: { type: 'distinct', action: 'visitWorld' }, target: 5, xp: 50, coins: 25 },
+  { id: 'event-maker', kind: 'general', metric: { type: 'action', action: 'triggerEvent' }, target: 5, xp: 60, coins: 25 },
+  { id: 'reach-level-5', kind: 'general', metric: { type: 'level' }, target: 5, xp: 100, coins: 25 },
 ];
 
 /** Wählt deterministisch die Tagesquests für ein Datum (YYYY-MM-DD). */
@@ -150,6 +159,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'chronicler', metric: { type: 'storylinesResolved' }, target: 1, icon: 'scroll' },
   { id: 'popular', metric: { type: 'likesReceived' }, target: 25, icon: 'heart' },
   { id: 'veteran', metric: { type: 'level' }, target: 10, icon: 'crown' },
+  { id: 'world-hopper', metric: { type: 'distinct', action: 'joinWorld' }, target: 3, icon: 'globe' },
+  { id: 'decision-maker', metric: { type: 'action', action: 'decide' }, target: 10, icon: 'scale' },
 ];
 
 export interface RewardDef {

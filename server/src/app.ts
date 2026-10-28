@@ -4,6 +4,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import type { AppContext } from './context';
 import { AppError } from './lib/errors';
 import { aiRoutes } from './routes/ai';
+import { playRoutes } from './routes/play';
 import { characterRoutes } from './routes/characters';
 import { coreRoutes } from './routes/core';
 import { feedRoutes } from './routes/feed';
@@ -108,12 +109,14 @@ export function createApp(ctx: AppContext, options: AppOptions = {}): express.Ex
   app.use('/api/worlds/:id/simulate', expensive);
   app.use('/api/worlds/:id/events', expensive);
   app.use('/api/ai/test', expensive);
+  app.use('/api/decisions/:id/choose', expensive);
 
   app.use('/api', coreRoutes(ctx));
   app.use('/api', feedRoutes(ctx));
   app.use('/api', characterRoutes(ctx));
   app.use('/api', worldRoutes(ctx));
   app.use('/api', aiRoutes(ctx));
+  app.use('/api', playRoutes(ctx));
   app.use('/api', (_req, _res, next) => next(new AppError(404, 'not_found', 'Unbekannter API-Endpunkt.')));
 
   if (options.clientDir && existsSync(resolve(options.clientDir, 'index.html'))) {

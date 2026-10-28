@@ -14,6 +14,7 @@ import {
   undoRepost,
   updatePost,
 } from '../services/posts';
+import { activeWorldId } from '../services/players';
 import { createStory, deleteStory, listStories, markStorySeen } from '../services/stories';
 import { param, q } from './helpers';
 
@@ -27,6 +28,7 @@ export function feedRoutes(ctx: AppContext): Router {
         characterId: q(req, 'character'),
         tag: q(req, 'tag', 40),
         author: q(req, 'author') === 'user' ? 'user' : undefined,
+        playerId: q(req, 'player'),
         bookmarked: q(req, 'bookmarked') === '1',
         cursor: q(req, 'cursor', 120),
         limit: Number(q(req, 'limit') ?? 20) || 20,
@@ -77,8 +79,9 @@ export function feedRoutes(ctx: AppContext): Router {
     res.json(trendingTags(ctx, 15));
   });
 
-  r.get('/stories', (_req, res) => {
-    res.json(listStories(ctx));
+  r.get('/stories', (req, res) => {
+    const worldId = q(req, 'world') ?? activeWorldId(ctx);
+    res.json(worldId ? listStories(ctx, worldId) : []);
   });
   r.post('/stories', (req, res) => {
     res.status(201).json(createStory(ctx, req.body));

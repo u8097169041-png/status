@@ -5,6 +5,7 @@ import type { AppConfig } from '../config';
 import type { AppContext } from '../context';
 import { openDatabase } from '../db/database';
 import { seedDatabase } from '../db/seed';
+import { joinWorld } from '../services/players';
 import type { Lang } from '../../../shared/constants';
 
 export interface TestContext extends AppContext {
@@ -98,4 +99,12 @@ export function openRouterMock(options: {
       },
     };
   };
+}
+
+/** Tritt einer Welt mit einer eigenen Spielfigur bei (für Tests, die Beiträge oder Chats brauchen). */
+export function joinAsCustom(ctx: AppContext, worldId: string, name = 'Testfigur'): string {
+  return joinWorld(ctx, worldId, {
+    mode: 'custom',
+    character: { name, role: 'Neuankömmling', background: 'Kommt aus einer anderen Stadt.', personality: ['neugierig'], goals: ['Freunde finden'] },
+  }).player.id;
 }

@@ -335,4 +335,121 @@ CREATE TABLE simulation_log (
 CREATE INDEX idx_simulation_log_day ON simulation_log(day, trigger);
 `,
   },
+  {
+    version: 2,
+    name: 'players-decisions-economy',
+    sql: `
+ALTER TABLE characters ADD COLUMN goals TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE characters ADD COLUMN prominent INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN is_player INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE user_profile ADD COLUMN active_world_id TEXT;
+ALTER TABLE user_profile ADD COLUMN frame_item TEXT NOT NULL DEFAULT '';
+ALTER TABLE user_profile ADD COLUMN banner_item TEXT NOT NULL DEFAULT '';
+
+-- Spielfiguren: eine aktive Figur pro Welt, frühere Figuren bleiben mit ihren Daten erhalten.
+CREATE TABLE players (
+  id TEXT PRIMARY KEY,
+  world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  mode TEXT NOT NULL CHECK (mode IN ('custom', 'existing')),
+  is_active INTEGER NOT NULL DEFAULT 1,
+  reputation INTEGER NOT NULL DEFAULT 0,
+  influence INTEGER NOT NULL DEFAULT 10,
+  followers INTEGER NOT NULL DEFAULT 0,
+  xp INTEGER NOT NULL DEFAULT 0,
+  joined_at TEXT NOT NULL,
+  last_active_at TEXT NOT NULL,
+  retired_at TEXT
+);
+CREATE UNIQUE INDEX idx_players_active ON players(world_id) WHERE is_active = 1;
+CREATE INDEX idx_players_world ON players(world_id);
+CREATE INDEX idx_players_character ON players(character_id);
+
+-- Entscheidungen der Spielfigur und ihr Ergebnis (Storyverlauf).
+CREATE TABLE decisions (
+  id TEXT PRIMARY KEY,
+  world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  options TEXT NOT NULL,
+  participants TEXT NOT NULL DEFAULT '[]',
+  storyline_id TEXT REFERENCES storylines(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'resolved')),
+  chosen_option TEXT,
+  outcome TEXT,
+  event_id TEXT REFERENCES world_events(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT
+);
+CREATE INDEX idx_decisions_player ON decisions(player_id, status);
+
+-- Spielwährung als Buchungsjournal: jeder Schlüssel nur einmal (keine Doppelbelohnung).
+CREATE TABLE wallet_ledger (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL UNIQUE,
+  amount INTEGER NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE purchases (
+  item_id TEXT PRIMARY KEY,
+  purchased_at TEXT NOT NULL
+);
+
+ALTER TABLE posts ADD COLUMN player_id TEXT REFERENCES players(id) ON DELETE SET NULL;
+ALTER TABLE comments ADD COLUMN player_id TEXT REFERENCES players(id) ON DELETE SET NULL;
+ALTER TABLE stories ADD COLUMN player_id TEXT REFERENCES players(id) ON DELETE SET NULL;
+ALTER TABLE notifications ADD COLUMN world_id TEXT;
+CREATE INDEX idx_stories_world ON stories(world_id);
+
+-- Chats werden zu Gesprächen zwischen einer Spielfigur und einer Figur.
+-- Bestehende Chats bleiben als Gespräche ohne Spielfigur erhalten.
+CREATE TABLE conversations (
+  id TEXT PRIMARY KEY,
+  player_id TEXT REFERENCES players(id) ON DELETE CASCADE,
+  character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  memory_enabled INTEGER NOT NULL DEFAULT 1,
+  memory_window INTEGER NOT NULL DEFAULT 12,
+  summarized_upto INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (player_id, character_id)
+);
+INSERT INTO conversations (id, player_id, character_id, memory_enabled, memory_window, summarized_upto, created_at, updated_at)
+  SELECT 'conv_legacy_' || character_id, NULL, character_id, memory_enabled, memory_window, summarized_upto, created_at, updated_at FROM chats;
+
+CREATE TABLE conversation_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  source TEXT NOT NULL,
+  model TEXT,
+  created_at TEXT NOT NULL
+);
+INSERT INTO conversation_messages (id, conversation_id, role, content, source, model, created_at)
+  SELECT id, 'conv_legacy_' || character_id, role, content, source, model, created_at FROM chat_messages;
+CREATE INDEX idx_conversation_messages ON conversation_messages(conversation_id, id);
+
+CREATE TABLE conversation_memories (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('fact', 'summary')),
+  source TEXT NOT NULL CHECK (source IN ('rule', 'ai', 'user')),
+  created_at TEXT NOT NULL
+);
+INSERT INTO conversation_memories (id, conversation_id, content, kind, source, created_at)
+  SELECT id, 'conv_legacy_' || character_id, content, kind, source, created_at FROM chat_memories;
+CREATE INDEX idx_conversation_memories ON conversation_memories(conversation_id);
+
+DROP TABLE chat_memories;
+DROP TABLE chat_messages;
+DROP TABLE chats;
+`,
+  },
 ];

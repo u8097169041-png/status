@@ -11,7 +11,8 @@ export function contentLanguage(ctx: AppContext): Lang {
 export function hasUserActivity(ctx: AppContext): boolean {
   return Boolean(
     get(ctx.db, `SELECT 1 FROM activity_log LIMIT 1`) ||
+      get(ctx.db, `SELECT 1 FROM players LIMIT 1`) ||
       get(ctx.db, `SELECT 1 FROM posts WHERE author_type = 'user' LIMIT 1`) ||
-      get(ctx.db, `SELECT 1 FROM chat_messages LIMIT 1`),
+      get(ctx.db, `SELECT 1 FROM conversation_messages LIMIT 1`),
   );
 }

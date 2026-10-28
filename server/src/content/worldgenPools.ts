@@ -1,5 +1,6 @@
 import type { ArtStyle, Genre } from '../../../shared/constants';
 import type { L } from './seedWorlds';
+import { GENRE_POOLS_V2 } from './worldgenPools2';
 
 export interface GenrePool {
   artStyle: ArtStyle;
@@ -20,6 +21,7 @@ export interface GenrePool {
 }
 
 export const GENRE_POOLS: Record<Genre, GenrePool> = {
+  ...GENRE_POOLS_V2,
   cyberpunk: {
     artStyle: 'city',
     hue: [290, 335],

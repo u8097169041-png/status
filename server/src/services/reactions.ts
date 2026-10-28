@@ -8,6 +8,7 @@ import { cleanText, fill, truncate } from '../lib/text';
 import { loadPromptCharacter } from './characterContext';
 import type { DueJob } from './jobs';
 import { getProfileRow } from './mappers';
+import { controlledCharacterIds } from './players';
 import { notify } from './notifications';
 import { addCharacterLike, insertCharacterComment } from './posts';
 import { checkAchievements } from './progress';
@@ -38,20 +39,36 @@ async function aiComment(ctx: AppContext, characterId: string, instruction: stri
   return result.ok ? truncate(cleanText(result.text), 400) : null;
 }
 
-/** Charaktere reagieren mit Likes und einem Kommentar auf einen Nutzerbeitrag. */
+/** Handle, unter dem der Nutzer auftritt: die Spielfigur des Inhalts oder das lokale Profil. */
+function actorHandle(ctx: AppContext, playerId: string | null): string {
+  if (playerId) {
+    const handle = get<{ handle: string }>(
+      ctx.db,
+      'SELECT c.handle FROM players pl JOIN characters c ON c.id = pl.character_id WHERE pl.id = ?',
+      playerId,
+    )?.handle;
+    if (handle) return handle;
+  }
+  return getProfileRow(ctx).handle;
+}
+
+/** Figuren derselben Welt reagieren mit Likes und einem Kommentar auf einen Beitrag der Spielfigur. */
 async function reactToPost(ctx: AppContext, postId: string): Promise<void> {
-  const post = get<{ id: string; content: string; world_id: string | null; author_type: string }>(
+  const post = get<{ id: string; content: string; world_id: string | null; author_type: string; player_id: string | null }>(
     ctx.db,
-    'SELECT id, content, world_id, author_type FROM posts WHERE id = ?',
+    'SELECT id, content, world_id, author_type, player_id FROM posts WHERE id = ?',
     postId,
   );
   if (!post || post.author_type !== 'user') return;
   const lang = getSettings(ctx.db).language;
   const tags = all<{ tag: string }>(ctx.db, 'SELECT tag FROM post_tags WHERE post_id = ?', postId).map((r) => r.tag);
-  const candidates = all<ReactorRow>(
-    ctx.db,
-    'SELECT id, name, handle, world_id, writing_style, interests FROM characters ORDER BY id',
-  );
+  // Beiträge in einer Welt sehen nur die Figuren dieser Welt; gespielte Figuren reagieren nicht automatisch.
+  const controlled = post.world_id ? controlledCharacterIds(ctx, post.world_id) : new Set<string>();
+  const candidates = (
+    post.world_id
+      ? all<ReactorRow>(ctx.db, 'SELECT id, name, handle, world_id, writing_style, interests FROM characters WHERE world_id = ? ORDER BY id', post.world_id)
+      : all<ReactorRow>(ctx.db, 'SELECT id, name, handle, world_id, writing_style, interests FROM characters WHERE is_player = 0 ORDER BY id')
+  ).filter((c) => !controlled.has(c.id));
   if (candidates.length === 0) return;
   const rng = createRng(`react:${postId}`);
   const text = post.content.toLowerCase();
@@ -67,12 +84,12 @@ async function reactToPost(ctx: AppContext, postId: string): Promise<void> {
   scored.sort((a, b) => b.score - a.score);
   const likers = scored.slice(0, rng.int(1, 3)).map((s) => s.c);
   const commenter = scored[0].c;
-  const user = getProfileRow(ctx);
+  const user = { handle: actorHandle(ctx, post.player_id) };
 
   let comment = await aiComment(
     ctx,
     commenter.id,
-    `The user @${user.handle} posted: """${truncate(post.content, 500)}""". Write a short, friendly comment (max 200 characters) in character.`,
+    `@${user.handle} posted: """${truncate(post.content, 500)}""". Write a short, friendly comment (max 200 characters) in character.`,
   );
   const source = comment ? 'ai' : 'sim';
   if (!comment) {
@@ -86,17 +103,25 @@ async function reactToPost(ctx: AppContext, postId: string): Promise<void> {
   tx(ctx.db, () => {
     for (const liker of likers) addCharacterLike(ctx, postId, liker.id);
     insertCharacterComment(ctx, { postId, parentId: null, characterId: commenter.id, content: comment, source });
-    notify(ctx, 'postReaction', { names: likers.map((l) => l.name).join(', '), count: likers.length }, `/posts/${postId}`);
-    notify(ctx, 'postComment', { name: commenter.name }, `/posts/${postId}`);
+    notify(ctx, 'postReaction', { names: likers.map((l) => l.name).join(', '), count: likers.length }, `/posts/${postId}`, post.world_id);
+    notify(ctx, 'postComment', { name: commenter.name }, `/posts/${postId}`, post.world_id);
     checkAchievements(ctx);
   });
 }
 
 /** Der Autor eines Charakterbeitrags antwortet auf den Kommentar des Nutzers. */
 async function replyToComment(ctx: AppContext, postId: string, commentId: string): Promise<void> {
-  const row = get<{ character_id: string | null; content: string; comment: string; parent_id: string | null }>(
+  const row = get<{
+    character_id: string | null;
+    content: string;
+    comment: string;
+    parent_id: string | null;
+    player_id: string | null;
+    world_id: string | null;
+  }>(
     ctx.db,
-    `SELECT p.character_id, p.content, cm.content AS comment, cm.parent_id FROM posts p JOIN comments cm ON cm.post_id = p.id
+    `SELECT p.character_id, p.content, p.world_id, cm.content AS comment, cm.parent_id, cm.player_id
+       FROM posts p JOIN comments cm ON cm.post_id = p.id
       WHERE p.id = ? AND cm.id = ? AND cm.author_type = 'user'`,
     postId,
     commentId,
@@ -108,13 +133,15 @@ async function replyToComment(ctx: AppContext, postId: string, commentId: string
     row.character_id,
   );
   if (!character) return;
+  // Gespielte Figuren antworten nicht automatisch.
+  if (row.world_id && controlledCharacterIds(ctx, row.world_id).has(character.id)) return;
   const lang = getSettings(ctx.db).language;
-  const user = getProfileRow(ctx);
+  const user = { handle: actorHandle(ctx, row.player_id) };
   const rng = createRng(`reply:${commentId}`);
   let reply = await aiComment(
     ctx,
     character.id,
-    `You posted: """${truncate(row.content, 300)}""". The user @${user.handle} commented: """${truncate(row.comment, 400)}""". ` +
+    `You posted: """${truncate(row.content, 300)}""". @${user.handle} commented: """${truncate(row.comment, 400)}""". ` +
       `Reply briefly (max 200 characters), starting with @${user.handle}.`,
   );
   const source = reply ? 'ai' : 'sim';
@@ -130,7 +157,7 @@ async function replyToComment(ctx: AppContext, postId: string, commentId: string
       content: reply,
       source,
     });
-    notify(ctx, 'commentReply', { name: character.name }, `/posts/${postId}`);
+    notify(ctx, 'commentReply', { name: character.name }, `/posts/${postId}`, row.world_id);
   });
 }
 

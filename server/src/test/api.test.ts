@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createTestApp, createTestContext } from './helpers';
+import { createTestApp, createTestContext, joinAsCustom } from './helpers';
 
 const W = { 'X-SocialVerse': '1' };
 
@@ -63,13 +63,19 @@ describe('API – Grundfunktionen und Schutz', () => {
 
 describe('API – Beiträge', () => {
   it('unterstützt den vollständigen Lebenszyklus eines Beitrags', async () => {
-    const { app } = setup();
+    const { app, ctx } = setup();
+    const blocked = await request(app).post('/api/posts').set(W).send({ content: 'Ohne Welt', worldId: 'w-neon' }).expect(409);
+    expect(blocked.body.error.code).toBe('not_joined');
+    joinAsCustom(ctx, 'w-neon', 'Posterin');
     const created = await request(app).post('/api/posts').set(W).send({ content: 'Mein Test #hallo <script>alert(1)</script>', worldId: 'w-neon' }).expect(201);
     const id = created.body.post.id as string;
     expect(created.body.post.tags).toEqual(['hallo']);
     // Inhalt wird unverändert als Text gespeichert; die Ausgabe erfolgt im Frontend ausschließlich als Text.
     expect(created.body.post.content).toContain('<script>');
     expect(created.body.progress.xpGained).toBe(15);
+    // Autor ist die Spielfigur der Welt.
+    expect(created.body.post.author.name).toBe('Posterin');
+    expect(created.body.post.author.playerId).toBeTruthy();
 
     const liked = await request(app).put(`/api/posts/${id}/like`).set(W).expect(200);
     expect(liked.body.post.likedByMe).toBe(true);
@@ -96,7 +102,8 @@ describe('API – Beiträge', () => {
   });
 
   it('verhindert das Bearbeiten fremder Beiträge und leere Beiträge', async () => {
-    const { app } = setup();
+    const { app, ctx } = setup();
+    joinAsCustom(ctx, 'w-neon');
     await request(app).patch('/api/posts/p-mira-1').set(W).send({ content: 'gehackt' }).expect(403);
     await request(app).delete('/api/posts/p-mira-1').set(W).expect(403);
     await request(app).post('/api/posts').set(W).send({ content: '   ' }).expect(400);
@@ -104,7 +111,9 @@ describe('API – Beiträge', () => {
   });
 
   it('erlaubt Reposts nur einmal und filtert nach Welt, Charakter und Thema', async () => {
-    const { app } = setup();
+    const { app, ctx } = setup();
+    await request(app).post('/api/posts/p-jonah-1/repost').set(W).send({}).expect(409);
+    joinAsCustom(ctx, 'w-neon');
     await request(app).post('/api/posts/p-jonah-1/repost').set(W).send({}).expect(201);
     const second = await request(app).post('/api/posts/p-jonah-1/repost').set(W).send({}).expect(409);
     expect(second.body.error.code).toBe('already_reposted');
@@ -160,7 +169,8 @@ describe('API – Charaktere, Welten, Daten', () => {
   });
 
   it('exportiert Daten ohne Schlüssel und löscht auf Wunsch alles', async () => {
-    const { app } = setup();
+    const { app, ctx } = setup();
+    joinAsCustom(ctx, 'w-neon');
     await request(app).put('/api/ai/key').set(W).send({ key: 'sk-or-v1-secretsecret12345' }).expect(200);
     await request(app).post('/api/posts').set(W).send({ content: 'Wird gelöscht' }).expect(201);
     const exp = await request(app).get('/api/data/export').expect(200);
@@ -174,10 +184,14 @@ describe('API – Charaktere, Welten, Daten', () => {
     expect(boot.body.ai.keyConfigured).toBe(false);
     expect(boot.body.contentLanguage).toBe('en');
     expect(boot.body.profile.displayName).toBe('Guest');
+    expect(boot.body.activePlayer).toBeNull();
+    expect(boot.body.joinedWorlds).toHaveLength(0);
   });
 
   it('beantwortet Chat-Nachrichten im Demo-Modus über die API', async () => {
-    const { app } = setup();
+    const { app, ctx } = setup();
+    await request(app).post('/api/chats/c-elowen/messages').set(W).send({ content: 'Hallo' }).expect(409);
+    joinAsCustom(ctx, 'w-elder');
     const res = await request(app).post('/api/chats/c-elowen/messages').set(W).send({ content: 'Hallo Elowen!' }).expect(201);
     expect(res.body.reply.source).toBe('demo');
     const preview = await request(app).get('/api/chats/c-elowen/prompt-preview').expect(200);

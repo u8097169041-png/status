@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ART_STYLES, GENRES, LIMITS, type ArtStyle, type Genre } from '../../../shared/constants';
+import { ART_STYLES, GENRES, LIMITS, categoryOfGenre, type ArtStyle, type Genre } from '../../../shared/constants';
 import type { ProgressDelta, WorldDetail, WorldEventDto, WorldInput, WorldSummary } from '../../../shared/types';
 import type { AppContext } from '../context';
 import { all, get, parseJson, run, tx } from '../db/database';
@@ -32,6 +32,7 @@ interface WorldRow {
   active_storylines: number;
   last_event_at: string | null;
   last_event_title: string | null;
+  joined: number;
 }
 
 const WORLD_SELECT = `
@@ -39,7 +40,8 @@ const WORLD_SELECT = `
     (SELECT COUNT(*) FROM characters c WHERE c.world_id = w.id) AS character_count,
     (SELECT COUNT(*) FROM storylines s WHERE s.world_id = w.id AND s.status = 'active') AS active_storylines,
     (SELECT e.created_at FROM world_events e WHERE e.world_id = w.id ORDER BY e.created_at DESC LIMIT 1) AS last_event_at,
-    (SELECT e.title FROM world_events e WHERE e.world_id = w.id ORDER BY e.created_at DESC LIMIT 1) AS last_event_title
+    (SELECT e.title FROM world_events e WHERE e.world_id = w.id ORDER BY e.created_at DESC LIMIT 1) AS last_event_title,
+    EXISTS (SELECT 1 FROM players pl WHERE pl.world_id = w.id AND pl.is_active = 1) AS joined
   FROM worlds w`;
 
 function toSummary(r: WorldRow): WorldSummary {
@@ -57,6 +59,8 @@ function toSummary(r: WorldRow): WorldSummary {
     activeStorylines: r.active_storylines,
     lastEventAt: r.last_event_at,
     lastEventTitle: r.last_event_title,
+    category: categoryOfGenre(r.genre),
+    joined: Boolean(r.joined),
   };
 }
 

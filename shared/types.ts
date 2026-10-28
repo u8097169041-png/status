@@ -4,9 +4,11 @@ import type {
   Genre,
   Lang,
   RelationshipKind,
+  WorldCategory,
   WorldMetric,
   WritingStyle,
 } from './constants';
+import type { ShopItemType } from './economy';
 import type { RelationshipStatus } from './relationships';
 import type { LevelInfo } from './progress';
 
@@ -23,6 +25,10 @@ export interface AuthorRef {
   avatarGlyph: AvatarGlyph;
   isRealPersonSim: boolean;
   worldId: string | null;
+  /** Bekannte Figur dieser Welt („verifiziert“). */
+  verified: boolean;
+  /** Bei eigenen Inhalten: die Spielfigur, mit der gepostet wurde. */
+  playerId?: string | null;
 }
 
 export interface PostDto {
@@ -96,6 +102,12 @@ export interface CharacterSummary {
   isRealPersonSim: boolean;
   mood: string;
   postCount: number;
+  /** Bekannte Figur der Welt – kann als Spielfigur übernommen werden. */
+  prominent: boolean;
+  /** Eigene Spielfigur des Nutzers. */
+  isPlayer: boolean;
+  /** Wird aktuell vom Nutzer gespielt (nimmt nicht an der autonomen Simulation teil). */
+  playedByYou: boolean;
 }
 
 export interface CharacterDetail extends CharacterSummary {
@@ -106,6 +118,7 @@ export interface CharacterDetail extends CharacterSummary {
   writingStyle: WritingStyle;
   styleNotes: string;
   rules: string[];
+  goals: string[];
   createdAt: string;
   relationships: RelationshipDto[];
   groups: { id: string; name: string; hue: number; role: string }[];
@@ -131,6 +144,7 @@ export interface CharacterInput {
   writingStyle: WritingStyle;
   styleNotes: string;
   rules: string[];
+  goals?: string[];
   avatarHue: number;
   avatarGlyph: AvatarGlyph;
   isRealPersonSim: boolean;
@@ -152,6 +166,9 @@ export interface WorldSummary {
   activeStorylines: number;
   lastEventAt: string | null;
   lastEventTitle: string | null;
+  category: WorldCategory;
+  /** Der Nutzer hat in dieser Welt eine aktive Spielfigur. */
+  joined: boolean;
 }
 
 export interface WorldDetail extends WorldSummary {
@@ -247,6 +264,9 @@ export interface EventCard {
   id: string;
   needsTargets: 0 | 1 | 2;
   metricHints: Partial<Record<WorldMetric, number>>;
+  /** Shop-Artikel, der die Karte freischaltet (nur Premium-Karten). */
+  shopItem: string | null;
+  locked: boolean;
 }
 
 export interface TriggerEventInput {
@@ -319,11 +339,14 @@ export interface UserProfileDto {
   avatarGlyph: AvatarGlyph;
   titleReward: string;
   accentReward: string;
+  frameItem: string;
+  bannerItem: string;
   createdAt: string;
 }
 
 export interface ProgressDelta {
   xpGained: number;
+  coinsGained?: number;
   levelUp: number | null;
   achievementsUnlocked: string[];
 }
@@ -334,6 +357,7 @@ export interface QuestProgressDto {
   target: number;
   current: number;
   xp: number;
+  coins: number;
   completed: boolean;
   claimed: boolean;
 }
@@ -354,6 +378,7 @@ export interface ProgressDto {
 
 export interface NotificationDto {
   id: string;
+  worldId: string | null;
   kind: string;
   params: Record<string, string | number>;
   link: string | null;
@@ -477,7 +502,125 @@ export interface SimulationStatusDto {
   aiWorldActive: boolean;
 }
 
+export interface PlayerStatsDto {
+  reputation: number;
+  influence: number;
+  followers: number;
+  xp: number;
+}
+
+export interface PlayerDto extends PlayerStatsDto {
+  id: string;
+  worldId: string;
+  worldName: string;
+  worldHue: number;
+  mode: 'custom' | 'existing';
+  isActive: boolean;
+  character: CharacterSummary & { background: string; goals: string[]; personality: string[] };
+  joinedAt: string;
+  lastActiveAt: string;
+  retiredAt: string | null;
+  pendingDecisions: number;
+}
+
+export interface JoinWorldInput {
+  mode: 'custom' | 'existing';
+  characterId?: string;
+  character?: {
+    name: string;
+    background: string;
+    role: string;
+    personality: string[];
+    goals: string[];
+    avatarHue: number;
+    avatarGlyph: AvatarGlyph;
+  };
+  /** Muss gesetzt sein, wenn bereits eine aktive Spielfigur existiert (bewusster Charakterwechsel). */
+  confirmSwitch?: boolean;
+}
+
+export interface DecisionEffectsDto {
+  reputation?: number;
+  influence?: number;
+  followers?: number;
+  metrics?: Partial<Record<WorldMetric, number>>;
+  affinity?: { characterId: string; name: string; delta: number }[];
+  /** Die Option treibt die verknüpfte Geschichte um ein Kapitel voran. */
+  advancesStoryline?: boolean;
+}
+
+export interface DecisionOptionDto {
+  id: string;
+  label: string;
+  effects: DecisionEffectsDto;
+}
+
+export interface DecisionDto {
+  id: string;
+  worldId: string;
+  playerId: string;
+  kind: string;
+  title: string;
+  description: string;
+  options: DecisionOptionDto[];
+  status: 'pending' | 'resolved';
+  chosenOptionId: string | null;
+  outcome: string | null;
+  participants: CharacterRef[];
+  storylineId: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+export interface DecisionResult {
+  decision: DecisionDto;
+  player: PlayerDto;
+  progress: ProgressDelta;
+}
+
+export interface WorldQuestProgressDto {
+  id: string;
+  metric: string;
+  target: number;
+  current: number;
+  xp: number;
+  coins: number;
+  completed: boolean;
+  claimed: boolean;
+}
+
+export interface WalletDto {
+  balance: number;
+  recent: { amount: number; reason: string; createdAt: string }[];
+}
+
+export interface ShopItemDto {
+  id: string;
+  type: ShopItemType;
+  price: number;
+  owned: boolean;
+  equipped: boolean;
+}
+
+export interface SearchResultDto {
+  query: string;
+  worlds: WorldSummary[];
+  characters: CharacterSummary[];
+  posts: PostDto[];
+}
+
+export interface ActivityDto {
+  notifications: NotificationDto[];
+  events: WorldEventDto[];
+  decisions: DecisionDto[];
+}
+
 export interface BootstrapDto {
+  activeWorld: WorldSummary | null;
+  activePlayer: PlayerDto | null;
+  joinedWorlds: { world: WorldSummary; player: PlayerDto }[];
+  coins: number;
+  pendingDecisions: number;
   profile: UserProfileDto;
   settings: AppSettings;
   ai: AiStatusDto;
@@ -498,11 +641,11 @@ export interface TrendingTag {
 export interface DiscoverDto {
   featuredWorld: WorldSummary | null;
   worlds: WorldSummary[];
-  characters: CharacterSummary[];
-  trendingTags: TrendingTag[];
-  storylines: (StorylineDto & { worldName: string; worldHue: number })[];
+  /** Bekannte Figuren aller Welten (spielbar). */
+  figures: CharacterSummary[];
+  /** Szenarien: laufende Geschichten aller Welten. */
+  scenarios: (StorylineDto & { worldName: string; worldHue: number })[];
   recentEvents: (WorldEventDto & { worldName: string; worldHue: number })[];
-  highlightPosts: PostDto[];
 }
 
 export interface ApiErrorBody {

@@ -10,14 +10,16 @@ export function notify(
   kind: string,
   params: Record<string, string | number> = {},
   link: string | null = null,
+  worldId: string | null = null,
 ): void {
   run(
     ctx.db,
-    `INSERT INTO notifications (id, kind, params, link, read, created_at) VALUES (?, ?, ?, ?, 0, ?)`,
+    `INSERT INTO notifications (id, kind, params, link, world_id, read, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`,
     newId('n'),
     kind,
     JSON.stringify(params),
     link,
+    worldId,
     ctx.now().toISOString(),
   );
   run(
@@ -28,7 +30,7 @@ export function notify(
 }
 
 export function listNotifications(ctx: AppContext, limit = 50): NotificationDto[] {
-  return all<{ id: string; kind: string; params: string; link: string | null; read: number; created_at: string }>(
+  return all<{ id: string; kind: string; params: string; link: string | null; world_id: string | null; read: number; created_at: string }>(
     ctx.db,
     `SELECT * FROM notifications ORDER BY created_at DESC LIMIT ?`,
     limit,
@@ -37,6 +39,7 @@ export function listNotifications(ctx: AppContext, limit = 50): NotificationDto[
     kind: n.kind,
     params: parseJson(n.params, {}),
     link: n.link,
+    worldId: n.world_id,
     read: Boolean(n.read),
     createdAt: n.created_at,
   }));

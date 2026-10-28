@@ -48,7 +48,7 @@ export function worldRoutes(ctx: AppContext): Router {
     res.status(201).json(await triggerEvent(ctx, param(req, 'id'), req.body));
   });
   r.get('/event-cards', (_req, res) => {
-    res.json(listEventCards());
+    res.json(listEventCards(ctx));
   });
 
   r.post('/worlds/:id/relationships', (req, res) => {
