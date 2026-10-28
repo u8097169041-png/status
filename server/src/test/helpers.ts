@@ -4,7 +4,7 @@ import { createApp } from '../app';
 import type { AppConfig } from '../config';
 import type { AppContext } from '../context';
 import { openDatabase } from '../db/database';
-import { seedDatabase } from '../db/seed';
+import { seedIfEmpty } from '../db/seed';
 import { joinWorld } from '../services/players';
 import type { Lang } from '../../../shared/constants';
 
@@ -28,8 +28,10 @@ export const TEST_CONFIG: AppConfig = {
 };
 
 /** Erzeugt einen vollständigen Anwendungskontext mit In-Memory-Datenbank und simuliertem OpenRouter. */
-export function createTestContext(opts: { lang?: Lang; handler?: MockHandler; config?: Partial<AppConfig>; seed?: boolean } = {}): TestContext {
-  const db = openDatabase(':memory:');
+export function createTestContext(
+  opts: { lang?: Lang; handler?: MockHandler; config?: Partial<AppConfig>; seed?: boolean; dbFile?: string } = {},
+): TestContext {
+  const db = openDatabase(opts.dbFile ?? ':memory:');
   let current = new Date('2026-10-27T10:00:00.000Z');
   const now = () => new Date(current);
   const fetchCalls: { url: string; body: unknown }[] = [];
@@ -59,7 +61,7 @@ export function createTestContext(opts: { lang?: Lang; handler?: MockHandler; co
     },
     fetchCalls,
   };
-  if (opts.seed !== false) seedDatabase(db, now(), opts.lang ?? 'de');
+  if (opts.seed !== false) seedIfEmpty(db, now(), opts.lang ?? 'de');
   return ctx;
 }
 

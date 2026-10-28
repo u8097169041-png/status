@@ -8,7 +8,9 @@ import { newId } from '../lib/ids';
 import { cleanText } from '../lib/text';
 import { addHours } from '../lib/time';
 import { AUTHOR_COLUMNS, PLAYER_AUTHOR_COLUMNS, characterAuthor, getProfileRow, userAuthor, type PlayerAuthorColumns } from './mappers';
-import { activeWorldId, requireActivePlayer } from './players';
+import { SKILL_RULES } from '../../../shared/skills';
+import { activeWorldId, adjustPlayerStats, requireActivePlayer } from './players';
+import { skillLevel } from './skills';
 import { recordAction } from './progress';
 
 /** Entfernt abgelaufene Stories dauerhaft. */
@@ -91,6 +93,16 @@ export function createStory(ctx: AppContext, input: unknown): { story: StoryDto;
       now.toISOString(),
       addHours(now, STORY_LIFETIME_HOURS).toISOString(),
     );
+    // Für Quests zählen auch Stories, die später ablaufen und gelöscht werden.
+    run(
+      ctx.db,
+      `INSERT OR IGNORE INTO action_uses (player_id, action, ref, day, created_at) VALUES (?, 'story', ?, 'once', ?)`,
+      player.id,
+      id,
+      now.toISOString(),
+    );
+    // Medienkompetenz 3: Stories bringen zusätzliche Follower.
+    if (skillLevel(ctx, player.id, 'media') >= 3) adjustPlayerStats(ctx, player.id, { followers: SKILL_RULES.storyFollowers });
     return recordAction(ctx, 'story', id, player.id);
   });
   const story = listStories(ctx, worldId).find((s) => s.id === id);

@@ -105,6 +105,7 @@ export function createApp(ctx: AppContext, options: AppOptions = {}): express.Ex
 
   const expensive = rateLimit(40);
   app.use('/api/chats/:id/messages', expensive);
+  app.post('/api/chats/:id/actions/:actionId', expensive);
   app.use('/api/worlds/generate', expensive);
   app.use('/api/worlds/:id/simulate', expensive);
   app.use('/api/worlds/:id/events', expensive);

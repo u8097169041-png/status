@@ -8,13 +8,19 @@ import {
   activatePlayer,
   activeWorldId,
   getActivePlayerRow,
+  getPlayerRow,
   joinWorld,
+  requireActivePlayer,
   leaveWorld,
   listPlayers,
   setActiveWorld,
   toPlayer,
 } from '../services/players';
+import { getChatActions, performChatAction } from '../services/chatActions';
+import { reactToEvent } from '../services/posts';
+import { getQuestBoard } from '../services/quests';
 import { search } from '../services/search';
+import { listSkills, upgradeSkill } from '../services/skills';
 import { buyItem, equipItem, getWallet, listShop } from '../services/wallet';
 import { claimWorldQuest, listWorldQuests } from '../services/worldQuests';
 import { param, q } from './helpers';
@@ -79,6 +85,32 @@ export function playRoutes(ctx: AppContext): Router {
   r.post('/world-quests/:id/claim', (req, res) => {
     const worldId = worldOf(q(req, 'world'));
     res.json({ progress: claimWorldQuest(ctx, param(req, 'id'), worldId), quests: listWorldQuests(ctx, worldId) });
+  });
+
+  // ---- Quests, Fähigkeiten, Dialogoptionen, Reaktionen ----
+
+  const playerOf = (value: string | undefined) => requireActivePlayer(ctx, worldOf(value));
+
+  r.get('/quests', (req, res) => {
+    res.json(getQuestBoard(ctx, worldOf(q(req, 'world')), playerOf(q(req, 'world'))));
+  });
+  r.get('/skills', (req, res) => {
+    const player = playerOf(q(req, 'world'));
+    res.json({ player: toPlayer(ctx, player), skills: listSkills(ctx, player) });
+  });
+  r.post('/skills/:id/upgrade', (req, res) => {
+    const player = playerOf(q(req, 'world'));
+    const skills = upgradeSkill(ctx, player, param(req, 'id'));
+    res.json({ player: toPlayer(ctx, getPlayerRow(ctx, player.id)), skills });
+  });
+  r.get('/chats/:characterId/actions', (req, res) => {
+    res.json(getChatActions(ctx, param(req, 'characterId')));
+  });
+  r.post('/chats/:characterId/actions/:actionId', async (req, res) => {
+    res.json(await performChatAction(ctx, param(req, 'characterId'), param(req, 'actionId')));
+  });
+  r.post('/events/:id/react', (req, res) => {
+    res.status(201).json(reactToEvent(ctx, param(req, 'id'), req.body));
   });
 
   r.get('/wallet', (_req, res) => {

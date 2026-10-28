@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LIMITS } from '../../../shared/constants';
-import type { CommentDto, FeedPage, PostDetailDto, PostDto, ProgressDelta, TrendingTag } from '../../../shared/types';
+import type { CommentDto, FeedPage, PostDetailDto, PostDto, PostReach, ProgressDelta, TrendingTag } from '../../../shared/types';
 import type { AppContext } from '../context';
 import { all, get, run, tx } from '../db/database';
 import { AppError, badRequest, forbidden, notFound } from '../lib/errors';
@@ -17,7 +17,20 @@ import {
   type PlayerAuthorColumns,
   type ProfileRow,
 } from './mappers';
-import { activeWorldId, requireActivePlayer } from './players';
+import { SKILL_RULES } from '../../../shared/skills';
+import { dayKey } from '../lib/time';
+import { fill } from '../lib/text';
+import {
+  activeWorldId,
+  adjustPlayerStats,
+  controlledCharacterIds,
+  getActivePlayerRow,
+  requireActivePlayer,
+  type PlayerRow,
+} from './players';
+import { getLanguage } from './settings';
+import { requireSkill, skillLevel } from './skills';
+import { adjustAffinity } from './society';
 import { emptyDelta, recordAction } from './progress';
 import { getSettings } from './settings';
 
@@ -117,6 +130,8 @@ export interface FeedFilters {
 export function listPosts(ctx: AppContext, filters: FeedFilters = {}): FeedPage {
   const where: string[] = [];
   const params: (string | number)[] = [];
+  // Beiträge einer Welt sind erst nach dem Beitritt sichtbar (eigene Beiträge und Lesezeichen bleiben erreichbar).
+  if (!filters.bookmarked && filters.author !== 'user' && !filters.playerId) where.push(VISIBLE_WORLD_SQL);
   if (filters.worldId) {
     where.push('p.world_id = ?');
     params.push(filters.worldId);
@@ -182,8 +197,15 @@ interface CommentRow {
   c_prominent: number | null;
 }
 
+/** Beitrag ohne Welt oder aus einer Welt, in der der Nutzer mitspielt. */
+const VISIBLE_WORLD_SQL = `(p.world_id IS NULL OR p.author_type = 'user'
+  OR EXISTS (SELECT 1 FROM players vis WHERE vis.world_id = p.world_id AND vis.is_active = 1))`;
+
 export function getPostDetail(ctx: AppContext, id: string): PostDetailDto {
   const post = getPost(ctx, id);
+  if (post.worldId && !post.isOwn && !post.bookmarkedByMe && !getActivePlayerRow(ctx, post.worldId)) {
+    throw new AppError(409, 'not_joined', 'Tritt dieser Welt bei, um ihre Beiträge zu sehen.');
+  }
   const profile = getProfileRow(ctx);
   const rows = all<CommentRow & PlayerAuthorColumns>(
     ctx.db,
@@ -221,6 +243,8 @@ export function getPostDetail(ctx: AppContext, id: string): PostDetailDto {
 const postInputSchema = z.object({
   content: z.string().max(LIMITS.postContent * 2),
   worldId: z.string().max(80).nullable().optional(),
+  /** Als Statement veröffentlichen (Medienkompetenz 2, einmal pro Tag): mehr Reaktionen und Einfluss. */
+  statement: z.boolean().optional(),
 });
 
 function validateContent(raw: string, max: number, code = 'invalid_content'): string {
@@ -237,7 +261,74 @@ function writeTags(ctx: AppContext, postId: string, content: string): void {
   }
 }
 
-export function createPost(ctx: AppContext, input: unknown): { post: PostDto; progress: ProgressDelta } {
+function useOnce(ctx: AppContext, playerId: string, action: string, ref: string, day: string): boolean {
+  return (
+    run(
+      ctx.db,
+      'INSERT OR IGNORE INTO action_uses (player_id, action, ref, day, created_at) VALUES (?, ?, ?, ?, ?)',
+      playerId,
+      action,
+      ref,
+      day,
+      ctx.now().toISOString(),
+    ).changes > 0
+  );
+}
+
+/**
+ * Veröffentlicht einen Beitrag der Spielfigur und wendet die Reichweiten-Regeln an:
+ * Follower je nach Medienkompetenz, Zuneigung bei Erwähnung von Figuren, optional Statement.
+ */
+function publishPlayerPost(
+  ctx: AppContext,
+  player: PlayerRow,
+  content: string,
+  opts: { statement?: boolean; eventId?: string | null; reputation?: number } = {},
+): { id: string; reach: PostReach; progress: ProgressDelta } {
+  const media = skillLevel(ctx, player.id, 'media');
+  if (opts.statement) requireSkill(ctx, player.id, { skill: 'media', level: 2 });
+  const id = newId('p');
+  const day = dayKey(ctx.now());
+  return tx(ctx.db, () => {
+    if (opts.statement && !useOnce(ctx, player.id, 'statement', 'post', day)) {
+      throw new AppError(409, 'action_used', 'Ein Statement ist nur einmal pro Tag möglich.');
+    }
+    run(
+      ctx.db,
+      `INSERT INTO posts (id, author_type, character_id, world_id, player_id, content, event_id, source, created_at)
+       VALUES (?, 'user', NULL, ?, ?, ?, ?, 'user', ?)`,
+      id,
+      player.world_id,
+      player.id,
+      content,
+      opts.eventId ?? null,
+      ctx.now().toISOString(),
+    );
+    run(ctx.db, 'UPDATE players SET last_active_at = ? WHERE id = ?', ctx.now().toISOString(), player.id);
+    writeTags(ctx, id, content);
+    const reach: PostReach = {
+      followers: SKILL_RULES.followersPerPost.base + SKILL_RULES.followersPerPost.perMedia * media,
+      influence: opts.statement ? 3 : 0,
+    };
+    adjustPlayerStats(ctx, player.id, { followers: reach.followers, influence: reach.influence, reputation: opts.reputation });
+    // Erwähnte Figuren derselben Welt fühlen sich angesprochen (einmal pro Tag und Figur).
+    const controlled = controlledCharacterIds(ctx, player.world_id);
+    for (const handle of new Set([...content.matchAll(/@([a-z0-9_]{2,30})/gi)].map((m) => m[1].toLowerCase()))) {
+      const npc = get<{ id: string }>(ctx.db, 'SELECT id FROM characters WHERE world_id = ? AND handle = ? COLLATE NOCASE', player.world_id, handle);
+      if (npc && !controlled.has(npc.id) && useOnce(ctx, player.id, 'mention', npc.id, day)) {
+        adjustAffinity(ctx, player.world_id, player.character_id, npc.id, 2);
+      }
+    }
+    if (getSettings(ctx.db).simulation.reactionsEnabled) {
+      // Medienkompetenz und Statements bringen zusätzliche Reaktionen.
+      const boost = SKILL_RULES.extraReactorsPerMedia * media + (opts.statement ? 2 : 0);
+      scheduleJob(ctx, 'reactToPost', { postId: id, boost: String(boost) }, 8 + Math.floor(Math.random() * 20));
+    }
+    return { id, reach, progress: recordAction(ctx, 'post', id, player.id) };
+  });
+}
+
+export function createPost(ctx: AppContext, input: unknown): { post: PostDto; progress: ProgressDelta; reach: PostReach } {
   const parsed = postInputSchema.safeParse(input);
   if (!parsed.success) throw badRequest('invalid_post', 'Ungültiger Beitrag.', parsed.error.issues);
   const content = validateContent(parsed.data.content, LIMITS.postContent);
@@ -246,26 +337,41 @@ export function createPost(ctx: AppContext, input: unknown): { post: PostDto; pr
   if (!worldId) throw new AppError(409, 'not_joined', 'Tritt zuerst einer Welt bei, um zu posten.');
   if (!get(ctx.db, 'SELECT 1 FROM worlds WHERE id = ?', worldId)) throw notFound('Welt');
   const player = requireActivePlayer(ctx, worldId);
-  const id = newId('p');
-  const progress = tx(ctx.db, () => {
-    run(
-      ctx.db,
-      `INSERT INTO posts (id, author_type, character_id, world_id, player_id, content, source, created_at)
-       VALUES (?, 'user', NULL, ?, ?, ?, 'user', ?)`,
-      id,
-      worldId,
-      player.id,
-      content,
-      ctx.now().toISOString(),
-    );
-    run(ctx.db, 'UPDATE players SET last_active_at = ? WHERE id = ?', ctx.now().toISOString(), player.id);
-    writeTags(ctx, id, content);
-    if (getSettings(ctx.db).simulation.reactionsEnabled) {
-      scheduleJob(ctx, 'reactToPost', { postId: id }, 8 + Math.floor(Math.random() * 20));
-    }
-    return recordAction(ctx, 'post', id, player.id);
+  const result = publishPlayerPost(ctx, player, content, { statement: parsed.data.statement });
+  return { post: getPost(ctx, result.id), progress: result.progress, reach: result.reach };
+}
+
+const REACT_TEXT = {
+  de: 'Zu „{title}“: ',
+  en: 'On "{title}": ',
+};
+
+/** Öffentliche Reaktion auf ein Weltereignis (Medienkompetenz 1, einmal pro Ereignis). */
+export function reactToEvent(
+  ctx: AppContext,
+  eventId: string,
+  input: unknown,
+): { post: PostDto; progress: ProgressDelta; reach: PostReach } {
+  const parsed = z.object({ content: z.string().max(LIMITS.postContent * 2).default('') }).safeParse(input ?? {});
+  if (!parsed.success) throw badRequest('invalid_post', 'Ungültige Reaktion.', parsed.error.issues);
+  const event = get<{ id: string; world_id: string; title: string }>(ctx.db, 'SELECT id, world_id, title FROM world_events WHERE id = ?', eventId);
+  if (!event) throw notFound('Ereignis');
+  const player = requireActivePlayer(ctx, event.world_id);
+  requireSkill(ctx, player.id, { skill: 'media', level: 1 });
+  if (get(ctx.db, `SELECT 1 FROM action_uses WHERE player_id = ? AND action = 'react-event' AND ref = ?`, player.id, eventId)) {
+    throw new AppError(409, 'action_used', 'Auf dieses Ereignis hast du bereits reagiert.');
+  }
+  const lang = getLanguage(ctx.db);
+  const text = cleanText(parsed.data.content);
+  const content = `${fill(REACT_TEXT[lang], { title: event.title })}${text || (lang === 'de' ? 'Dazu habe ich eine klare Meinung.' : 'I have a clear opinion on this.')}`.slice(
+    0,
+    LIMITS.postContent,
+  );
+  const result = tx(ctx.db, () => {
+    useOnce(ctx, player.id, 'react-event', eventId, 'once');
+    return publishPlayerPost(ctx, player, content, { eventId, reputation: 2 });
   });
-  return { post: getPost(ctx, id), progress };
+  return { post: getPost(ctx, result.id), progress: result.progress, reach: result.reach };
 }
 
 function requireOwnPost(ctx: AppContext, id: string): void {
@@ -405,7 +511,11 @@ export function addComment(
     // Antworten werden in einem flachen Thread unter dem obersten Kommentar gesammelt.
     parentId = parent.parent_id ?? parentId;
   }
-  const world = get<{ world_id: string | null }>(ctx.db, 'SELECT world_id FROM posts WHERE id = ?', postId);
+  const world = get<{ world_id: string | null; character_id: string | null }>(
+    ctx.db,
+    'SELECT world_id, character_id FROM posts WHERE id = ?',
+    postId,
+  );
   const player = world?.world_id ? requireActivePlayer(ctx, world.world_id) : null;
   const id = newId('cm');
   const progress = tx(ctx.db, () => {
@@ -420,6 +530,12 @@ export function addComment(
       content,
       ctx.now().toISOString(),
     );
+    // Ein Kommentar unter dem Beitrag einer Figur stärkt die Beziehung (einmal pro Tag und Figur, mit Charisma mehr).
+    if (player && world?.character_id && !controlledCharacterIds(ctx, player.world_id).has(world.character_id)) {
+      if (useOnce(ctx, player.id, 'comment-affinity', world.character_id, dayKey(ctx.now()))) {
+        adjustAffinity(ctx, player.world_id, player.character_id, world.character_id, 1 + skillLevel(ctx, player.id, 'charisma'));
+      }
+    }
     if (post.author_type === 'character' && getSettings(ctx.db).simulation.reactionsEnabled) {
       scheduleJob(ctx, 'replyToComment', { postId, commentId: id }, 10 + Math.floor(Math.random() * 25));
     }

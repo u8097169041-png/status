@@ -114,6 +114,7 @@ describe('API – Beiträge', () => {
     const { app, ctx } = setup();
     await request(app).post('/api/posts/p-jonah-1/repost').set(W).send({}).expect(409);
     joinAsCustom(ctx, 'w-neon');
+    joinAsCustom(ctx, 'w-aurelia');
     await request(app).post('/api/posts/p-jonah-1/repost').set(W).send({}).expect(201);
     const second = await request(app).post('/api/posts/p-jonah-1/repost').set(W).send({}).expect(409);
     expect(second.body.error.code).toBe('already_reposted');
@@ -126,7 +127,11 @@ describe('API – Beiträge', () => {
   });
 
   it('paginiert den Feed stabil', async () => {
-    const { app } = setup();
+    const { app, ctx } = setup();
+    // Ohne Beitritt keine Weltbeiträge
+    expect((await request(app).get('/api/posts?limit=5').expect(200)).body.items).toHaveLength(0);
+    joinAsCustom(ctx, 'w-neon');
+    joinAsCustom(ctx, 'w-aurelia');
     const first = await request(app).get('/api/posts?limit=5').expect(200);
     expect(first.body.items).toHaveLength(5);
     const next = await request(app).get(`/api/posts?limit=5&cursor=${encodeURIComponent(first.body.nextCursor)}`).expect(200);

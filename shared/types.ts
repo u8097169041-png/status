@@ -1,3 +1,4 @@
+import type { Archetype, ChatActionId, GoalType, SkillId } from './skills';
 import type {
   ArtStyle,
   AvatarGlyph,
@@ -169,6 +170,10 @@ export interface WorldSummary {
   category: WorldCategory;
   /** Der Nutzer hat in dieser Welt eine aktive Spielfigur. */
   joined: boolean;
+  /** Bekannteste Figuren der Welt (für die Weltkarte). */
+  cast: CharacterRef[];
+  /** Simulierte Beiträge der letzten 24 Stunden (keine Live-Daten). */
+  postsToday: number;
 }
 
 export interface WorldDetail extends WorldSummary {
@@ -230,6 +235,16 @@ export interface GroupDto {
   members: { character: CharacterRef; role: string }[];
 }
 
+export type ArcPath = 'bold' | 'diplomatic' | 'neutral';
+
+/** Mögliches Ende eines Handlungsbogens; welches eintritt, hängt von den Entscheidungen ab. */
+export interface ArcEndingDto {
+  id: string;
+  path: ArcPath;
+  title: string;
+  description: string;
+}
+
 export interface StorylineDto {
   id: string;
   worldId: string;
@@ -239,6 +254,11 @@ export interface StorylineDto {
   stage: number;
   status: 'active' | 'resolved';
   updatedAt: string;
+  endings: ArcEndingDto[];
+  /** Erreichtes Ende (nur bei abgeschlossenen Geschichten). */
+  endingId: string | null;
+  /** Prognose des Endes – nur sichtbar mit Strategie 2 der aktiven Spielfigur dieser Welt. */
+  forecastEndingId?: string | null;
 }
 
 export type EventEffect =
@@ -349,6 +369,10 @@ export interface ProgressDelta {
   coinsGained?: number;
   levelUp: number | null;
   achievementsUnlocked: string[];
+  /** Neues Charakterlevel der Spielfigur (bringt einen Fähigkeitspunkt). */
+  playerLevelUp?: number | null;
+  /** In dieser Aktion abgeschlossene Quests. */
+  questsCompleted?: { id: string; kind: QuestKind; title: string; xp: number }[];
 }
 
 export interface QuestProgressDto {
@@ -509,6 +533,12 @@ export interface PlayerStatsDto {
   xp: number;
 }
 
+export interface SkillPointsDto {
+  earned: number;
+  spent: number;
+  available: number;
+}
+
 export interface PlayerDto extends PlayerStatsDto {
   id: string;
   worldId: string;
@@ -521,6 +551,12 @@ export interface PlayerDto extends PlayerStatsDto {
   lastActiveAt: string;
   retiredAt: string | null;
   pendingDecisions: number;
+  /** Charakterlevel dieser Spielfigur (getrennt vom Kontolevel). */
+  level: LevelInfo;
+  archetype: Archetype;
+  goalType: GoalType;
+  skills: Record<SkillId, number>;
+  skillPoints: SkillPointsDto;
 }
 
 export interface JoinWorldInput {
@@ -534,7 +570,11 @@ export interface JoinWorldInput {
     goals: string[];
     avatarHue: number;
     avatarGlyph: AvatarGlyph;
+    /** An eine reale öffentliche Person angelehnt (wird als Simulation gekennzeichnet). */
+    isRealPersonSim?: boolean;
   };
+  /** Hauptziel der Figur; ohne Angabe passend zur Rolle. */
+  goalType?: GoalType;
   /** Muss gesetzt sein, wenn bereits eine aktive Spielfigur existiert (bewusster Charakterwechsel). */
   confirmSwitch?: boolean;
 }
@@ -553,6 +593,14 @@ export interface DecisionOptionDto {
   id: string;
   label: string;
   effects: DecisionEffectsDto;
+  /** Benötigte Fähigkeit für diese Option. */
+  requires?: { skill: SkillId; level: number };
+  /** Die aktive Figur erfüllt die Voraussetzung nicht. */
+  locked: boolean;
+  /** Richtung, in die die Option den Handlungsbogen lenkt. */
+  arcPath?: ArcPath;
+  /** Ergebnisvorschau – nur mit Strategie 2. */
+  outcomePreview?: string;
 }
 
 export interface DecisionDto {
@@ -643,11 +691,141 @@ export interface DiscoverDto {
   worlds: WorldSummary[];
   /** Bekannte Figuren aller Welten (spielbar). */
   figures: CharacterSummary[];
-  /** Szenarien: laufende Geschichten aller Welten. */
-  scenarios: (StorylineDto & { worldName: string; worldHue: number })[];
-  recentEvents: (WorldEventDto & { worldName: string; worldHue: number })[];
+  /** Beliebte Welten nach simulierter Aktivität. */
+  popular: WorldSummary[];
+  /** Interaktive Handlungsbögen aller Welten mit ihren möglichen Enden. */
+  scenarios: (StorylineDto & { worldName: string; worldHue: number; worldJoined: boolean })[];
 }
 
 export interface ApiErrorBody {
   error: { code: string; message: string; details?: unknown };
+}
+
+// ---------- Quests, Fähigkeiten, Dialogoptionen ----------
+
+export type QuestKind = 'main' | 'side' | 'event';
+
+export type QuestMetric =
+  | 'posts'
+  | 'comments'
+  | 'stories'
+  | 'chatPartners'
+  | 'chatWith'
+  | 'affinityWith'
+  | 'allies'
+  | 'friends'
+  | 'followersGain'
+  | 'reputation'
+  | 'influence'
+  | 'decisions'
+  | 'arcDecisions'
+  | 'arcResolved'
+  | 'cooperations'
+  | 'cooperatedWith'
+  | 'negotiatedWith'
+  | 'endorsements'
+  | 'eventReaction'
+  | 'likesReceived';
+
+export interface QuestObjectiveDto {
+  metric: QuestMetric;
+  target: number;
+  current: number;
+  done: boolean;
+  /** Name der betroffenen Figur oder Geschichte (für die Anzeige). */
+  name?: string;
+}
+
+export interface QuestPathDto {
+  objectives: QuestObjectiveDto[];
+  /** Alternativer Lösungsweg, der eine Fähigkeit voraussetzt. */
+  requires?: { skill: SkillId; level: number };
+  locked: boolean;
+}
+
+export interface QuestRewardsDto {
+  reputation?: number;
+  influence?: number;
+  followers?: number;
+}
+
+export interface QuestDto {
+  id: string;
+  kind: QuestKind;
+  title: string;
+  description: string;
+  stage: number;
+  stages: number;
+  paths: QuestPathDto[];
+  xp: number;
+  coins: number;
+  rewards: QuestRewardsDto;
+  status: 'active' | 'completed' | 'expired';
+  progress: number;
+  createdAt: string;
+  completedAt: string | null;
+  /** Ereignisquests: verfällt nach diesem Welttag. */
+  expiresDay: number | null;
+  /** Verknüpftes Ereignis (zum direkten Reagieren). */
+  eventId?: string | null;
+}
+
+export interface QuestBoardDto {
+  player: PlayerDto;
+  worldDay: number;
+  main: QuestDto | null;
+  side: QuestDto[];
+  events: QuestDto[];
+  completed: QuestDto[];
+  mainStagesCompleted: number;
+}
+
+export interface SkillDto {
+  id: SkillId;
+  level: number;
+  maxLevel: number;
+  core: boolean;
+  /** Kosten der nächsten Stufe in Fähigkeitspunkten. */
+  cost: number;
+  /** Charakterlevel, das für die nächste Stufe nötig ist. */
+  nextRequiredLevel: number | null;
+  canUpgrade: boolean;
+  blockedReason: 'max' | 'level' | 'points' | null;
+}
+
+export interface SkillBoardDto {
+  player: PlayerDto;
+  skills: SkillDto[];
+}
+
+export interface ChatActionDto {
+  id: ChatActionId;
+  requires?: { skill: SkillId; level: number };
+  affinity: number;
+  available: boolean;
+  /** Grund, warum die Option gerade nicht nutzbar ist. */
+  reason: 'skill' | 'used' | 'affinityLow' | 'affinityHigh' | null;
+  minAffinity?: number;
+  maxAffinity?: number;
+}
+
+export interface ChatActionsDto {
+  characterId: string;
+  affinity: number;
+  actions: ChatActionDto[];
+  /** Ziele der Figur – erst nach einem persönlichen Gespräch (Charisma 2) bekannt. */
+  knownGoals: string[] | null;
+}
+
+export interface ChatActionResult {
+  message: SendMessageResult;
+  affinityBefore: number;
+  affinityAfter: number;
+  effects: QuestRewardsDto;
+  actions: ChatActionsDto;
+}
+
+export interface PostReach {
+  followers: number;
+  influence: number;
 }

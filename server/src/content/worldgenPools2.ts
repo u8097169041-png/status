@@ -265,4 +265,47 @@ export const GENRE_POOLS_V2 = {
     firstNames: ['Adelheid', 'Viktor', 'Mathilde', 'Ludwig', 'Frieda', 'Emil'],
     lastNames: ['von Arnim', 'Brückner', 'Steinhauer', 'Lorenz', 'Kessler'],
   },
+  internet: {
+    artStyle: 'network',
+    hue: [175, 205],
+    namePrefix: [{ de: 'Trend', en: 'Trend' }, { de: 'Feed', en: 'Feed' }, { de: 'Pixel', en: 'Pixel' }],
+    nameSuffix: [{ de: 'welle', en: 'wave' }, { de: 'stadt', en: 'town' }, { de: 'netz', en: 'net' }],
+    taglines: [
+      { de: 'Reichweite ist alles – bis morgen.', en: 'Reach is everything – until tomorrow.' },
+      { de: 'Zwischen Livestream, Meme und Faktencheck.', en: 'Between livestream, meme and fact-check.' },
+    ],
+    factions: [
+      { de: 'die Plattformbetreiber', en: 'the platform operators' },
+      { de: 'eine wachsende Creator-Community', en: 'a growing creator community' },
+      { de: 'anonyme Meme-Accounts', en: 'anonymous meme accounts' },
+    ],
+    places: [
+      { de: 'ein Co-Streaming-Studio', en: 'a co-streaming studio' },
+      { de: 'die Kommentarspalte unter dem meistgesehenen Video', en: 'the comment section under the most-watched video' },
+    ],
+    conflicts: [
+      { de: 'eine Algorithmus-Änderung', en: 'an algorithm change' },
+      { de: 'ein viraler Shitstorm', en: 'a viral pile-on' },
+    ],
+    lore: [{ de: 'Die Plattform wuchs schneller als ihre Regeln. Jetzt sollen Regeln nachziehen.', en: 'The platform grew faster than its rules. Now the rules are trying to catch up.' }],
+    atmospheres: [{ de: 'Ringlicht, Push-Nachrichten und Live-Chats.', en: 'Ring lights, push notifications and live chats.' }],
+    rules: [
+      { de: 'Alle Personen und Plattformen sind frei erfunden.', en: 'All persons and platforms are fictional.' },
+      { de: 'Vertrauen ist schwerer aufzubauen als Reichweite.', en: 'Trust is harder to build than reach.' },
+    ],
+    roles: [
+      { de: 'Streamer:in', en: 'Streamer' },
+      { de: 'Tech-Creator', en: 'Tech creator' },
+      { de: 'Faktenchecker:in', en: 'Fact-checker' },
+      { de: 'Community-Managerin', en: 'Community manager' },
+    ],
+    interests: [
+      { de: 'Livestreams', en: 'livestreams' },
+      { de: 'Memes', en: 'memes' },
+      { de: 'Datenschutz', en: 'privacy' },
+      { de: 'Retro-Spiele', en: 'retro games' },
+    ],
+    firstNames: ['Mika', 'Lea', 'Jonas', 'Aylin', 'Noah', 'Ida', 'Emre'],
+    lastNames: ['Kade', 'Orlov', 'Weiß', 'Berg', 'Demir', 'Sauer'],
+  },
 } satisfies Record<string, GenrePool>;

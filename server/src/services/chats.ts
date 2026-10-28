@@ -22,6 +22,10 @@ import { getProfileRow } from './mappers';
 import { getActivePlayerRow, requireActivePlayer, type PlayerRow } from './players';
 import { mergeDelta, recordAction, recordEncounter } from './progress';
 import { getSettings } from './settings';
+import { skillLevel } from './skills';
+import { adjustAffinity } from './society';
+import { SKILL_RULES } from '../../../shared/skills';
+import { dayKey } from '../lib/time';
 
 /**
  * Chats sind Gespräche zwischen einer Spielfigur und einer Figur derselben Welt. Jede Spielfigur hat eigene
@@ -54,13 +58,13 @@ function toMessage(r: MessageRow): ChatMessageDto {
   return { id: r.id, role: r.role, content: r.content, source: r.source, model: r.model, createdAt: r.created_at };
 }
 
-interface ChatTarget {
+export interface ChatTarget {
   characterId: string;
   player: PlayerRow | null;
 }
 
 /** Prüft, ob mit dieser Figur gechattet werden darf, und ermittelt die zuständige Spielfigur. */
-function resolveTarget(ctx: AppContext, characterId: string): ChatTarget {
+export function resolveTarget(ctx: AppContext, characterId: string): ChatTarget {
   const c = getCharacterRow(ctx, characterId);
   if (!c.world_id) return { characterId, player: null };
   const player = requireActivePlayer(ctx, c.world_id);
@@ -426,7 +430,22 @@ export async function sendMessage(ctx: AppContext, characterId: string, input: u
         for (const fact of extractFacts(content, settings.language)) addMemoryInternal(ctx, conv.id, fact, 'rule');
       }
       const playerId = target.player?.id;
-      if (playerId) run(ctx.db, 'UPDATE players SET last_active_at = ? WHERE id = ?', ctx.now().toISOString(), playerId);
+      if (playerId && target.player) {
+        run(ctx.db, 'UPDATE players SET last_active_at = ? WHERE id = ?', ctx.now().toISOString(), playerId);
+        // Das erste Gespräch des Tages stärkt die Beziehung – mit Charisma mehr.
+        const first = run(
+          ctx.db,
+          `INSERT OR IGNORE INTO action_uses (player_id, action, ref, day, created_at) VALUES (?, 'chat-affinity', ?, ?, ?)`,
+          playerId,
+          characterId,
+          dayKey(ctx.now()),
+          ctx.now().toISOString(),
+        );
+        if (first.changes > 0) {
+          const bonus = SKILL_RULES.chatAffinity.base + SKILL_RULES.chatAffinity.perCharisma * skillLevel(ctx, playerId, 'charisma');
+          adjustAffinity(ctx, target.player.world_id, target.player.character_id, characterId, bonus);
+        }
+      }
       let delta = recordAction(ctx, 'chat', String(msg.id), playerId);
       delta = mergeDelta(delta, recordAction(ctx, 'chatWith', characterId, playerId));
       delta = mergeDelta(delta, recordEncounter(ctx, characterId));

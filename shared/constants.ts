@@ -34,6 +34,8 @@ export const LIMITS = {
   playerGoals: 6,
   maxPendingDecisions: 3,
   searchQuery: 80,
+  maxSideQuests: 3,
+  mainQuestStages: 3,
 } as const;
 
 export const LANGUAGES = ['de', 'en'] as const;
@@ -48,7 +50,7 @@ export type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
 export const WRITING_STYLES = ['casual', 'formal', 'poetic', 'terse', 'enthusiastic', 'sarcastic', 'scholarly'] as const;
 export type WritingStyle = (typeof WRITING_STYLES)[number];
 
-export const ART_STYLES = ['city', 'cosmic', 'forest', 'ocean', 'gears', 'dunes', 'capital', 'stage', 'stadium'] as const;
+export const ART_STYLES = ['city', 'cosmic', 'forest', 'ocean', 'gears', 'dunes', 'capital', 'stage', 'stadium', 'network'] as const;
 export type ArtStyle = (typeof ART_STYLES)[number];
 
 export const GENRES = [
@@ -57,6 +59,7 @@ export const GENRES = [
   'business',
   'sports',
   'entertainment',
+  'internet',
   'alt-history',
   'cyberpunk',
   'scifi',
@@ -70,7 +73,17 @@ export const GENRES = [
 export type Genre = (typeof GENRES)[number];
 
 /** Kategorien für die Weltauswahl auf der Entdecken-Seite. */
-export const WORLD_CATEGORIES = ['politics', 'celebrity', 'business', 'sports', 'entertainment', 'scenario', 'fiction'] as const;
+export const WORLD_CATEGORIES = [
+  'celebrity',
+  'politics',
+  'internet',
+  'fantasy',
+  'business',
+  'sports',
+  'entertainment',
+  'scenario',
+  'fiction',
+] as const;
 export type WorldCategory = (typeof WORLD_CATEGORIES)[number];
 
 export function categoryOfGenre(genre: Genre): WorldCategory {
@@ -80,6 +93,8 @@ export function categoryOfGenre(genre: Genre): WorldCategory {
     case 'business':
     case 'sports':
     case 'entertainment':
+    case 'internet':
+    case 'fantasy':
       return genre;
     case 'alt-history':
     case 'postapocalyptic':
