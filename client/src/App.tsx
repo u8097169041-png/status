@@ -1,6 +1,6 @@
 import { RefreshCw, ServerCrash } from 'lucide-react';
 import { useEffect } from 'react';
-import { Route, Routes, useLocation } from 'react-router';
+import { Navigate, Route, Routes, useLocation } from 'react-router';
 import type { Lang } from '../../shared/constants';
 import { useBootstrap } from './api/hooks';
 import { BrandMark } from './components/layout/BrandMark';
@@ -13,18 +13,24 @@ import { readStorage, writeStorage } from './lib/storage';
 import { CharacterCreatePage, CharacterEditPage } from './pages/CharacterEditPage';
 import { CharacterPage } from './pages/CharacterPage';
 import { CharactersPage } from './pages/CharactersPage';
+import { ActivityPage } from './pages/ActivityPage';
 import { ChatsPage } from './pages/ChatsPage';
 import { DiscoverPage } from './pages/DiscoverPage';
 import { FeedPage } from './pages/FeedPage';
+import { JoinWorldPage } from './pages/JoinWorldPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { PostPage } from './pages/PostPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ProgressPage } from './pages/ProgressPage';
+import { SearchPage } from './pages/SearchPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ShopPage } from './pages/ShopPage';
+import { TasksPage } from './pages/TasksPage';
 import { WorldCreatePage, WorldEditPage } from './pages/WorldCreatePage';
 import { WorldPage } from './pages/WorldPage';
+import { WorldSettingsPage } from './pages/WorldSettingsPage';
 import { WorldsPage } from './pages/WorldsPage';
 
 function initialLanguage(): Lang {
@@ -87,13 +93,21 @@ export function App() {
           <>
             <AppShell boot={boot.data}>
               <Routes>
-                <Route path="/" element={<DiscoverPage />} />
+                {/* Mit aktiver Welt startet die App im Feed, sonst beim Entdecken. */}
+                <Route path="/" element={<Navigate to={boot.data.activeWorld ? '/feed' : '/discover'} replace />} />
+                <Route path="/discover" element={<DiscoverPage />} />
                 <Route path="/feed" element={<FeedPage />} />
+                <Route path="/tasks" element={<TasksPage />} />
+                <Route path="/activity" element={<ActivityPage />} />
+                <Route path="/search" element={<SearchPage />} />
+                <Route path="/shop" element={<ShopPage />} />
+                <Route path="/world-settings" element={<WorldSettingsPage />} />
                 <Route path="/posts/:id" element={<PostPage />} />
                 <Route path="/worlds" element={<WorldsPage />} />
                 <Route path="/worlds/new" element={<WorldCreatePage />} />
                 <Route path="/worlds/:id" element={<WorldPage />} />
                 <Route path="/worlds/:id/edit" element={<WorldEditPage />} />
+                <Route path="/worlds/:id/join" element={<JoinWorldPage />} />
                 <Route path="/chats" element={<ChatsPage />} />
                 <Route path="/chats/:characterId" element={<ChatsPage />} />
                 <Route path="/characters" element={<CharactersPage />} />

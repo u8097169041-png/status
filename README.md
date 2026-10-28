@@ -1,11 +1,12 @@
 # SocialVerse
 
-**SocialVerse** ist eine lokal laufende Social-Media-Simulation mit KI-Charakteren und lebendigen Welten.
-Du entdeckst Welten mit eigenen Geschichten, chattest mit Charakteren, die sich an dich erinnern,
-postest, kommentierst und greifst mit Ereignissen in das Leben der Bewohner ein. Beziehungen,
-Gruppen und Storylines entwickeln sich dabei weiter – auch ganz ohne KI-Anbieter im kostenlosen Demo-Modus.
+**SocialVerse** ist eine lokal laufende, interaktive KI-Weltsimulation im Stil eines sozialen Netzwerks.
+Du trittst einer Welt bei – Politik, Promis, Wirtschaft, Sport, Unterhaltung, alternative Szenarien oder Fiktion –
+und spielst dort eine **eigene Figur** oder übernimmst eine **bekannte Figur** dieser Welt. Du postest, chattest,
+triffst Entscheidungen und beeinflusst damit Beziehungen, Ansehen und den Verlauf der Geschichten. Die Figuren
+handeln auch selbstständig weiter – im kostenlosen Demo-Modus komplett ohne KI-Anbieter.
 
-![Discover-Seite](docs/screenshots/discover.jpg)
+![Entdecken: Welten, bekannte Figuren und Szenarien](docs/screenshots/discover.jpg)
 
 > **Hinweis:** SocialVerse ist eine lokale Einzelplatz-Anwendung. Es gibt keine Benutzerkonten, keine
 > Online-Infrastruktur und keine Zahlungsfunktionen. Die App ist nicht dafür gedacht, im Internet betrieben zu werden.
@@ -15,6 +16,7 @@ Gruppen und Storylines entwickeln sich dabei weiter – auch ganz ohne KI-Anbiet
 ## Inhalt
 
 1. [Funktionen](#funktionen)
+   - [So funktioniert das Spiel](#so-funktioniert-das-spiel)
 2. [Voraussetzungen](#voraussetzungen)
 3. [Schnellstart unter Windows 11](#schnellstart-unter-windows-11)
 4. [Entwicklungsmodus mit Hot Reload](#entwicklungsmodus-mit-hot-reload)
@@ -36,22 +38,45 @@ Technische Details zu Aufbau, Datenmodell, Simulation und Erinnerungsstrategie s
 
 | Bereich | Was du tun kannst |
 | --- | --- |
-| **Discover** | Aktuelle Welt im Rampenlicht, Welten-Übersicht, neueste Ereignisse, beliebte Beiträge, Trends, laufende Geschichten, Tagesquests |
-| **Feed** | Beiträge von Charakteren und dir; Likes, Kommentare mit Antworten, Reposts (auch mit Kommentar), Lesezeichen; eigene Beiträge bearbeiten/löschen; Filter nach Welt, Charakter und Thema (#Hashtags); Stories für 24 Stunden |
-| **Welten** | 5 vorgefertigte Welten mit Hintergrundgeschichte, Regeln und Atmosphäre; Weltgenerator (lokal oder mit KI); Bewohner, Beziehungsnetz, Gruppen, Storylines, Ereignis-Zeitleiste; „Zeit vergehen lassen“ und Ereigniskarten (Fest, Gerücht, Krise, Versöhnung …) |
-| **Charaktere** | 16 vorgefertigte Charaktere; eigene Charaktere mit Persönlichkeit, Interessen, Hintergrund, Schreibstil, Verhaltensregeln und Avatar; Kennzeichnung „Fiktive KI-Simulation“ für an reale Personen angelehnte Figuren; Profil mit Beiträgen, Beziehungen und euren Interaktionen |
-| **Chats** | Dauerhafte Gesprächsverläufe; Gesprächserinnerung (gemerkte Fakten + Zusammenfassung + begrenztes Nachrichtenfenster); Ansicht „Was wird gesendet?“ |
-| **Fortschritt** | XP und Level, Tagesquests und Meilensteine (einlösbar), Erfolge, Sammlungen (Charakterkarten, Weltstempel), freischaltbare Titel und Akzentfarben |
+| **Entdecken** | Weltvorschauen nach Kategorien, „Deine Welten“ zum Weiterspielen, bekannte Figuren, Szenarien (laufende Geschichten), neueste Ereignisse, Tagesquests – bewusst **ohne** Stories |
+| **Beitritt** | Eigene Figur (Name, Beruf/Rolle, Hintergrund, Persönlichkeit, Ziele, Avatar) oder bekannte Figur der Welt übernehmen; kontrollierter Figurenwechsel mit Bestätigung, ohne Datenverlust |
+| **Feed** (Welt) | Statusleiste deiner Figur (Ansehen, Einfluss, Follower, Funken, offene Entscheidungen), Stories **nur dieser Welt**, Beiträge als deine Figur; Likes, Kommentare, Reposts, Lesezeichen; Filter nach Figur und Thema |
+| **Aufgaben** | Entscheidungen mit offen angezeigten Auswirkungen, Verlauf getroffener Entscheidungen, Weltaufgaben deiner Figur, Tagesquests und Meilensteine |
+| **Chats** (Welt) | Gespräche deiner Figur mit Figuren derselben Welt; eigene Verläufe und Erinnerung je Spielfigur; „Was wird gesendet?“ |
+| **Aktivität** | Mitteilungen, Weltgeschehen und deine Entscheidungen |
+| **Profil** | Deine aktive Figur mit Zielen und Werten, alle Spielfiguren mit Spielverlauf („Wieder spielen“), lokales Profil, Beiträge, Lesezeichen, Erfolge |
+| **Weitere Bereiche** | Charaktere, Suche, Shop (Rahmen, Banner, Premium-Ereigniskarten gegen Spielwährung – kein Echtgeld), Weltanpassung, Welten (Generator, Beziehungen, Gruppen, Storylines, Ereigniskarten), Fortschritt, Einstellungen, Datenschutz |
+| **Welten & Figuren** | 11 vorgefertigte, frei erfundene Welten (u. a. Regierungsviertel, Spotlight Boulevard, Unicorn Valley, FC Hafenstadt, Late Night Live, Analog 2026) mit 40 Figuren, Zielen, Beziehungen und Geschichten; eigene Welten und Figuren |
 | **Einstellungen** | Sprache (Deutsch/Englisch), OpenRouter-Schlüssel, Modellwahl mit Fallbacks, Token-/Anfrage-/Kostenlimits, Verbindungstest, Verbrauchsprotokoll, Simulationssteuerung, Erinnerungsoptionen, Datenexport und vollständiges Löschen |
 
 **Lebendige Welten:** Solange SocialVerse läuft, vergeht in regelmäßigen Abständen in einer Welt nach der anderen
-ein Tag (abschaltbar, begrenzt). Charaktere freunden sich an, streiten, versöhnen sich, posten darüber und reagieren
-auf deine Beiträge. Alles läuft standardmäßig **lokal, deterministisch und kostenlos**. KI-Aktivität in den Welten
-ist optional, begrenzt und standardmäßig ausgeschaltet.
+ein Tag (abschaltbar, begrenzt); die Welt, in der du gerade spielst, ist dabei jeden zweiten Schritt an der Reihe.
+Figuren freunden sich an, streiten, versöhnen sich, posten darüber und reagieren auf deine Beiträge. Alles läuft
+standardmäßig **lokal, deterministisch und kostenlos**. KI-Aktivität in den Welten ist optional, begrenzt und
+standardmäßig ausgeschaltet.
 
-![Weltansicht](docs/screenshots/welt.jpg)
+### So funktioniert das Spiel
 
-![Mobile Ansicht](docs/screenshots/mobil.jpg)
+1. **Welt wählen:** Unter *Entdecken* siehst du Vorschauen. Feed, Stories und Chats einer Welt öffnen sich erst nach
+   dem Beitritt.
+2. **Figur wählen:** eigene Figur erstellen oder eine Figur der Welt übernehmen. Pro Welt spielst du genau eine
+   Figur; ein Wechsel pausiert die bisherige Figur – Beiträge, Chats, Entscheidungen und Werte bleiben gespeichert,
+   und du kannst im Profil jederzeit zurückwechseln.
+3. **Mitspielen:** Beim Beitritt wartet die erste Entscheidung. Weitere entstehen beim Simulieren (Bitten,
+   Streitfälle, Gelegenheiten) und an Wendepunkten der Geschichten. Jede Option zeigt vorher, was sie bewirkt
+   (Ansehen, Einfluss, Follower, Weltzustand, Beziehungen, Fortschritt der Geschichte). Die Auswirkungen werden
+   gespeichert, erzeugen ein Ereignis und Reaktionen der Figuren.
+4. **Belohnungen:** XP, Level und Erfolge wie bisher; dazu **Funken** (Spielwährung) für Entscheidungen, Quests,
+   Level-Aufstiege und Erfolge. Funken lassen sich nur im Spiel verdienen und nur für kosmetische Artikel und
+   Premium-Ereigniskarten ausgeben. Es gibt keine Echtgeld-Käufe.
+5. **Gespielte Figuren** handeln nicht autonom: Die Simulation lässt sie weder posten noch an Ereignissen teilnehmen –
+   das übernimmst du.
+
+![Feed einer Welt mit Statusleiste der Spielfigur und Stories dieser Welt](docs/screenshots/feed.jpg)
+
+![Aufgaben: Entscheidungen mit sichtbaren Auswirkungen und Weltaufgaben](docs/screenshots/aufgaben.jpg)
+
+![Mobile Ansicht mit Weltwechsel, Funken und unterer Navigation](docs/screenshots/mobil.jpg)
 
 ---
 
@@ -184,6 +209,11 @@ Die Datei `.env` ist in `.gitignore` eingetragen und wird nie in Git gespeichert
 
 - **Speicherort:** `data/socialverse.db` (SQLite). Beim ersten Start wird die Datenbank angelegt, migriert und mit
   Demo-Inhalten gefüllt. Spätere Schema-Änderungen werden über versionierte Migrationen eingespielt.
+- **Update einer bestehenden Installation:** Beim ersten Start nach dem Update wird die Datenbank automatisch
+  migriert. Eigene Beiträge, Charaktere, Welten, Fortschritt und Chats bleiben erhalten; neue vorgefertigte Welten
+  werden ergänzt (eine Welt wird übersprungen, falls ein eigener Charakter bereits denselben Handle nutzt). Bisherige
+  Chats übernimmt die erste Spielfigur, mit der du der jeweiligen Welt beitrittst. Vorsichtshalber vorher `data/`
+  sichern.
 - **Export:** Einstellungen → Datenschutz & Daten → **Daten exportieren** lädt alle lokalen Daten als JSON herunter
   (ohne API-Schlüssel).
 - **Backup:** SocialVerse beenden und den Ordner `data/` kopieren.
@@ -207,11 +237,15 @@ Die Datei `.env` ist in `.gitignore` eingetragen und wird nie in Git gespeichert
   protokolliert. Ein in der App eingegebener Schlüssel liegt **unverschlüsselt** in der lokalen Datenbank – wer
   Zugriff auf deinen Computer hat, kann ihn lesen. Alternativ `.env` verwenden.
 - **Was wird an OpenRouter gesendet?** Nur bei aktivierter KI: Charakterprofil, Weltbeschreibung, gemerkte Fakten,
-  Zusammenfassung und die letzten *N* Chatnachrichten (sowie optional dein Anzeigename). Im Chat zeigt
+  Zusammenfassung, die letzten *N* Chatnachrichten sowie Rolle, Hintergrund und Ziele deiner Spielfigur (ihr Name nur,
+  wenn „Namen an die KI senden“ eingeschaltet ist). Im Chat zeigt
   **„Was wird gesendet?“** die exakte nächste Anfrage. Details: Seite **Datenschutz** in der App.
 - **Keine Tracking-Dienste**, keine externen Schriften oder Bilder – alles wird lokal ausgeliefert.
-- **Fiktion:** Alle Charaktere sind fiktiv und als KI-Charaktere gekennzeichnet. An reale Personen angelehnte Figuren
-  werden deutlich als „Fiktive KI-Simulation“ markiert; ihr Systemprompt verbietet, sich als die echte Person auszugeben.
+- **Fiktion:** Alle vorgefertigten Welten und Figuren sind frei erfunden (auch in den realitätsnahen Kategorien wie
+  Politik oder Promis) und als KI-Charaktere gekennzeichnet. Reale Persönlichkeiten können nur als eigene Figur mit
+  der Kennzeichnung „Fiktive KI-Simulation“ angelegt werden; ihr Systemprompt verbietet, sich als die echte Person
+  auszugeben oder erfundene Zitate als echt darzustellen. Solche Figuren werden zusätzlich nicht in negative
+  Ereignisse (Konflikt, Gerücht, Rivalität, Rückschlag) verwickelt – weder automatisch noch per Ereigniskarte.
 
 ---
 
@@ -222,11 +256,16 @@ npm run check        # Typprüfung + Lint + Unit-/Integrationstests + Build
 npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
 ```
 
-- **Unit-/Integrationstests (Vitest):** XP/Level/Quests (inkl. Schutz vor Mehrfachbelohnung), Simulation und
+- **Unit-/Integrationstests (Vitest):** Beitritt mit eigener und bekannter Figur, Figurenwechsel ohne Datenverlust,
+  weltgebundene Stories/Beiträge/Chats, Entscheidungen (einmalig, dauerhaft, Storyverlauf), Weltaufgaben, Shop und
+  Funken, Schutz von Real-Person-Simulationen, Migration bestehender Datenbanken (Chats → Gespräche) und das
+  Ergänzen neuer Welten, Suche; außerdem XP/Level/Quests (inkl. Schutz vor Mehrfachbelohnung), Simulation und
   Ereigniskarten (inkl. Determinismus), Chats und Erinnerung, Demo-Antworten, KI-Anbindung mit simuliertem
   OpenRouter (Fallbacks, Limits, Budget, Kostenschätzung, Zeitüberschreitung), API-Endpunkte (CSRF/Host-Schutz,
   Schlüssel nie im Frontend, Beitrags-Lebenszyklus, Export/Löschen), Übersetzungsvollständigkeit, XSS-sichere Darstellung.
-- **Ende-zu-Ende (Playwright):** Onboarding, Navigation, Beiträge (erstellen, liken, merken, bearbeiten, kommentieren),
+- **Ende-zu-Ende (Playwright):** Entdecken ohne Stories, Weltvorschau und Beitritt, eigene und bekannte Figur,
+  weltgebundene Stories/Feed/Chats, Entscheidung mit Neuladen, Welt- und Figurenwechsel, Navigation (Desktop und
+  mobil, ohne horizontales Scrollen), Onboarding, Beiträge (erstellen, liken, merken, bearbeiten, kommentieren),
   Filter, Demo-Chat mit Erinnerung, Weltsimulation, Ereigniskarten, Beziehungen, Storylines, Charakter- und
   Weltgenerator, Quests, Sprachwechsel, Schlüsselschutz, mobile Ansicht, vollständiges Löschen sowie der KI-Pfad
   gegen einen lokalen OpenRouter-Nachbau (`e2e/mock-openrouter.mjs`).
@@ -258,6 +297,10 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   KI-Pfad ist gegen einen originalgetreuen lokalen Nachbau der API getestet; die Anbindung an den echten Dienst sollte
   einmal mit „Verbindung testen“ geprüft werden.
 - **Einzelplatz:** Ein lokales Profil, keine Benutzerkonten, keine Synchronisation zwischen Geräten.
+- **Layout nach Beschreibung:** Die Oberfläche (Navigation, Feed, Chats, Statusanzeigen) wurde nach der textlichen
+  Vorgabe gestaltet; Referenz-Screenshots lagen nicht vor. Abweichungen im Detail sind daher möglich.
+- **Entscheidungen aus Vorlagen:** Entscheidungen und ihre Auswirkungen entstehen aus festen, zweisprachigen
+  Vorlagen (nachvollziehbar und kostenlos), nicht frei per KI.
 - **Demo-Modus:** Lokale Antworten folgen Regeln und Vorlagen – sie sind bewusst einfach und ersetzen keine KI.
 - **Inhaltssprache:** Bereits vorhandene Inhalte werden beim Sprachwechsel nicht übersetzt.
 - **Import:** Ein Datenexport ist möglich, ein Import (Wiederherstellen aus JSON) noch nicht – Backups über den Ordner `data/`.

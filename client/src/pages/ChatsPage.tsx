@@ -3,8 +3,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { LIMITS } from '../../../shared/constants';
 import type { ChatDetail } from '../../../shared/types';
+import { ApiError } from '../api/client';
 import { useCharacters, useChat, useChatActions, useChats, usePromptPreview } from '../api/hooks';
 import { AuthorName } from '../components/feed/AuthorLine';
+import { NotJoinedState, useActivePlay } from '../components/play/PlayUI';
 import { useErrorToast, useProgressFeedback } from '../components/progress/useProgressFeedback';
 import { Avatar } from '../components/ui/Avatar';
 import { Toggle } from '../components/ui/Form';
@@ -15,10 +17,11 @@ import { useToast } from '../components/ui/Toast';
 import { useI18n } from '../i18n';
 import { formatTime } from '../lib/format';
 
-function NewChatModal({ onClose }: { onClose: () => void }) {
+function NewChatModal({ worldId, onClose }: { worldId: string; onClose: () => void }) {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const { data: characters } = useCharacters();
+  // Nur Figuren der aktiven Welt, ohne die eigene Spielfigur.
+  const { data: characters } = useCharacters({ world: worldId, npc: true });
   const [search, setSearch] = useState('');
   const list = (characters ?? []).filter((c) => `${c.name} ${c.handle} ${c.worldName ?? ''}`.toLowerCase().includes(search.toLowerCase()));
   return (
@@ -46,9 +49,7 @@ function NewChatModal({ onClose }: { onClose: () => void }) {
               <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="md" decorative />
               <span className="grow">
                 <strong className="small">{c.name}</strong>
-                <span className="xsmall muted block truncate">
-                  {c.role} · {c.worldName ?? t('characters.noWorld')}
-                </span>
+                <span className="xsmall muted block truncate">{c.role}</span>
               </span>
             </button>
           </li>
@@ -195,7 +196,10 @@ function Conversation({ characterId }: { characterId: string }) {
   }, [characterId]);
 
   if (chat.isPending) return <Loading />;
-  if (chat.isError) return <ErrorState error={chat.error} onRetry={() => void chat.refetch()} />;
+  if (chat.isError) {
+    if (chat.error instanceof ApiError && chat.error.code === 'not_joined') return <NotJoinedState />;
+    return <ErrorState error={chat.error} onRetry={() => void chat.refetch()} />;
+  }
   const data = chat.data;
   const c = data.character;
 
@@ -245,7 +249,7 @@ function Conversation({ characterId }: { characterId: string }) {
         {data.messages.length === 0 && !pending && (
           <div className="chat-empty">
             <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="xl" decorative />
-            <AuthorName author={{ type: 'character', id: c.id, name: c.name, handle: c.handle, avatarHue: c.avatarHue, avatarGlyph: c.avatarGlyph, isRealPersonSim: c.isRealPersonSim, worldId: c.worldId }} />
+            <AuthorName author={{ type: 'character', id: c.id, name: c.name, handle: c.handle, avatarHue: c.avatarHue, avatarGlyph: c.avatarGlyph, isRealPersonSim: c.isRealPersonSim, worldId: c.worldId, verified: c.prominent }} />
             <p className="small muted center-text">{c.tagline}</p>
             <p className="small">{t('chats.sayHello', { name: c.name })}</p>
             <div className="chip-row center">
@@ -349,16 +353,30 @@ function Conversation({ characterId }: { characterId: string }) {
 export function ChatsPage() {
   const { characterId } = useParams();
   const { t } = useI18n();
-  const chats = useChats();
+  const { worldId, world, player } = useActivePlay();
+  const chats = useChats(worldId);
   const [newOpen, setNewOpen] = useState(false);
   const sorted = useMemo(() => chats.data ?? [], [chats.data]);
+
+  if (!worldId || !player) {
+    return (
+      <div className="page">
+        <NotJoinedState />
+      </div>
+    );
+  }
 
   return (
     <div className={`page chat-page ${characterId ? 'has-active' : ''}`}>
       <div className="chat-layout">
         <aside className="chat-list-pane" aria-label={t('chats.title')}>
           <div className="row-between chat-list-header">
-            <h1>{t('chats.title')}</h1>
+            <span className="min-w-0">
+              <h1>{t('chats.title')}</h1>
+              <span className="xsmall muted block truncate">
+                {t('play.playingAs', { name: player.character.name })} · {world?.name}
+              </span>
+            </span>
             <button type="button" className="btn btn-primary btn-sm" onClick={() => setNewOpen(true)}>
               <MessageCirclePlus aria-hidden /> {t('chats.start')}
             </button>
@@ -403,7 +421,7 @@ export function ChatsPage() {
           )}
         </div>
       </div>
-      {newOpen && <NewChatModal onClose={() => setNewOpen(false)} />}
+      {newOpen && <NewChatModal worldId={worldId} onClose={() => setNewOpen(false)} />}
     </div>
   );
 }

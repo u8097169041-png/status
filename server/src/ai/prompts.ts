@@ -31,6 +31,14 @@ export interface PromptCharacter
   relationships: { name: string; kind: string; status: string }[];
 }
 
+/** Die vom Nutzer gesteuerte Spielfigur, mit der eine Figur spricht. */
+export interface PlayerPersona {
+  name: string | null;
+  role: string;
+  background: string;
+  goals: string[];
+}
+
 const LANGUAGE_NAME: Record<Lang, string> = { de: 'German', en: 'English' };
 
 /**
@@ -41,7 +49,13 @@ export function characterSystemPrompt(
   c: PromptCharacter,
   world: WorldContext | null,
   lang: Lang,
-  extra: { memories?: string[]; summary?: string | null; userName?: string | null; mode: 'chat' | 'post' | 'comment' },
+  extra: {
+    memories?: string[];
+    summary?: string | null;
+    userName?: string | null;
+    player?: PlayerPersona | null;
+    mode: 'chat' | 'post' | 'comment';
+  },
 ): string {
   const lines: string[] = [];
   lines.push(
@@ -78,7 +92,17 @@ export function characterSystemPrompt(
   if (extra.mode === 'chat') {
     lines.push('');
     lines.push('## Conversation');
-    if (extra.userName) lines.push(`You are chatting privately with a user named "${extra.userName}".`);
+    if (extra.player) {
+      const p = extra.player;
+      lines.push(
+        `You are chatting privately with ${p.name ? `"${p.name}"` : 'another person'}, who also lives in this world` +
+          `${p.role ? ` (${truncate(p.role, 80)})` : ''}. This person is played by the user.`,
+      );
+      if (p.background) lines.push(`What is known about them: ${truncate(p.background, 300)}`);
+      if (p.goals.length) lines.push(`Their publicly known goals: ${p.goals.slice(0, 3).map((g) => truncate(g, 80)).join('; ')}`);
+    } else if (extra.userName) {
+      lines.push(`You are chatting privately with a user named "${extra.userName}".`);
+    }
     if (extra.summary) lines.push(`Summary of earlier conversation: ${truncate(extra.summary, 800)}`);
     if (extra.memories?.length) lines.push(`Things you remember about the user: ${extra.memories.map((m) => `- ${m}`).join(' ')}`);
   }

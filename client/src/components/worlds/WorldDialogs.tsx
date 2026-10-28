@@ -1,4 +1,20 @@
-import { Check, Compass, Flame, Handshake, HeartHandshake, MessageSquareWarning, PartyPopper, PenLine, Star, type LucideIcon } from 'lucide-react';
+import {
+  Check,
+  Compass,
+  Crown,
+  Flame,
+  Handshake,
+  HeartHandshake,
+  Landmark,
+  Lock,
+  MessageSquareWarning,
+  Newspaper,
+  PartyPopper,
+  PenLine,
+  Star,
+  type LucideIcon,
+} from 'lucide-react';
+import { Link } from 'react-router';
 import { useState } from 'react';
 import { LIMITS, RELATIONSHIP_KINDS, type RelationshipKind } from '../../../../shared/constants';
 import type { CharacterSummary, RelationshipDto, WorldDetail } from '../../../../shared/types';
@@ -19,6 +35,9 @@ const CARD_ICONS: Record<string, LucideIcon> = {
   alliance: Handshake,
   spotlight: Star,
   custom: PenLine,
+  gala: Crown,
+  'breaking-news': Newspaper,
+  summit: Landmark,
 };
 
 function CharacterPicker({
@@ -70,6 +89,8 @@ export function TriggerEventModal({ world, onClose }: { world: WorldDetail; onCl
   const [description, setDescription] = useState('');
   const [effect, setEffect] = useState<'harmony' | 'tension' | 'discovery'>('discovery');
   const card = cards?.find((c) => c.id === cardId);
+  // Gespielte Figuren handeln nicht autonom und können nicht als Beteiligte gewählt werden.
+  const selectable = world.characters.filter((c) => !c.isPlayer && !c.playedByYou);
   const needed = card?.needsTargets ?? 0;
   const ready = targets.length >= needed && (cardId !== 'custom' || title.trim().length > 0);
 
@@ -119,22 +140,24 @@ export function TriggerEventModal({ world, onClose }: { world: WorldDetail; onCl
         <span className="field-label">{t('cards.choose')}</span>
         <div className="event-card-grid" role="radiogroup" aria-label={t('cards.choose')}>
           {(cards ?? []).map((c) => {
-            const Icon = CARD_ICONS[c.id] ?? Star;
+            const Icon = c.locked ? Lock : (CARD_ICONS[c.id] ?? Star);
             return (
               <button
                 key={c.id}
                 type="button"
                 role="radio"
                 aria-checked={cardId === c.id}
-                className={`event-card ${cardId === c.id ? 'selected' : ''}`}
+                aria-disabled={c.locked || undefined}
+                className={`event-card ${cardId === c.id ? 'selected' : ''} ${c.locked ? 'locked' : ''} ${c.shopItem ? 'premium' : ''}`}
                 onClick={() => {
+                  if (c.locked) return;
                   setCardId(c.id);
                   setTargets((prev) => prev.slice(0, c.needsTargets));
                 }}
               >
                 <Icon aria-hidden />
                 <strong>{t(`cards.${c.id}` as TKey)}</strong>
-                <span>{t(`cards.${c.id}Desc` as TKey)}</span>
+                <span>{c.locked ? t('cards.locked') : t(`cards.${c.id}Desc` as TKey)}</span>
               </button>
             );
           })}
@@ -152,11 +175,17 @@ export function TriggerEventModal({ world, onClose }: { world: WorldDetail; onCl
           />
         </div>
       )}
-      {(needed > 0 || cardId === 'custom') && world.characters.length > 0 && (
+      {cards?.some((c) => c.locked) && (
+        <Link to="/shop" className="xsmall">
+          {t('cards.locked')}
+        </Link>
+      )}
+      {(needed > 0 || cardId === 'custom') && selectable.length > 0 && (
         <div className="field">
           <span className="field-label">{t('cards.targets', { count: needed || `0–2` })}</span>
           {needed > 0 && <span className="field-hint">{t('cards.targetsHint', { count: needed })}</span>}
-          <CharacterPicker characters={world.characters} selected={targets} max={needed || 2} onChange={setTargets} />
+          <CharacterPicker characters={selectable} selected={targets} max={needed || 2} onChange={setTargets} />
+          {selectable.length < world.characters.length && <span className="field-hint">{t('cards.noPlayers')}</span>}
         </div>
       )}
     </Modal>

@@ -1,24 +1,24 @@
 import { Send } from 'lucide-react';
 import { useId, useState } from 'react';
 import { LIMITS } from '../../../../shared/constants';
-import { useBootstrap, useCreatePost, useWorlds } from '../../api/hooks';
+import { useBootstrap, useCreatePost } from '../../api/hooks';
 import { useI18n } from '../../i18n';
 import { useErrorToast, useProgressFeedback } from '../progress/useProgressFeedback';
 import { Avatar } from '../ui/Avatar';
 import { useToast } from '../ui/Toast';
 
-export function PostComposer({ defaultWorldId = null, lockWorld }: { defaultWorldId?: string | null; lockWorld?: boolean }) {
+/** Beiträge entstehen immer in einer Welt – als die dort aktive Spielfigur. */
+export function PostComposer({ worldId }: { worldId: string }) {
   const { t } = useI18n();
   const { data: boot } = useBootstrap();
-  const { data: worlds } = useWorlds();
   const create = useCreatePost();
   const feedback = useProgressFeedback();
   const showError = useErrorToast();
   const { push } = useToast();
   const [content, setContent] = useState('');
-  const [worldId, setWorldId] = useState<string | null>(defaultWorldId);
   const id = useId();
-  const worldName = worlds?.find((w) => w.id === worldId)?.name;
+  const me = boot?.activePlayer?.worldId === worldId ? boot.activePlayer : null;
+  const worldName = me?.worldName;
   const tooLong = content.length > LIMITS.postContent;
 
   const submit = () => {
@@ -44,7 +44,7 @@ export function PostComposer({ defaultWorldId = null, lockWorld }: { defaultWorl
         submit();
       }}
     >
-      {boot && <Avatar name={boot.profile.displayName} hue={boot.profile.avatarHue} glyph={boot.profile.avatarGlyph} decorative />}
+      {me && <Avatar name={me.character.name} hue={me.character.avatarHue} glyph={me.character.avatarGlyph} decorative />}
       <div className="composer-body">
         <label htmlFor={id} className="sr-only">
           {t('composer.placeholder')}
@@ -64,23 +64,7 @@ export function PostComposer({ defaultWorldId = null, lockWorld }: { defaultWorl
           }}
         />
         <div className="composer-footer">
-          {!lockWorld ? (
-            <select
-              className="select select-sm"
-              value={worldId ?? ''}
-              onChange={(e) => setWorldId(e.target.value || null)}
-              aria-label={t('composer.worldLabel')}
-            >
-              <option value="">{t('composer.noWorld')}</option>
-              {worlds?.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span />
-          )}
+          <span className="xsmall muted truncate">{me ? t('play.postingAs', { name: me.character.name }) : ''}</span>
           <div className="row">
             {content.length > 0 && (
               <span className={`char-count ${tooLong ? 'over' : ''}`}>

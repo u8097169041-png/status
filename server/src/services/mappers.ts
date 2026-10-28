@@ -22,6 +22,9 @@ export interface CharacterRow {
   is_custom: number;
   is_real_person_sim: number;
   mood: string;
+  goals: string;
+  prominent: number;
+  is_player: number;
   created_at: string;
 }
 
@@ -33,16 +36,23 @@ export interface ProfileRow {
   avatar_glyph: string;
   title_reward: string;
   accent_reward: string;
+  frame_item: string;
+  banner_item: string;
+  active_world_id: string | null;
   xp: number;
   created_at: string;
 }
 
 export const CHARACTER_SUMMARY_SQL = `
   SELECT c.*, w.name AS world_name,
-         (SELECT COUNT(*) FROM posts p WHERE p.character_id = c.id) AS post_count
+         (SELECT COUNT(*) FROM posts p WHERE p.character_id = c.id OR p.player_id IN
+            (SELECT pl.id FROM players pl WHERE pl.character_id = c.id)) AS post_count,
+         EXISTS (SELECT 1 FROM players pl WHERE pl.character_id = c.id AND pl.is_active = 1) AS played_by_you
     FROM characters c LEFT JOIN worlds w ON w.id = c.world_id`;
 
-export function toCharacterSummary(row: CharacterRow & { world_name: string | null; post_count: number }): CharacterSummary {
+export type CharacterSummaryRow = CharacterRow & { world_name: string | null; post_count: number; played_by_you: number };
+
+export function toCharacterSummary(row: CharacterSummaryRow): CharacterSummary {
   return {
     id: row.id,
     name: row.name,
@@ -57,6 +67,9 @@ export function toCharacterSummary(row: CharacterRow & { world_name: string | nu
     isRealPersonSim: Boolean(row.is_real_person_sim),
     mood: row.mood,
     postCount: row.post_count,
+    prominent: Boolean(row.prominent),
+    isPlayer: Boolean(row.is_player),
+    playedByYou: Boolean(row.played_by_you),
   };
 }
 
@@ -69,6 +82,7 @@ export function toCharacterCore(row: CharacterRow) {
     writingStyle: row.writing_style as WritingStyle,
     styleNotes: row.style_notes,
     rules: parseJson<string[]>(row.rules, []),
+    goals: parseJson<string[]>(row.goals, []),
     createdAt: row.created_at,
   } satisfies Partial<CharacterDetail>;
 }
@@ -83,7 +97,37 @@ export function getProfileRow(ctx: AppContext): ProfileRow {
   return row;
 }
 
-export function userAuthor(profile: ProfileRow): AuthorRef {
+/** Spalten der Spielfigur eines eigenen Inhalts (Alias pc für den Charakter, pl für die Spielfigur). */
+export const PLAYER_AUTHOR_COLUMNS = `pl.id AS pl_id, pc.name AS pc_name, pc.handle AS pc_handle, pc.avatar_hue AS pc_hue,
+  pc.avatar_glyph AS pc_glyph, pc.is_real_person_sim AS pc_real, pc.world_id AS pc_world, pc.prominent AS pc_prominent`;
+
+export interface PlayerAuthorColumns {
+  pl_id: string | null;
+  pc_name: string | null;
+  pc_handle: string | null;
+  pc_hue: number | null;
+  pc_glyph: string | null;
+  pc_real: number | null;
+  pc_world: string | null;
+  pc_prominent: number | null;
+}
+
+/** Autor eigener Inhalte: die Spielfigur (falls vorhanden), sonst das lokale Profil. */
+export function userAuthor(profile: ProfileRow, player?: Partial<PlayerAuthorColumns>): AuthorRef {
+  if (player?.pl_id && player.pc_name) {
+    return {
+      type: 'user',
+      id: null,
+      name: player.pc_name,
+      handle: player.pc_handle ?? profile.handle,
+      avatarHue: player.pc_hue ?? profile.avatar_hue,
+      avatarGlyph: (player.pc_glyph ?? 'initials') as AvatarGlyph,
+      isRealPersonSim: Boolean(player.pc_real),
+      worldId: player.pc_world ?? null,
+      verified: Boolean(player.pc_prominent),
+      playerId: player.pl_id,
+    };
+  }
   return {
     type: 'user',
     id: null,
@@ -93,6 +137,8 @@ export function userAuthor(profile: ProfileRow): AuthorRef {
     avatarGlyph: profile.avatar_glyph as AvatarGlyph,
     isRealPersonSim: false,
     worldId: null,
+    verified: false,
+    playerId: null,
   };
 }
 
@@ -104,6 +150,7 @@ export function characterAuthor(row: {
   c_glyph: string | null;
   c_real: number | null;
   c_world: string | null;
+  c_prominent?: number | null;
 }): AuthorRef {
   return {
     type: 'character',
@@ -114,9 +161,10 @@ export function characterAuthor(row: {
     avatarGlyph: (row.c_glyph ?? 'initials') as AvatarGlyph,
     isRealPersonSim: Boolean(row.c_real),
     worldId: row.c_world,
+    verified: Boolean(row.c_prominent),
   };
 }
 
 /** SQL-Spalten für den Charakter-Autor (Alias c). */
 export const AUTHOR_COLUMNS = `c.id AS c_id, c.name AS c_name, c.handle AS c_handle, c.avatar_hue AS c_hue,
-  c.avatar_glyph AS c_glyph, c.is_real_person_sim AS c_real, c.world_id AS c_world`;
+  c.avatar_glyph AS c_glyph, c.is_real_person_sim AS c_real, c.world_id AS c_world, c.prominent AS c_prominent`;

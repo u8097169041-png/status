@@ -325,6 +325,10 @@ export interface CardTemplate {
   randomPairs?: { count: number; delta: number };
   advanceTheme?: WorldMetric;
   mood?: string;
+  /** Premium-Karte: erst nach dem Kauf im Shop (mit Spielwährung) nutzbar. */
+  shopItem?: string;
+  /** Bei echten Personen (KI-Simulation) nicht erlaubt, weil die Karte ihnen Negatives andichtet. */
+  negative?: boolean;
   title: L;
   description: L;
   posts: L[];
@@ -351,6 +355,7 @@ export const EVENT_CARDS: CardTemplate[] = [
   {
     id: 'rumor',
     needsTargets: 2,
+    negative: true,
     metrics: { tension: 8 },
     affinity: -18,
     advanceTheme: 'tension',
@@ -441,6 +446,57 @@ export const EVENT_CARDS: CardTemplate[] = [
     },
     posts: [
       { de: 'Ich habe nicht damit gerechnet, dass so viele zuhören. Danke! Hier ist, was mir am Herzen liegt: {interest}. #{tag}', en: 'I didn\'t expect so many people to listen. Thank you! Here\'s what matters to me: {interest}. #{tag}' },
+    ],
+  },
+  {
+    id: 'gala',
+    needsTargets: 0,
+    shopItem: 'card-gala',
+    metrics: { harmony: 10, discovery: 4 },
+    randomPairs: { count: 3, delta: 6 },
+    advanceTheme: 'harmony',
+    mood: 'happy',
+    title: { de: 'Gala-Abend in {world}', en: 'Gala night in {world}' },
+    description: {
+      de: '{user} lädt zur großen Gala. Rote Teppiche, Reden und überraschende Begegnungen prägen den Abend.',
+      en: '{user} hosts a grand gala. Red carpets, speeches and surprising encounters shape the evening.',
+    },
+    posts: [
+      { de: 'Was für eine Gala! Ich habe Menschen getroffen, mit denen ich nie gerechnet hätte. #{tag}', en: 'What a gala! I met people I never expected to meet. #{tag}' },
+      { de: 'Bestes Outfit des Abends? Ich sage nur: Ich war da. #{tag}', en: 'Best outfit of the night? All I\'m saying is: I was there. #{tag}' },
+    ],
+  },
+  {
+    id: 'breaking-news',
+    needsTargets: 1,
+    shopItem: 'card-breaking-news',
+    metrics: { discovery: 10, tension: 4 },
+    advanceTheme: 'discovery',
+    mood: 'determined',
+    title: { de: 'Eilmeldung: {a} im Fokus', en: 'Breaking: all eyes on {a}' },
+    description: {
+      de: 'Eine (simulierte) Eilmeldung rückt {a} in den Mittelpunkt. Ganz {world} diskutiert, was als Nächstes kommt.',
+      en: 'A (simulated) breaking story puts {a} in the spotlight. All of {world} debates what comes next.',
+    },
+    posts: [
+      { de: 'Ja, ihr habt richtig gehört. Mein Statement folgt – und zwar ausführlich. #{tag}', en: 'Yes, you heard right. My statement will follow – in full. #{tag}' },
+    ],
+  },
+  {
+    id: 'summit',
+    needsTargets: 2,
+    shopItem: 'card-summit',
+    metrics: { tension: -10, harmony: 6 },
+    affinity: 18,
+    advanceTheme: 'harmony',
+    mood: 'hopeful',
+    title: { de: 'Gipfeltreffen: {a} und {b}', en: 'Summit: {a} and {b}' },
+    description: {
+      de: '{user} organisiert ein Gipfeltreffen. {a} und {b} verhandeln hinter verschlossenen Türen.',
+      en: '{user} arranges a summit. {a} and {b} negotiate behind closed doors.',
+    },
+    posts: [
+      { de: 'Produktives Treffen mit @{bHandle}. Mehr dazu bald. #{tag}', en: 'Productive meeting with @{bHandle}. More soon. #{tag}' },
     ],
   },
   {

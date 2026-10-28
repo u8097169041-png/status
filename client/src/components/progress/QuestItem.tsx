@@ -20,7 +20,10 @@ export function QuestItem({ quest }: { quest: QuestProgressDto }) {
       <div className="quest-body">
         <div className="row-between">
           <strong className="small">{td(`quests.${quest.id}`, quest.id)}</strong>
-          <span className="badge">+{quest.xp} XP</span>
+          <span className="row">
+            <span className="badge">+{quest.xp} XP</span>
+            {quest.coins > 0 && <span className="badge badge-coins">+{quest.coins}</span>}
+          </span>
         </div>
         <div className="row">
           <div

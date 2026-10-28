@@ -1,6 +1,10 @@
 import {
   ArrowLeft,
+  ArrowRight,
   Edit3,
+  LogIn,
+  LogOut,
+  Repeat,
   Hourglass,
   Network,
   Plus,
@@ -14,7 +18,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../api/client';
-import { useWorld, useWorldActions, useWorldEvents } from '../api/hooks';
+import { usePlayActions, useWorld, useWorldActions, useWorldEvents } from '../api/hooks';
 import { CharacterCard } from '../components/characters/CharacterCard';
 import { FeedList } from '../components/feed/FeedList';
 import { PostComposer } from '../components/feed/PostComposer';
@@ -235,6 +239,8 @@ export function WorldPage() {
   const [triggerOpen, setTriggerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [storylineOpen, setStorylineOpen] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const play = usePlayActions();
   const visitHandled = useRef<string | null>(null);
 
   useEffect(() => {
@@ -294,13 +300,34 @@ export function WorldPage() {
           <h1>{world.name}</h1>
           <p className="hero-tagline">{world.tagline}</p>
           <div className="row wrap">
-            <button type="button" className="btn btn-primary" onClick={simulate} disabled={actions.simulate.isPending} title={t('worlds.simulateHint')}>
-              {actions.simulate.isPending ? <span className="spinner" aria-hidden /> : <Hourglass aria-hidden />}
-              {actions.simulate.isPending ? t('worlds.simulating') : t('worlds.simulate')}
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={() => setTriggerOpen(true)}>
-              <Zap aria-hidden /> {t('worlds.trigger')}
-            </button>
+            {world.joined ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => play.setWorld.mutate(world.id, { onSuccess: () => navigate('/feed'), onError: showError })}
+                >
+                  {t('play.openFeed')} <ArrowRight aria-hidden />
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={simulate} disabled={actions.simulate.isPending} title={t('worlds.simulateHint')}>
+                  {actions.simulate.isPending ? <span className="spinner" aria-hidden /> : <Hourglass aria-hidden />}
+                  {actions.simulate.isPending ? t('worlds.simulating') : t('worlds.simulate')}
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={() => setTriggerOpen(true)}>
+                  <Zap aria-hidden /> {t('worlds.trigger')}
+                </button>
+                <Link to={`/worlds/${world.id}/join`} className="btn btn-ghost">
+                  <Repeat aria-hidden /> {t('play.changeCharacter')}
+                </Link>
+                <button type="button" className="btn btn-ghost" onClick={() => setConfirmLeave(true)}>
+                  <LogOut aria-hidden /> {t('play.leave')}
+                </button>
+              </>
+            ) : (
+              <Link to={`/worlds/${world.id}/join`} className="btn btn-primary">
+                <LogIn aria-hidden /> {t('discover.join')}
+              </Link>
+            )}
             {world.isCustom && (
               <>
                 <Link to={`/worlds/${world.id}/edit`} className="btn btn-ghost" aria-label={t('worlds.edit')}>
@@ -333,6 +360,7 @@ export function WorldPage() {
           <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="stack">
             {tab === 'overview' && (
               <>
+                {!world.joined && <div className="notice">{t('play.previewHint', { world: world.name })}</div>}
                 {world.characters.length === 0 && <div className="notice notice-warning">{t('worlds.noCharactersNotice')}</div>}
                 <section className="card stack-sm">
                   <h2 className="card-heading">{t('worlds.description')}</h2>
@@ -418,12 +446,23 @@ export function WorldPage() {
             {tab === 'relationships' && <RelationshipsTab world={world} />}
             {tab === 'groups' && <GroupsTab world={world} />}
             {tab === 'events' && <EventsTab worldId={world.id} />}
-            {tab === 'posts' && (
-              <>
-                <PostComposer defaultWorldId={world.id} lockWorld />
-                <FeedList filters={{ world: world.id }} emptyText={t('worlds.postsEmpty')} />
-              </>
-            )}
+            {tab === 'posts' &&
+              (world.joined ? (
+                <>
+                  <PostComposer worldId={world.id} />
+                  <FeedList filters={{ world: world.id }} emptyText={t('worlds.postsEmpty')} />
+                </>
+              ) : (
+                <EmptyState
+                  title={t('play.previewTitle')}
+                  text={t('play.previewHint', { world: world.name })}
+                  action={
+                    <Link to={`/worlds/${world.id}/join`} className="btn btn-primary">
+                      <LogIn aria-hidden /> {t('discover.join')}
+                    </Link>
+                  }
+                />
+              ))}
           </div>
         </div>
         <aside className="rail rail-visible-mobile">
@@ -450,6 +489,24 @@ export function WorldPage() {
 
       {triggerOpen && <TriggerEventModal world={world} onClose={() => setTriggerOpen(false)} />}
       {storylineOpen && <StorylineModal world={world} onClose={() => setStorylineOpen(false)} />}
+      {confirmLeave && (
+        <ConfirmDialog
+          title={t('play.leave')}
+          text={t('play.leaveText')}
+          confirmLabel={t('play.leave')}
+          busy={play.leave.isPending}
+          onCancel={() => setConfirmLeave(false)}
+          onConfirm={() =>
+            play.leave.mutate(world.id, {
+              onSuccess: () => {
+                setConfirmLeave(false);
+                push('success', t('play.left'));
+              },
+              onError: showError,
+            })
+          }
+        />
+      )}
       {confirmDelete && (
         <ConfirmDialog
           title={t('worlds.deleteWorld')}

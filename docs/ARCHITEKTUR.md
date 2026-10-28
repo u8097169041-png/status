@@ -71,9 +71,53 @@ Wichtige Tabellen:
 | --- | --- |
 | `worlds`, `characters`, `relationships`, `groups`, `group_members`, `storylines`, `world_events` | Welten und ihre Gesellschaft; Metriken Harmonie/Spannung/Entdeckung direkt in `worlds` |
 | `posts`, `post_tags`, `comments`, `user_likes`, `character_likes`, `bookmarks`, `stories`, `story_views` | Social-Media-Inhalte |
-| `chats`, `chat_messages`, `chat_memories` | Chatverläufe, gemerkte Fakten und Zusammenfassung |
-| `activity_log`, `xp_events`, `quest_claims`, `achievements`, `encounters`, `world_visits` | Fortschritt |
+| `players` | Spielfiguren: Welt, Figur, Modus (eigene/bekannte Figur), Werte (Ansehen, Einfluss, Follower, XP), aktiv/pausiert |
+| `decisions` | Entscheidungen einer Spielfigur mit gespeicherten Optionen und Auswirkungen, Wahl, Ergebnis und Ereignis |
+| `conversations`, `conversation_messages`, `conversation_memories` | Gespräche je (Spielfigur, Figur), gemerkte Fakten und Zusammenfassung |
+| `wallet_ledger`, `purchases` | Spielwährung („Funken“) als Buchungsjournal mit eindeutigen Schlüsseln; freigeschaltete Shop-Artikel |
+| `activity_log`, `xp_events`, `quest_claims`, `achievements`, `encounters`, `world_visits` | Fortschritt (Weltaufgaben nutzen `quest_claims` mit der Spielfigur als Zeitraum) |
 | `ai_usage`, `simulation_log`, `scheduled_jobs`, `notifications`, `settings`, `secrets`, `meta` | Betrieb |
+
+## Spielfiguren und aktive Welt
+
+- **Eine aktive Figur pro Welt:** ein eindeutiger Teilindex `players(world_id) WHERE is_active = 1` erzwingt das in
+  der Datenbank. Ein Wechsel (`confirmSwitch`) pausiert die bisherige Figur (`retired_at`) – ihre Beiträge,
+  Kommentare, Stories, Gespräche, Entscheidungen und Werte bleiben mit `player_id` verknüpft. Wird eine früher
+  gespielte bekannte Figur erneut gewählt, wird ihr alter Spielstand fortgesetzt.
+- **Aktive Welt:** `user_profile.active_world_id`; gültig nur, solange dort eine aktive Figur existiert.
+- **Weltbindung:** Beiträge, Kommentare und Stories in einer Welt verlangen eine aktive Figur (sonst `409 not_joined`)
+  und werden als diese Figur angezeigt. Stories und Gespräche werden nur für die eigene Welt geliefert; *Entdecken*
+  enthält keine Stories.
+- **Gesteuerte Figuren:** eigene Spielfiguren (`characters.is_player = 1`) und aktuell gespielte bekannte Figuren
+  werden von Simulation, Reaktionen und Ereigniskarten nicht automatisch bewegt.
+- **Chats:** Ein Gespräch gehört zu (Spielfigur, Figur). Gespräche aus Version 1 (ohne Spielfigur) übernimmt die erste
+  Spielfigur, die der Welt beitritt. Der Systemprompt beschreibt die Spielfigur (Rolle, Hintergrund, Ziele; Name nur
+  mit Erlaubnis).
+
+## Entscheidungen
+
+- **Entstehung:** Einstiegsentscheidung beim Beitritt; während der Simulation mit einer Wahrscheinlichkeit
+  (Bitte einer Figur, Streit zweier Figuren – bevorzugt mit tatsächlicher Rivalität –, Gelegenheit) und an Wendepunkten
+  laufender Geschichten. Höchstens 3 offene Entscheidungen je Figur.
+- **Vorlagen:** `content/decisionTemplates.ts` (zweisprachig). Beim Anlegen werden konkrete Figuren, Texte und
+  Auswirkungen festgeschrieben und gespeichert – die Oberfläche zeigt sie vor der Wahl an.
+- **Wahl (`POST /api/decisions/:id/choose`):** genau einmal (`409 already_decided`), nur für die aktive Figur. In einer
+  Transaktion: Spielwerte anpassen, Weltmetriken ändern, Zuneigung zwischen Spielfigur und Figuren ändern (inkl.
+  Beziehungsart), ggf. Geschichte um ein Kapitel voranbringen, Ereignis `decision` schreiben, öffentliche Reaktion
+  einer beteiligten Figur posten. Danach XP (`decide`) und Funken (Schlüssel `decision:<id>`).
+
+## Spielwährung und Shop
+
+- Funken entstehen nur durch Spielen: Entscheidungen, Quests/Weltaufgaben, Level-Aufstiege, Erfolge. Jede Gutschrift
+  hat einen eindeutigen Schlüssel in `wallet_ledger` – doppelte Gutschriften sind ausgeschlossen.
+- Der Shop (`shared/economy.ts`) verkauft nur Kosmetik (Rahmen, Banner) und Premium-Ereigniskarten. Käufe sind
+  Buchungen mit negativem Betrag; der Kontostand ist die Summe des Journals. Es gibt keine Echtgeld-Anbindung.
+
+## Inhaltsaktualisierung bestehender Datenbanken
+
+`meta.content_version` merkt sich den Stand der Beispielinhalte. Beim Start ergänzt `applyContentUpdates` fehlende
+neue Welten samt Figuren, Beziehungen, Gruppen, Geschichten, Beiträgen und Stories sowie Ziele und „bekannt“-Markierung
+der alten Figuren. Welten, deren Figuren-IDs oder Handles bereits belegt sind, werden übersprungen.
 
 ## Fortschritt ohne Mehrfachbelohnung
 
@@ -88,7 +132,9 @@ Wichtige Tabellen:
 
 Ein Simulationsschritt („ein Tag vergeht“) für eine Welt:
 
-1. Zufallsgenerator mit Seed `weltId:tickNummer` – gleicher Ausgangszustand ⇒ gleiches Ergebnis.
+1. Zufallsgenerator mit Seed `weltId:tickNummer` – gleicher Ausgangszustand ⇒ gleiches Ergebnis. Beteiligt sind nur
+   Figuren, die nicht vom Nutzer gesteuert werden. Negative Vorlagen (Konflikt, Gerücht, Rivalität, Rückschlag)
+   schließen Simulationen realer Personen aus.
 2. 1 bis *maxEventsPerTick* Ereignisse werden aus Vorlagen gewählt. Die Gewichtung hängt von den Weltmetriken ab
    (hohe Spannung ⇒ mehr Konflikte). Manche Vorlagen setzen bestehende Rivalitäten voraus (Eskalation, Versöhnung).
    Dasselbe Paar wird pro Schritt höchstens einmal gewählt.
@@ -98,12 +144,14 @@ Ein Simulationsschritt („ein Tag vergeht“) für eine Welt:
 5. Aktive Storylines schreiten mit einer Wahrscheinlichkeit fort (höher, wenn ein Ereignis zum Thema passt);
    das letzte Kapitel schließt sie ab. Gibt es keine aktive Storyline mehr, kann eine neue entstehen.
 6. Metriken kehren langsam zur Mitte zurück, damit Welten nicht in Extremen verharren.
+7. Hat der Nutzer in der Welt eine Figur, entsteht ggf. eine Entscheidung (siehe oben).
 
 **Ereigniskarten** (vom Nutzer ausgelöst) nutzen dieselben Mechanismen, wirken gezielt auf gewählte Charaktere und
 treiben passende Storylines gezielt voran.
 
 **Automatik:** `services/scheduler.ts` prüft alle 30 Sekunden, ob ein automatischer Schritt fällig ist
-(Intervall, Tageslimit, abschaltbar) und wählt die Welt, in der am längsten nichts passiert ist. Ein Sperrmechanismus
+(Intervall, Tageslimit, abschaltbar). Die aktive Welt ist jeden zweiten Schritt an der Reihe, sonst die Welt, in der
+am längsten nichts passiert ist. Ein Sperrmechanismus
 verhindert parallele Simulationen derselben Welt.
 
 **KI-Beteiligung (optional):** Ist „KI für Weltaktivität“ aktiv, formuliert das Modell höchstens 2 Beiträge pro
@@ -118,7 +166,7 @@ kommentieren; der Nutzer erhält eine Mitteilung.
 Statt den gesamten Verlauf zu senden, besteht der Kontext aus:
 
 1. **Systemprompt** mit Charakterprofil, Schreibstil, Regeln, Beziehungen, Welt und jüngsten Ereignissen.
-2. **Gemerkte Fakten** (`chat_memories`, Art `fact`): automatisch per Regeln erkannt („Ich heiße …“, „Ich mag …“,
+2. **Gemerkte Fakten** (`conversation_memories`, Art `fact`): automatisch per Regeln erkannt („Ich heiße …“, „Ich mag …“,
    „Merk dir: …“) oder manuell hinzugefügt; höchstens 40 pro Chat, einsehbar und löschbar.
 3. **Zusammenfassung** (Art `summary`): Sobald 8 Nachrichten aus dem Fenster gefallen sind, wird sie aktualisiert –
    per KI (falls aktiv und erlaubt) oder lokal als Liste früherer Themen.
@@ -139,6 +187,10 @@ Statt den gesamten Verlauf zu senden, besteht der Kontext aus:
 
 ## Frontend
 
+- **Navigation:** Hauptbereiche Feed, Aufgaben, Chats, Aktivität, Profil (Seitenleiste bzw. untere Leiste auf dem
+  Handy); weitere Bereiche über „Mehr“: Entdecken, Charaktere, Suche, Shop, Weltanpassung, Welten, Fortschritt,
+  Einstellungen, Datenschutz. Der Weltwechsel sitzt oben in Seitenleiste und Kopfzeile. `/` leitet zum Feed (aktive
+  Welt) oder zu *Entdecken* (noch keine Welt).
 - **Daten:** TanStack Query mit gezielter Cache-Aktualisierung (z. B. Likes aktualisieren den Beitrag in allen
   Listen sofort) und regelmäßiger Aktualisierung (Bootstrap 20 s, Feed 30 s), damit Reaktionen sichtbar werden.
 - **Designsystem:** CSS-Variablen in `tokens.css` (Farben, Abstände, Radien, Typografie); Akzentfarbe per

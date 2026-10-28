@@ -33,9 +33,9 @@ function groupStories(stories: StoryDto[]): StoryGroup[] {
     .sort((a, b) => Number(a.seen) - Number(b.seen));
 }
 
-function StoryCreateModal({ onClose }: { onClose: () => void }) {
+function StoryCreateModal({ worldId, onClose }: { worldId: string; onClose: () => void }) {
   const { t } = useI18n();
-  const { create } = useStoryActions();
+  const { create } = useStoryActions(worldId);
   const feedback = useProgressFeedback();
   const showError = useErrorToast();
   const { push } = useToast();
@@ -107,9 +107,19 @@ function StoryCreateModal({ onClose }: { onClose: () => void }) {
 
 const STORY_DURATION_MS = 6000;
 
-function StoryViewer({ groups, startIndex, onClose }: { groups: StoryGroup[]; startIndex: number; onClose: () => void }) {
+function StoryViewer({
+  worldId,
+  groups,
+  startIndex,
+  onClose,
+}: {
+  worldId: string;
+  groups: StoryGroup[];
+  startIndex: number;
+  onClose: () => void;
+}) {
   const { t, locale } = useI18n();
-  const { view, remove } = useStoryActions();
+  const { view, remove } = useStoryActions(worldId);
   const [groupIndex, setGroupIndex] = useState(startIndex);
   const [storyIndex, setStoryIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -200,10 +210,12 @@ function StoryViewer({ groups, startIndex, onClose }: { groups: StoryGroup[]; st
   );
 }
 
-export function StoriesBar() {
+/** Stories der aktiven Welt. Eigene Stories erscheinen als die Spielfigur dieser Welt. */
+export function StoriesBar({ worldId }: { worldId: string }) {
   const { t } = useI18n();
-  const { data: stories } = useStories();
+  const { data: stories } = useStories(worldId);
   const { data: boot } = useBootstrap();
+  const me = boot?.activePlayer?.worldId === worldId ? boot.activePlayer.character : null;
   const [creating, setCreating] = useState(false);
   // Reihenfolge beim Öffnen einfrieren: „gesehen“ sortiert sonst während des Ansehens um.
   const [viewing, setViewing] = useState<{ groups: StoryGroup[]; index: number } | null>(null);
@@ -219,7 +231,7 @@ export function StoriesBar() {
           onClick={() => (ownIndex >= 0 ? setViewing({ groups, index: ownIndex }) : setCreating(true))}
           aria-label={ownIndex >= 0 ? t('stories.yours') : t('stories.create')}
         >
-          {boot && <Avatar name={boot.profile.displayName} hue={boot.profile.avatarHue} glyph={boot.profile.avatarGlyph} size="lg" decorative />}
+          {me && <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} size="lg" decorative />}
         </button>
         {/* Ohne eigene Story erstellt bereits der Ring eine neue – das Plus ist dann nur Dekoration. */}
         <button
@@ -253,8 +265,8 @@ export function StoriesBar() {
             </div>
           );
         })}
-      {creating && <StoryCreateModal onClose={() => setCreating(false)} />}
-      {viewing && <StoryViewer groups={viewing.groups} startIndex={viewing.index} onClose={() => setViewing(null)} />}
+      {creating && <StoryCreateModal worldId={worldId} onClose={() => setCreating(false)} />}
+      {viewing && <StoryViewer worldId={worldId} groups={viewing.groups} startIndex={viewing.index} onClose={() => setViewing(null)} />}
     </section>
   );
 }

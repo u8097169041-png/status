@@ -11,6 +11,7 @@ import {
   sendMessage,
   updateChatSettings,
 } from '../services/chats';
+import { activeWorldId } from '../services/players';
 import { getSettings } from '../services/settings';
 import { param, q } from './helpers';
 
@@ -18,7 +19,14 @@ export function characterRoutes(ctx: AppContext): Router {
   const r = Router();
 
   r.get('/characters', (req, res) => {
-    res.json(listCharacters(ctx, { worldId: q(req, 'world'), custom: q(req, 'custom') === '1' }));
+    res.json(
+      listCharacters(ctx, {
+        worldId: q(req, 'world'),
+        custom: q(req, 'custom') === '1',
+        prominent: q(req, 'prominent') === '1',
+        npcOnly: q(req, 'npc') === '1',
+      }),
+    );
   });
   r.post('/characters', (req, res) => {
     res.status(201).json(createCharacter(ctx, req.body));
@@ -34,8 +42,9 @@ export function characterRoutes(ctx: AppContext): Router {
     res.status(204).end();
   });
 
-  r.get('/chats', (_req, res) => {
-    res.json(listChats(ctx));
+  r.get('/chats', (req, res) => {
+    const worldId = q(req, 'world') ?? activeWorldId(ctx);
+    res.json(worldId ? listChats(ctx, worldId) : []);
   });
   r.get('/chats/:characterId', (req, res) => {
     res.json(getChat(ctx, param(req, 'characterId')));

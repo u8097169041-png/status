@@ -6,18 +6,16 @@ import { all, get, run, tx } from '../db/database';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
 import { newId } from '../lib/ids';
 import { cleanText, slugifyHandle } from '../lib/text';
-import {
-  CHARACTER_SUMMARY_SQL,
-  toCharacterCore,
-  toCharacterSummary,
-  type CharacterRow,
-} from './mappers';
+import { CHARACTER_SUMMARY_SQL, toCharacterCore, toCharacterSummary, type CharacterSummaryRow } from './mappers';
 import { emptyDelta, recordAction, recordEncounter } from './progress';
 import { relationshipsForCharacter } from './society';
 
-type SummaryRow = CharacterRow & { world_name: string | null; post_count: number };
+type SummaryRow = CharacterSummaryRow;
 
-export function listCharacters(ctx: AppContext, filters: { worldId?: string; custom?: boolean } = {}): CharacterSummary[] {
+export function listCharacters(
+  ctx: AppContext,
+  filters: { worldId?: string; custom?: boolean; npcOnly?: boolean; prominent?: boolean } = {},
+): CharacterSummary[] {
   const where: string[] = [];
   const params: string[] = [];
   if (filters.worldId) {
@@ -25,6 +23,11 @@ export function listCharacters(ctx: AppContext, filters: { worldId?: string; cus
     params.push(filters.worldId);
   }
   if (filters.custom) where.push('c.is_custom = 1');
+  if (filters.prominent) where.push('c.prominent = 1');
+  // Nur Figuren, die nicht vom Nutzer gespielt werden (z. B. als Chatpartner).
+  if (filters.npcOnly) {
+    where.push('c.is_player = 0 AND NOT EXISTS (SELECT 1 FROM players pl WHERE pl.character_id = c.id AND pl.is_active = 1)');
+  }
   return all<SummaryRow>(
     ctx.db,
     `${CHARACTER_SUMMARY_SQL} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY c.is_custom DESC, c.name`,
@@ -56,7 +59,8 @@ export function getCharacter(ctx: AppContext, id: string, opts: { recordVisit?: 
   );
   const chat = get<{ n: number; last: string | null }>(
     ctx.db,
-    `SELECT COUNT(*) AS n, MAX(created_at) AS last FROM chat_messages WHERE character_id = ?`,
+    `SELECT COUNT(*) AS n, MAX(m.created_at) AS last FROM conversation_messages m
+       JOIN conversations cv ON cv.id = m.conversation_id WHERE cv.character_id = ?`,
     id,
   );
   const likesGiven =
@@ -114,6 +118,7 @@ export const characterInputSchema = z.object({
   writingStyle: z.enum(WRITING_STYLES).default('casual'),
   styleNotes: z.string().trim().max(LIMITS.characterShortText * 2).default(''),
   rules: listField(LIMITS.characterRules, LIMITS.characterRule).default([]),
+  goals: listField(LIMITS.playerGoals, LIMITS.characterRule).default([]),
   avatarHue: z.number().int().min(0).max(359).default(200),
   avatarGlyph: z.enum(AVATAR_GLYPHS).default('initials'),
   isRealPersonSim: z.boolean().default(false),
@@ -134,6 +139,7 @@ export function parseCharacterInput(input: unknown): CharacterInput {
     personality: d.personality.map(cleanText).filter(Boolean),
     interests: d.interests.map(cleanText).filter(Boolean),
     rules: d.rules.map(cleanText).filter(Boolean),
+    goals: d.goals.map(cleanText).filter(Boolean),
   };
 }
 
@@ -156,7 +162,11 @@ function getProfileHandle(ctx: AppContext): string | undefined {
 }
 
 /** Legt einen Charakter an. `explicitHandle` wird strikt geprüft, sonst wird ein freier Handle erzeugt. */
-export function insertCharacter(ctx: AppContext, input: CharacterInput, opts: { strictHandle: boolean }): string {
+export function insertCharacter(
+  ctx: AppContext,
+  input: CharacterInput,
+  opts: { strictHandle: boolean; isPlayer?: boolean },
+): string {
   if (input.worldId && !get(ctx.db, 'SELECT 1 FROM worlds WHERE id = ?', input.worldId)) throw notFound('Welt');
   let handle: string;
   if (opts.strictHandle && input.handle) {
@@ -173,8 +183,8 @@ export function insertCharacter(ctx: AppContext, input: CharacterInput, opts: { 
     ctx.db,
     `INSERT INTO characters (id, world_id, name, handle, tagline, description, role, personality, interests, background,
                              writing_style, style_notes, rules, avatar_hue, avatar_glyph, is_custom, is_real_person_sim,
-                             mood, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'neutral', ?)`,
+                             mood, goals, is_player, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'neutral', ?, ?, ?)`,
     id,
     input.worldId,
     input.name,
@@ -191,6 +201,8 @@ export function insertCharacter(ctx: AppContext, input: CharacterInput, opts: { 
     input.avatarHue,
     input.avatarGlyph,
     input.isRealPersonSim,
+    JSON.stringify(input.goals ?? []),
+    opts.isPlayer ?? false,
     ctx.now().toISOString(),
   );
   return id;
@@ -208,6 +220,10 @@ export function updateCharacter(ctx: AppContext, id: string, raw: unknown): Char
   if (!row.is_custom) throw forbidden('Vorgefertigte Charaktere können nicht bearbeitet werden.');
   const input = parseCharacterInput(raw);
   if (input.worldId && !get(ctx.db, 'SELECT 1 FROM worlds WHERE id = ?', input.worldId)) throw notFound('Welt');
+  // Spielfiguren bleiben fest in ihrer Welt, damit Spielverlauf und Welt zusammenpassen.
+  if (row.is_player && input.worldId !== row.world_id) {
+    throw badRequest('player_world_locked', 'Die Welt einer Spielfigur kann nicht geändert werden.');
+  }
   let handle = row.handle;
   if (input.handle && slugifyHandle(input.handle) !== row.handle) {
     handle = slugifyHandle(input.handle);
@@ -221,7 +237,7 @@ export function updateCharacter(ctx: AppContext, id: string, raw: unknown): Char
       ctx.db,
       `UPDATE characters SET world_id = ?, name = ?, handle = ?, tagline = ?, description = ?, role = ?, personality = ?,
               interests = ?, background = ?, writing_style = ?, style_notes = ?, rules = ?, avatar_hue = ?,
-              avatar_glyph = ?, is_real_person_sim = ? WHERE id = ?`,
+              avatar_glyph = ?, is_real_person_sim = ?, goals = ? WHERE id = ?`,
       input.worldId,
       input.name,
       handle,
@@ -237,6 +253,7 @@ export function updateCharacter(ctx: AppContext, id: string, raw: unknown): Char
       input.avatarHue,
       input.avatarGlyph,
       input.isRealPersonSim,
+      JSON.stringify(input.goals ?? []),
       id,
     );
     if (input.worldId !== row.world_id) {
@@ -251,5 +268,8 @@ export function updateCharacter(ctx: AppContext, id: string, raw: unknown): Char
 export function deleteCharacter(ctx: AppContext, id: string): void {
   const row = getCharacterRow(ctx, id);
   if (!row.is_custom) throw forbidden('Vorgefertigte Charaktere können nicht gelöscht werden.');
+  if (row.is_player) {
+    throw forbidden('Spielfiguren werden nicht hier gelöscht – ihr Spielverlauf bleibt erhalten. Wechsle stattdessen die Figur.');
+  }
   run(ctx.db, 'DELETE FROM characters WHERE id = ?', id);
 }

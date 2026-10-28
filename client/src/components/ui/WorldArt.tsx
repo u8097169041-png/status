@@ -276,6 +276,94 @@ export function WorldArt({ seed, style, hue, className, label }: WorldArtProps) 
       els.push(<rect key="gondola" x={ax - 12} y={ay + 14} width={24} height={7} rx={2} fill={hsl(hue + 10, 40, 22)} />);
       els.push(<line key="rope1" x1={ax - 10} y1={ay + 12} x2={ax - 8} y2={ay + 15} stroke={hsl(hue, 30, 30)} />);
       els.push(<line key="rope2" x1={ax + 10} y1={ay + 12} x2={ax + 8} y2={ay + 15} stroke={hsl(hue, 30, 30)} />);
+    } else if (style === 'capital') {
+      // Regierungsviertel: Kuppelbau mit Säulen, Fahnen und Abendhimmel
+      defs = (
+        <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={hsl(hue + 210, 40, 10)} />
+          <stop offset="0.7" stopColor={hsl(hue, 55, 30)} />
+          <stop offset="1" stopColor={hsl(hue + 20, 70, 52)} />
+        </linearGradient>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      for (let i = 0; i < 30; i++) {
+        els.push(<circle key={`st${i}`} cx={rng.range(0, W)} cy={rng.range(0, 80)} r={rng.range(0.4, 1.2)} fill={hsl(hue, 30, 90, rng.range(0.3, 0.8))} />);
+      }
+      els.push(<path key="far" d={hillPath(rng, 165, 6, 6)} fill={hsl(hue + 210, 30, 14)} />);
+      const cx = rng.range(150, 250);
+      const body = hsl(hue + 200, 15, 78);
+      const shade = hsl(hue + 200, 20, 58);
+      els.push(<rect key="base" x={cx - 110} y={150} width={220} height={50} fill={shade} />);
+      els.push(<rect key="hall" x={cx - 70} y={112} width={140} height={40} fill={body} />);
+      els.push(<path key="pediment" d={`M${cx - 78} 112 L${cx} 92 L${cx + 78} 112 Z`} fill={body} />);
+      for (let i = 0; i < 8; i++) {
+        els.push(<rect key={`col${i}`} x={cx - 62 + i * 17} y={116} width={6} height={34} fill={shade} />);
+      }
+      els.push(<rect key="drum" x={cx - 26} y={74} width={52} height={20} fill={body} />);
+      els.push(<path key="dome" d={`M${cx - 30} 76 Q ${cx} 30 ${cx + 30} 76 Z`} fill={hsl(hue, 30, 70)} />);
+      els.push(<line key="pole" x1={cx} y1={42} x2={cx} y2={22} stroke={body} strokeWidth={1.5} />);
+      els.push(<rect key="flag" x={cx} y={22} width={14} height={8} fill={hsl(hue + 180, 70, 55)} />);
+      for (let i = 0; i < 12; i++) {
+        els.push(<rect key={`win${i}`} x={cx - 100 + i * 17} y={160} width={6} height={10} fill={hsl(45, 100, 75, rng.range(0.3, 0.9))} />);
+      }
+    } else if (style === 'stage') {
+      // Bühne: Vorhänge, Scheinwerferkegel und Publikum
+      defs = (
+        <>
+          <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={hsl(hue + 240, 35, 6)} />
+            <stop offset="1" stopColor={hsl(hue, 55, 18)} />
+          </linearGradient>
+          <linearGradient id={glow} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={hsl(hue + 30, 100, 85, 0.55)} />
+            <stop offset="1" stopColor={hsl(hue + 30, 100, 70, 0)} />
+          </linearGradient>
+        </>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      for (let i = 0; i < 3; i++) {
+        const x = 90 + i * 110 + rng.range(-20, 20);
+        els.push(<path key={`beam${i}`} d={`M${x} 0 L${x - 45} 150 L${x + 45} 150 Z`} fill={`url(#${glow})`} />);
+      }
+      els.push(<rect key="stage" x={0} y={140} width={W} height={18} fill={hsl(hue, 40, 26)} />);
+      els.push(<path key="curtainL" d={`M0 0 L70 0 Q 40 80 60 140 L0 140 Z`} fill={hsl(hue + 340, 65, 32)} />);
+      els.push(<path key="curtainR" d={`M${W} 0 L${W - 70} 0 Q ${W - 40} 80 ${W - 60} 140 L${W} 140 Z`} fill={hsl(hue + 340, 65, 32)} />);
+      els.push(<rect key="valance" x={0} y={0} width={W} height={16} fill={hsl(hue + 340, 60, 26)} />);
+      els.push(<circle key="mic" cx={rng.range(170, 230)} cy={118} r={5} fill={hsl(hue, 20, 75)} />);
+      for (let i = 0; i < 26; i++) {
+        const x = i * 16 + rng.range(-3, 3);
+        els.push(<circle key={`head${i}`} cx={x} cy={rng.range(178, 186)} r={rng.range(7, 10)} fill={hsl(hue + 240, 30, rng.range(5, 10))} />);
+      }
+    } else if (style === 'stadium') {
+      // Stadion: Flutlichtmasten, Tribünen und Rasen
+      defs = (
+        <>
+          <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={hsl(hue + 200, 45, 8)} />
+            <stop offset="1" stopColor={hsl(hue + 180, 40, 22)} />
+          </linearGradient>
+          <radialGradient id={glow}>
+            <stop offset="0" stopColor={hsl(60, 100, 92, 0.9)} />
+            <stop offset="1" stopColor={hsl(60, 100, 80, 0)} />
+          </radialGradient>
+        </>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      for (const x of [40, W - 40]) {
+        els.push(<line key={`mast${x}`} x1={x} y1={30} x2={x} y2={120} stroke={hsl(hue + 200, 15, 40)} strokeWidth={3} />);
+        els.push(<circle key={`halo${x}`} cx={x} cy={30} r={40} fill={`url(#${glow})`} />);
+        els.push(<rect key={`lamp${x}`} x={x - 12} y={24} width={24} height={10} fill={hsl(60, 100, 88)} />);
+      }
+      els.push(<path key="standBack" d={`M0 120 Q ${W / 2} 70 ${W} 120 L${W} 140 L0 140 Z`} fill={hsl(hue + 200, 25, 16)} />);
+      for (let i = 0; i < 90; i++) {
+        els.push(<circle key={`fan${i}`} cx={rng.range(0, W)} cy={rng.range(110, 138)} r={1.4} fill={hsl(rng.next() < 0.5 ? hue : hue + 180, 80, 60, 0.7)} />);
+      }
+      els.push(<rect key="pitch" x={0} y={140} width={W} height={60} fill={hsl(hue, 55, 30)} />);
+      for (let i = 0; i < 6; i++) {
+        els.push(<rect key={`stripe${i}`} x={i * 70} y={140} width={35} height={60} fill={hsl(hue, 55, 34)} />);
+      }
+      els.push(<line key="half" x1={W / 2} y1={140} x2={W / 2} y2={H} stroke={hsl(hue, 20, 85, 0.7)} strokeWidth={1.5} />);
+      els.push(<ellipse key="circle" cx={W / 2} cy={172} rx={40} ry={14} fill="none" stroke={hsl(hue, 20, 85, 0.7)} strokeWidth={1.5} />);
     } else {
       // dunes
       defs = (

@@ -19,6 +19,8 @@ export function getProfile(ctx: AppContext): UserProfileDto {
     avatarGlyph: row.avatar_glyph as UserProfileDto['avatarGlyph'],
     titleReward: row.title_reward,
     accentReward: row.accent_reward,
+    frameItem: row.frame_item,
+    bannerItem: row.banner_item,
     createdAt: row.created_at,
   };
 }

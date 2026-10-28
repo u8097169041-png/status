@@ -19,7 +19,7 @@ export function openDatabase(file: string): DB {
   return db;
 }
 
-function migrate(db: DB): void {
+export function migrate(db: DB): void {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,
     name TEXT NOT NULL,

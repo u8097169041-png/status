@@ -6,7 +6,14 @@ import { expect, test } from '@playwright/test';
  */
 test.describe.serial('SocialVerse – KI-Anbindung (simulierter Anbieter)', () => {
   test.beforeAll(async ({ request }) => {
-    await request.patch('/api/settings', { headers: { 'X-SocialVerse': '1' }, data: { onboardingDone: true } });
+    const headers = { 'X-SocialVerse': '1' };
+    await request.patch('/api/settings', { headers, data: { onboardingDone: true } });
+    // Chats gibt es nur innerhalb einer Welt: Pip und Ines Valdés (beide Aurelia) brauchen eine Spielfigur dort.
+    const pip = await (await request.get('/api/characters/c-pip')).json();
+    await request.post(`/api/worlds/${pip.character.worldId}/join`, {
+      headers,
+      data: { mode: 'custom', character: { name: 'KI-Testerin' } },
+    });
   });
 
   test.afterAll(async ({ request }) => {

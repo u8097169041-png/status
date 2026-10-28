@@ -8,7 +8,16 @@ import { newId } from '../lib/ids';
 import { cleanText, extractTags } from '../lib/text';
 import { addHours } from '../lib/time';
 import { scheduleJob } from './jobs';
-import { AUTHOR_COLUMNS, characterAuthor, getProfileRow, userAuthor, type ProfileRow } from './mappers';
+import {
+  AUTHOR_COLUMNS,
+  PLAYER_AUTHOR_COLUMNS,
+  characterAuthor,
+  getProfileRow,
+  userAuthor,
+  type PlayerAuthorColumns,
+  type ProfileRow,
+} from './mappers';
+import { activeWorldId, requireActivePlayer } from './players';
 import { emptyDelta, recordAction } from './progress';
 import { getSettings } from './settings';
 
@@ -39,10 +48,14 @@ interface PostRow {
   c_glyph: string | null;
   c_real: number | null;
   c_world: string | null;
+  c_prominent: number | null;
+  player_id: string | null;
 }
 
+type PostRowFull = PostRow & PlayerAuthorColumns;
+
 const POST_SELECT = `
-  SELECT p.*, w.name AS world_name, w.hue AS world_hue, ${AUTHOR_COLUMNS},
+  SELECT p.*, w.name AS world_name, w.hue AS world_hue, ${AUTHOR_COLUMNS}, ${PLAYER_AUTHOR_COLUMNS},
     (SELECT COUNT(*) FROM character_likes cl WHERE cl.post_id = p.id)
       + (SELECT COUNT(*) FROM user_likes ul WHERE ul.post_id = p.id) AS like_count,
     (SELECT COUNT(*) FROM comments cm WHERE cm.post_id = p.id) AS comment_count,
@@ -52,21 +65,23 @@ const POST_SELECT = `
     EXISTS (SELECT 1 FROM posts rp WHERE rp.repost_of = p.id AND rp.author_type = 'user') AS reposted_by_me
   FROM posts p
   LEFT JOIN characters c ON c.id = p.character_id
+  LEFT JOIN players pl ON pl.id = p.player_id
+  LEFT JOIN characters pc ON pc.id = pl.character_id
   LEFT JOIN worlds w ON w.id = p.world_id`;
 
 function tagsFor(ctx: AppContext, postId: string): string[] {
   return all<{ tag: string }>(ctx.db, 'SELECT tag FROM post_tags WHERE post_id = ? ORDER BY tag', postId).map((r) => r.tag);
 }
 
-function toPost(ctx: AppContext, row: PostRow, profile: ProfileRow, depth = 0): PostDto {
+function toPost(ctx: AppContext, row: PostRowFull, profile: ProfileRow, depth = 0): PostDto {
   let repostOf: PostDto | null = null;
   if (row.repost_of && depth === 0) {
-    const original = get<PostRow>(ctx.db, `${POST_SELECT} WHERE p.id = ?`, row.repost_of);
+    const original = get<PostRowFull>(ctx.db, `${POST_SELECT} WHERE p.id = ?`, row.repost_of);
     if (original) repostOf = toPost(ctx, original, profile, depth + 1);
   }
   return {
     id: row.id,
-    author: row.author_type === 'user' ? userAuthor(profile) : characterAuthor(row),
+    author: row.author_type === 'user' ? userAuthor(profile, row) : characterAuthor(row),
     worldId: row.world_id,
     worldName: row.world_name,
     worldHue: row.world_hue,
@@ -93,6 +108,7 @@ export interface FeedFilters {
   characterId?: string;
   tag?: string;
   author?: 'user';
+  playerId?: string;
   bookmarked?: boolean;
   cursor?: string;
   limit?: number;
@@ -114,6 +130,10 @@ export function listPosts(ctx: AppContext, filters: FeedFilters = {}): FeedPage 
     params.push(filters.tag.toLowerCase().replace(/^#/, ''));
   }
   if (filters.author === 'user') where.push(`p.author_type = 'user'`);
+  if (filters.playerId) {
+    where.push('p.player_id = ?');
+    params.push(filters.playerId);
+  }
   if (filters.bookmarked) where.push('EXISTS (SELECT 1 FROM bookmarks b WHERE b.post_id = p.id)');
   if (filters.cursor) {
     const [createdAt, id] = filters.cursor.split('|');
@@ -123,7 +143,7 @@ export function listPosts(ctx: AppContext, filters: FeedFilters = {}): FeedPage 
     }
   }
   const limit = Math.min(Math.max(filters.limit ?? 20, 1), 50);
-  const rows = all<PostRow>(
+  const rows = all<PostRowFull>(
     ctx.db,
     `${POST_SELECT} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY p.created_at DESC, p.id DESC LIMIT ?`,
     ...params,
@@ -139,7 +159,7 @@ export function listPosts(ctx: AppContext, filters: FeedFilters = {}): FeedPage 
 }
 
 export function getPost(ctx: AppContext, id: string): PostDto {
-  const row = get<PostRow>(ctx.db, `${POST_SELECT} WHERE p.id = ?`, id);
+  const row = get<PostRowFull>(ctx.db, `${POST_SELECT} WHERE p.id = ?`, id);
   if (!row) throw notFound('Beitrag');
   return toPost(ctx, row, getProfileRow(ctx));
 }
@@ -159,14 +179,18 @@ interface CommentRow {
   c_glyph: string | null;
   c_real: number | null;
   c_world: string | null;
+  c_prominent: number | null;
 }
 
 export function getPostDetail(ctx: AppContext, id: string): PostDetailDto {
   const post = getPost(ctx, id);
   const profile = getProfileRow(ctx);
-  const rows = all<CommentRow>(
+  const rows = all<CommentRow & PlayerAuthorColumns>(
     ctx.db,
-    `SELECT cm.*, ${AUTHOR_COLUMNS} FROM comments cm LEFT JOIN characters c ON c.id = cm.character_id
+    `SELECT cm.*, ${AUTHOR_COLUMNS}, ${PLAYER_AUTHOR_COLUMNS} FROM comments cm
+      LEFT JOIN characters c ON c.id = cm.character_id
+      LEFT JOIN players pl ON pl.id = cm.player_id
+      LEFT JOIN characters pc ON pc.id = pl.character_id
       WHERE cm.post_id = ? ORDER BY cm.created_at, cm.id`,
     id,
   );
@@ -176,7 +200,7 @@ export function getPostDetail(ctx: AppContext, id: string): PostDetailDto {
       id: r.id,
       postId: r.post_id,
       parentId: r.parent_id,
-      author: r.author_type === 'user' ? userAuthor(profile) : characterAuthor(r),
+      author: r.author_type === 'user' ? userAuthor(profile, r) : characterAuthor(r),
       content: r.content,
       createdAt: r.created_at,
       source: r.source,
@@ -217,24 +241,29 @@ export function createPost(ctx: AppContext, input: unknown): { post: PostDto; pr
   const parsed = postInputSchema.safeParse(input);
   if (!parsed.success) throw badRequest('invalid_post', 'Ungültiger Beitrag.', parsed.error.issues);
   const content = validateContent(parsed.data.content, LIMITS.postContent);
-  const worldId = parsed.data.worldId || null;
-  if (worldId && !get(ctx.db, 'SELECT 1 FROM worlds WHERE id = ?', worldId)) throw notFound('Welt');
+  // Beiträge entstehen immer in einer Welt – als die dort aktive Spielfigur.
+  const worldId = parsed.data.worldId || activeWorldId(ctx);
+  if (!worldId) throw new AppError(409, 'not_joined', 'Tritt zuerst einer Welt bei, um zu posten.');
+  if (!get(ctx.db, 'SELECT 1 FROM worlds WHERE id = ?', worldId)) throw notFound('Welt');
+  const player = requireActivePlayer(ctx, worldId);
   const id = newId('p');
   const progress = tx(ctx.db, () => {
     run(
       ctx.db,
-      `INSERT INTO posts (id, author_type, character_id, world_id, content, source, created_at)
-       VALUES (?, 'user', NULL, ?, ?, 'user', ?)`,
+      `INSERT INTO posts (id, author_type, character_id, world_id, player_id, content, source, created_at)
+       VALUES (?, 'user', NULL, ?, ?, ?, 'user', ?)`,
       id,
       worldId,
+      player.id,
       content,
       ctx.now().toISOString(),
     );
+    run(ctx.db, 'UPDATE players SET last_active_at = ? WHERE id = ?', ctx.now().toISOString(), player.id);
     writeTags(ctx, id, content);
     if (getSettings(ctx.db).simulation.reactionsEnabled) {
       scheduleJob(ctx, 'reactToPost', { postId: id }, 8 + Math.floor(Math.random() * 20));
     }
-    return recordAction(ctx, 'post', id);
+    return recordAction(ctx, 'post', id, player.id);
   });
   return { post: getPost(ctx, id), progress };
 }
@@ -326,19 +355,21 @@ export function repost(ctx: AppContext, id: string, input: unknown): { post: Pos
   if (existing) throw new AppError(409, 'already_reposted', 'Du hast diesen Beitrag bereits geteilt.');
   const newPostId = newId('p');
   const world = get<{ world_id: string | null }>(ctx.db, 'SELECT world_id FROM posts WHERE id = ?', originalId);
+  const player = world?.world_id ? requireActivePlayer(ctx, world.world_id) : null;
   const progress = tx(ctx.db, () => {
     run(
       ctx.db,
-      `INSERT INTO posts (id, author_type, world_id, content, repost_of, source, created_at)
-       VALUES (?, 'user', ?, ?, ?, 'user', ?)`,
+      `INSERT INTO posts (id, author_type, world_id, player_id, content, repost_of, source, created_at)
+       VALUES (?, 'user', ?, ?, ?, ?, 'user', ?)`,
       newPostId,
       world?.world_id ?? null,
+      player?.id ?? null,
       content,
       originalId,
       ctx.now().toISOString(),
     );
     writeTags(ctx, newPostId, content);
-    return recordAction(ctx, 'repost', originalId);
+    return recordAction(ctx, 'repost', originalId, player?.id);
   });
   return { post: getPost(ctx, newPostId), progress };
 }
@@ -374,22 +405,25 @@ export function addComment(
     // Antworten werden in einem flachen Thread unter dem obersten Kommentar gesammelt.
     parentId = parent.parent_id ?? parentId;
   }
+  const world = get<{ world_id: string | null }>(ctx.db, 'SELECT world_id FROM posts WHERE id = ?', postId);
+  const player = world?.world_id ? requireActivePlayer(ctx, world.world_id) : null;
   const id = newId('cm');
   const progress = tx(ctx.db, () => {
     run(
       ctx.db,
-      `INSERT INTO comments (id, post_id, parent_id, author_type, character_id, content, source, created_at)
-       VALUES (?, ?, ?, 'user', NULL, ?, 'user', ?)`,
+      `INSERT INTO comments (id, post_id, parent_id, author_type, character_id, player_id, content, source, created_at)
+       VALUES (?, ?, ?, 'user', NULL, ?, ?, 'user', ?)`,
       id,
       postId,
       parentId,
+      player?.id ?? null,
       content,
       ctx.now().toISOString(),
     );
     if (post.author_type === 'character' && getSettings(ctx.db).simulation.reactionsEnabled) {
       scheduleJob(ctx, 'replyToComment', { postId, commentId: id }, 10 + Math.floor(Math.random() * 25));
     }
-    return recordAction(ctx, 'comment', id);
+    return recordAction(ctx, 'comment', id, player?.id);
   });
   const comment = findComment(getPostDetail(ctx, postId).comments, id);
   if (!comment) throw notFound('Kommentar');

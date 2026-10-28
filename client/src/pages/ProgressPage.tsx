@@ -9,6 +9,7 @@ import {
   MessageCircle,
   MessagesSquare,
   Palette,
+  Scale,
   Scroll,
   Sparkles,
   Stamp,
@@ -41,6 +42,7 @@ const ACHIEVEMENT_ICONS: Record<string, LucideIcon> = {
   scroll: Scroll,
   heart: Heart,
   crown: Crown,
+  scale: Scale,
 };
 
 export function AchievementGrid({ achievements }: { achievements: ProgressDto['achievements'] }) {

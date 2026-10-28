@@ -38,6 +38,8 @@ export interface SeedCharacter {
   avatarHue: number;
   avatarGlyph: AvatarGlyph;
   mood: string;
+  goals?: L[];
+  prominent?: boolean;
 }
 
 export interface SeedRelationship {

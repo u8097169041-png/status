@@ -2,6 +2,7 @@ import { Bot, Drama, MessageCircle } from 'lucide-react';
 import { Link } from 'react-router';
 import type { CharacterSummary } from '../../../../shared/types';
 import { useI18n } from '../../i18n';
+import { VerifiedBadge } from '../play/PlayUI';
 import { Avatar, hueGradient } from '../ui/Avatar';
 
 export function CharacterCard({ character, showWorld = true }: { character: CharacterSummary; showWorld?: boolean }) {
@@ -12,7 +13,9 @@ export function CharacterCard({ character, showWorld = true }: { character: Char
       <Link to={`/characters/${character.id}`} className="character-card-link">
         <Avatar name={character.name} hue={character.avatarHue} glyph={character.avatarGlyph} size="lg" ring="muted" decorative />
         <div className="character-card-titles">
-          <h3>{character.name}</h3>
+          <h3 className="row">
+            {character.name} {character.prominent && <VerifiedBadge />}
+          </h3>
           <span className="faint xsmall">@{character.handle}</span>
         </div>
       </Link>
@@ -27,7 +30,8 @@ export function CharacterCard({ character, showWorld = true }: { character: Char
             {t('labels.fictionalSim')}
           </span>
         )}
-        {character.isCustom && <span className="badge badge-demo">{t('labels.custom')}</span>}
+        {character.isCustom && !character.isPlayer && <span className="badge badge-demo">{t('labels.custom')}</span>}
+        {(character.isPlayer || character.playedByYou) && <span className="badge badge-player">{t('play.playerBadge')}</span>}
       </div>
       <p className="small muted clamp-2">{character.tagline}</p>
       <div className="row-between character-card-footer">
@@ -36,9 +40,11 @@ export function CharacterCard({ character, showWorld = true }: { character: Char
           {showWorld && ` · ${character.worldName ?? t('characters.noWorld')}`}
           {` · ${td(`moods.${character.mood}`, character.mood)}`}
         </span>
-        <Link to={`/chats/${character.id}`} className="btn btn-secondary btn-sm" aria-label={`${t('characters.chat')}: ${character.name}`}>
-          <MessageCircle aria-hidden /> {t('characters.chat')}
-        </Link>
+        {!character.isPlayer && !character.playedByYou && (
+          <Link to={`/chats/${character.id}`} className="btn btn-secondary btn-sm" aria-label={`${t('characters.chat')}: ${character.name}`}>
+            <MessageCircle aria-hidden /> {t('characters.chat')}
+          </Link>
+        )}
       </div>
     </article>
   );
