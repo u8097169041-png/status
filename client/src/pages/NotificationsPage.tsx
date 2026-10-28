@@ -1,4 +1,4 @@
-import { Bell, BookOpen, CheckCheck, Heart, MessageCircle, PartyPopper, Reply, Trophy, type LucideIcon } from 'lucide-react';
+import { Bell, BookOpen, CheckCheck, Globe2, Heart, MessageCircle, PartyPopper, Reply, Scale, Trophy, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import type { NotificationDto } from '../../../shared/types';
 import { useMarkNotificationsRead, useNotifications } from '../api/hooks';
@@ -14,6 +14,8 @@ const ICONS: Record<string, LucideIcon> = {
   postComment: MessageCircle,
   commentReply: Reply,
   storylineResolved: BookOpen,
+  joinedWorld: Globe2,
+  decision: Scale,
 };
 
 function useNotificationText() {
@@ -25,11 +27,46 @@ function useNotificationText() {
   };
 }
 
+/** Liste von Mitteilungen (auch auf der Aktivitätsseite verwendet). */
+export function NotificationList({ items }: { items: NotificationDto[] }) {
+  const { t } = useI18n();
+  const text = useNotificationText();
+  return (
+    <ul className="notification-list">
+      {items.map((n) => {
+        const Icon = ICONS[n.kind] ?? Bell;
+        const body = (
+          <>
+            <span className="notification-icon" aria-hidden>
+              <Icon />
+            </span>
+            <span className="grow small">{text(n)}</span>
+            <span className="xsmall faint">
+              <RelativeTime iso={n.createdAt} />
+            </span>
+            {!n.read && <span className="unread-dot" aria-label={t('notifications.unread')} />}
+          </>
+        );
+        return (
+          <li key={n.id} className={`notification ${n.read ? '' : 'unread'}`}>
+            {n.link ? (
+              <Link to={n.link} className="notification-row">
+                {body}
+              </Link>
+            ) : (
+              <div className="notification-row">{body}</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function NotificationsPage() {
   const { t } = useI18n();
   const notifications = useNotifications();
   const markRead = useMarkNotificationsRead();
-  const text = useNotificationText();
   return (
     <div className="page page-narrow">
       <header className="page-header">
@@ -44,34 +81,7 @@ export function NotificationsPage() {
         (notifications.data.items.length === 0 ? (
           <EmptyState icon={Bell} title={t('notifications.empty')} />
         ) : (
-          <ul className="notification-list">
-            {notifications.data.items.map((n) => {
-              const Icon = ICONS[n.kind] ?? Bell;
-              const body = (
-                <>
-                  <span className="notification-icon" aria-hidden>
-                    <Icon />
-                  </span>
-                  <span className="grow small">{text(n)}</span>
-                  <span className="xsmall faint">
-                    <RelativeTime iso={n.createdAt} />
-                  </span>
-                  {!n.read && <span className="unread-dot" aria-label={t('notifications.unread')} />}
-                </>
-              );
-              return (
-                <li key={n.id} className={`notification ${n.read ? '' : 'unread'}`}>
-                  {n.link ? (
-                    <Link to={n.link} className="notification-row">
-                      {body}
-                    </Link>
-                  ) : (
-                    <div className="notification-row">{body}</div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+          <NotificationList items={notifications.data.items} />
         ))}
     </div>
   );

@@ -10,8 +10,12 @@ export function WorldCard({ world }: { world: WorldSummary }) {
     <Link to={`/worlds/${world.id}`} className="world-card card-interactive" style={{ '--world-hue': world.hue } as React.CSSProperties}>
       <div className="world-card-art">
         <WorldArt seed={world.id} style={world.artStyle} hue={world.hue} />
-        <span className="world-card-genre badge">{td(`genres.${world.genre}`, world.genre)}</span>
-        {world.isCustom && <span className="world-card-custom badge badge-demo">{t('labels.custom')}</span>}
+        <span className="world-card-genre badge">{td(`categories.${world.category}`, td(`genres.${world.genre}`, world.genre))}</span>
+        {world.joined ? (
+          <span className="world-card-custom badge badge-player">{t('discover.joined')}</span>
+        ) : (
+          world.isCustom && <span className="world-card-custom badge badge-demo">{t('labels.custom')}</span>
+        )}
       </div>
       <div className="world-card-body">
         <div className="row-between">

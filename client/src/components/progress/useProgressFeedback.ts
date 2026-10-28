@@ -17,6 +17,7 @@ export function useProgressFeedback() {
       // XP-Anzeige (Seitenleiste, Profil, Fortschritt) sofort aktualisieren.
       if (delta.xpGained > 0 || delta.levelUp || delta.achievementsUnlocked.length > 0) invalidateProgress(qc);
       if (delta.xpGained > 0) push('xp', t('toasts.xp', { xp: delta.xpGained }));
+      if (delta.coinsGained) push('xp', t('tasks.coinsGained', { coins: delta.coinsGained }));
       if (delta.levelUp) push('success', t('toasts.levelUp', { level: delta.levelUp }), t('toasts.levelUpHint'));
       for (const id of delta.achievementsUnlocked) {
         push('success', t('toasts.achievement', { name: td(`achievements.${id}`, id) }), td(`achievements.${id}.desc`, ''));

@@ -18,20 +18,27 @@ import type {
   CharacterSummary,
   ChatDetail,
   ChatSummary,
+  ActivityDto,
   CommentDto,
+  DecisionDto,
+  DecisionResult,
   DeepPartial,
   DiscoverDto,
   EventCard,
   FeedPage,
   GroupDto,
+  JoinWorldInput,
   MemoryEntryDto,
   NotificationDto,
   PostDetailDto,
+  PlayerDto,
   PostDto,
   ProgressDelta,
   ProgressDto,
   RelationshipDto,
+  SearchResultDto,
   SendMessageResult,
+  ShopItemDto,
   SimulationResult,
   SimulationStatusDto,
   StoryDto,
@@ -42,7 +49,9 @@ import type {
   WorldDetail,
   WorldDraft,
   WorldEventDto,
+  WalletDto,
   WorldInput,
+  WorldQuestProgressDto,
   WorldSummary,
 } from '../../../shared/types';
 import { del, get, patch, post, put, qs } from './client';
@@ -53,12 +62,14 @@ export const keys = {
   feed: (filters: FeedFilters) => ['feed', filters] as const,
   feedAll: ['feed'] as const,
   post: (id: string) => ['post', id] as const,
-  stories: ['stories'] as const,
+  stories: (world: string | null) => ['stories', world] as const,
+  storiesAll: ['stories'] as const,
   trending: ['trending'] as const,
-  characters: (filters: { world?: string; custom?: boolean } = {}) => ['characters', filters] as const,
+  characters: (filters: CharacterFilters = {}) => ['characters', filters] as const,
   charactersAll: ['characters'] as const,
   character: (id: string) => ['character', id] as const,
-  chats: ['chats'] as const,
+  chats: (world: string | null) => ['chats', world] as const,
+  chatsAll: ['chats'] as const,
   chat: (id: string) => ['chat', id] as const,
   worlds: ['worlds'] as const,
   world: (id: string) => ['world', id] as const,
@@ -70,13 +81,32 @@ export const keys = {
   aiModels: ['ai-models'] as const,
   aiUsage: ['ai-usage'] as const,
   simStatus: ['simulation-status'] as const,
+  players: (world?: string) => ['players', world ?? 'all'] as const,
+  playersAll: ['players'] as const,
+  decisions: (world: string | null, status?: string) => ['decisions', world, status ?? 'all'] as const,
+  decisionsAll: ['decisions'] as const,
+  worldQuests: (world: string | null) => ['world-quests', world] as const,
+  worldQuestsAll: ['world-quests'] as const,
+  wallet: ['wallet'] as const,
+  shop: ['shop'] as const,
+  search: (q: string) => ['search', q] as const,
+  activity: (world: string | null) => ['activity', world] as const,
+  activityAll: ['activity'] as const,
 };
+
+export interface CharacterFilters {
+  world?: string;
+  custom?: boolean;
+  prominent?: boolean;
+  npc?: boolean;
+}
 
 export interface FeedFilters {
   world?: string;
   character?: string;
   tag?: string;
   author?: 'user';
+  player?: string;
   bookmarked?: boolean;
 }
 
@@ -123,6 +153,7 @@ export function useFeed(filters: FeedFilters) {
           character: filters.character,
           tag: filters.tag,
           author: filters.author,
+          player: filters.player,
           bookmarked: filters.bookmarked,
           cursor: pageParam,
         })}`,
@@ -153,9 +184,6 @@ export function updatePostInCache(qc: QueryClient, updated: PostDto) {
     data ? { ...data, pages: data.pages.map((page) => ({ ...page, items: page.items.map(replace) })) } : data,
   );
   qc.setQueryData<PostDetailDto>(keys.post(updated.id), (data) => (data ? { ...data, post: replace(data.post) } : data));
-  qc.setQueryData<DiscoverDto>(keys.discover, (data) =>
-    data ? { ...data, highlightPosts: data.highlightPosts.map(replace) } : data,
-  );
 }
 
 function removePostFromCache(qc: QueryClient, id: string) {
@@ -229,6 +257,7 @@ export function useCreatePost() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.feedAll });
       void qc.invalidateQueries({ queryKey: keys.trending });
+      void qc.invalidateQueries({ queryKey: keys.worldQuestsAll });
       invalidateProgress(qc);
     },
   });
@@ -255,16 +284,23 @@ export function useCommentActions(postId: string) {
 
 // ---------- Stories ----------
 
-export function useStories() {
-  return useQuery({ queryKey: keys.stories, queryFn: ({ signal }) => get<StoryDto[]>('/stories', signal), refetchInterval: 60_000 });
+/** Stories gibt es nur innerhalb einer Welt, in der der Nutzer mitspielt. */
+export function useStories(worldId: string | null) {
+  return useQuery({
+    queryKey: keys.stories(worldId),
+    queryFn: ({ signal }) => get<StoryDto[]>(`/stories${qs({ world: worldId ?? undefined })}`, signal),
+    enabled: Boolean(worldId),
+    refetchInterval: 60_000,
+  });
 }
 
-export function useStoryActions() {
+export function useStoryActions(worldId: string | null) {
   const qc = useQueryClient();
-  const refresh = () => void qc.invalidateQueries({ queryKey: keys.stories });
+  const refresh = () => void qc.invalidateQueries({ queryKey: keys.storiesAll });
   return {
     create: useMutation({
-      mutationFn: (input: { content: string; style: number }) => post<WithProgress<{ story: StoryDto }>>('/stories', input),
+      mutationFn: (input: { content: string; style: number }) =>
+        post<WithProgress<{ story: StoryDto }>>('/stories', { ...input, worldId: worldId ?? undefined }),
       onSuccess: () => {
         refresh();
         invalidateProgress(qc);
@@ -273,7 +309,7 @@ export function useStoryActions() {
     view: useMutation({
       mutationFn: (id: string) => post<{ ok: true }>(`/stories/${id}/view`),
       onSuccess: (_r, id) =>
-        qc.setQueryData<StoryDto[]>(keys.stories, (list) => list?.map((s) => (s.id === id ? { ...s, seen: true } : s))),
+        qc.setQueryData<StoryDto[]>(keys.stories(worldId), (list) => list?.map((s) => (s.id === id ? { ...s, seen: true } : s))),
     }),
     remove: useMutation({ mutationFn: (id: string) => del<void>(`/stories/${id}`), onSuccess: refresh }),
   };
@@ -281,10 +317,14 @@ export function useStoryActions() {
 
 // ---------- Charaktere & Chats ----------
 
-export function useCharacters(filters: { world?: string; custom?: boolean } = {}) {
+export function useCharacters(filters: CharacterFilters = {}) {
   return useQuery({
     queryKey: keys.characters(filters),
-    queryFn: ({ signal }) => get<CharacterSummary[]>(`/characters${qs({ world: filters.world, custom: filters.custom })}`, signal),
+    queryFn: ({ signal }) =>
+      get<CharacterSummary[]>(
+        `/characters${qs({ world: filters.world, custom: filters.custom, prominent: filters.prominent, npc: filters.npc })}`,
+        signal,
+      ),
   });
 }
 
@@ -324,15 +364,20 @@ export function useCharacterMutations() {
       mutationFn: (id: string) => del<void>(`/characters/${id}`),
       onSuccess: () => {
         refresh();
-        void qc.invalidateQueries({ queryKey: keys.chats });
+        void qc.invalidateQueries({ queryKey: keys.chatsAll });
         void qc.invalidateQueries({ queryKey: keys.feedAll });
       },
     }),
   };
 }
 
-export function useChats() {
-  return useQuery({ queryKey: keys.chats, queryFn: ({ signal }) => get<ChatSummary[]>('/chats', signal) });
+/** Gespräche der aktiven Spielfigur in einer Welt. */
+export function useChats(worldId: string | null) {
+  return useQuery({
+    queryKey: keys.chats(worldId),
+    queryFn: ({ signal }) => get<ChatSummary[]>(`/chats${qs({ world: worldId ?? undefined })}`, signal),
+    enabled: Boolean(worldId),
+  });
 }
 
 export function useChat(characterId: string) {
@@ -347,7 +392,7 @@ export function useChatActions(characterId: string) {
   const qc = useQueryClient();
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: keys.chat(characterId) });
-    void qc.invalidateQueries({ queryKey: keys.chats });
+    void qc.invalidateQueries({ queryKey: keys.chatsAll });
   };
   return {
     send: useMutation({
@@ -356,6 +401,7 @@ export function useChatActions(characterId: string) {
         refresh();
         invalidateProgress(qc);
         void qc.invalidateQueries({ queryKey: keys.aiStatus });
+        void qc.invalidateQueries({ queryKey: keys.worldQuestsAll });
       },
     }),
     settings: useMutation({
@@ -412,7 +458,7 @@ export function useWorldEvents(id: string) {
 }
 
 export function useEventCards() {
-  return useQuery({ queryKey: keys.eventCards, queryFn: ({ signal }) => get<EventCard[]>('/event-cards', signal), staleTime: Infinity });
+  return useQuery({ queryKey: keys.eventCards, queryFn: ({ signal }) => get<EventCard[]>('/event-cards', signal) });
 }
 
 function refreshWorld(qc: QueryClient, id: string) {
@@ -421,9 +467,13 @@ function refreshWorld(qc: QueryClient, id: string) {
   void qc.invalidateQueries({ queryKey: keys.worlds });
   void qc.invalidateQueries({ queryKey: keys.discover });
   void qc.invalidateQueries({ queryKey: keys.feedAll });
-  void qc.invalidateQueries({ queryKey: keys.stories });
+  void qc.invalidateQueries({ queryKey: keys.storiesAll });
   void qc.invalidateQueries({ queryKey: keys.charactersAll });
   void qc.invalidateQueries({ queryKey: ['character'] });
+  void qc.invalidateQueries({ queryKey: keys.decisionsAll });
+  void qc.invalidateQueries({ queryKey: keys.worldQuestsAll });
+  void qc.invalidateQueries({ queryKey: keys.activityAll });
+  void qc.invalidateQueries({ queryKey: keys.bootstrap });
 }
 
 export function useWorldActions(id: string) {
@@ -617,5 +667,151 @@ export function useSimulationStatus() {
     queryKey: keys.simStatus,
     queryFn: ({ signal }) => get<SimulationStatusDto>('/simulation/status', signal),
     refetchInterval: 60_000,
+  });
+}
+
+// ---------- Spiel: Spielfiguren, Entscheidungen, Aufgaben, Shop, Suche, Aktivität ----------
+
+/** Nach Beitritt oder Wechsel ändern sich fast alle weltbezogenen Daten. */
+function refreshPlay(qc: QueryClient) {
+  for (const key of [
+    keys.bootstrap,
+    keys.playersAll,
+    keys.decisionsAll,
+    keys.worldQuestsAll,
+    keys.storiesAll,
+    keys.chatsAll,
+    keys.feedAll,
+    keys.activityAll,
+    keys.worlds,
+    keys.discover,
+    keys.charactersAll,
+    keys.progress,
+    keys.wallet,
+  ]) {
+    void qc.invalidateQueries({ queryKey: key });
+  }
+  void qc.invalidateQueries({ queryKey: ['world'] });
+  void qc.invalidateQueries({ queryKey: ['chat'] });
+}
+
+export function usePlayers(worldId?: string) {
+  return useQuery({
+    queryKey: keys.players(worldId),
+    queryFn: ({ signal }) => get<PlayerDto[]>(worldId ? `/worlds/${worldId}/players` : '/players', signal),
+  });
+}
+
+export function usePlayActions() {
+  const qc = useQueryClient();
+  return {
+    join: useMutation({
+      mutationFn: ({ worldId, input }: { worldId: string; input: JoinWorldInput }) =>
+        post<WithProgress<{ player: PlayerDto }>>(`/worlds/${worldId}/join`, input),
+      onSuccess: () => refreshPlay(qc),
+    }),
+    activate: useMutation({
+      mutationFn: (playerId: string) => post<PlayerDto>(`/players/${playerId}/activate`),
+      onSuccess: () => refreshPlay(qc),
+    }),
+    leave: useMutation({
+      mutationFn: (worldId: string) => post<{ ok: true }>(`/worlds/${worldId}/leave`),
+      onSuccess: () => refreshPlay(qc),
+    }),
+    setWorld: useMutation({
+      mutationFn: (worldId: string | null) => put<{ worldId: string | null; player: PlayerDto | null }>('/session/world', { worldId }),
+      onSuccess: () => refreshPlay(qc),
+    }),
+  };
+}
+
+export function useDecisions(worldId: string | null, status?: 'pending' | 'resolved') {
+  return useQuery({
+    queryKey: keys.decisions(worldId, status),
+    queryFn: ({ signal }) => get<DecisionDto[]>(`/decisions${qs({ world: worldId ?? undefined, status })}`, signal),
+    enabled: Boolean(worldId),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useChooseOption() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, optionId }: { id: string; optionId: string }) => post<DecisionResult>(`/decisions/${id}/choose`, { optionId }),
+    onSuccess: () => refreshPlay(qc),
+  });
+}
+
+export function useWorldQuests(worldId: string | null) {
+  return useQuery({
+    queryKey: keys.worldQuests(worldId),
+    queryFn: ({ signal }) => get<WorldQuestProgressDto[]>(`/world-quests${qs({ world: worldId ?? undefined })}`, signal),
+    enabled: Boolean(worldId),
+  });
+}
+
+export function useClaimWorldQuest(worldId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      post<{ progress: ProgressDelta; quests: WorldQuestProgressDto[] }>(`/world-quests/${id}/claim${qs({ world: worldId ?? undefined })}`),
+    onSuccess: (res) => {
+      qc.setQueryData(keys.worldQuests(worldId), res.quests);
+      invalidateProgress(qc);
+      void qc.invalidateQueries({ queryKey: keys.wallet });
+    },
+  });
+}
+
+export function useWallet() {
+  return useQuery({ queryKey: keys.wallet, queryFn: ({ signal }) => get<WalletDto>('/wallet', signal) });
+}
+
+export function useShop() {
+  return useQuery({ queryKey: keys.shop, queryFn: ({ signal }) => get<ShopItemDto[]>('/shop', signal) });
+}
+
+export function useShopActions() {
+  const qc = useQueryClient();
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: keys.wallet });
+    void qc.invalidateQueries({ queryKey: keys.bootstrap });
+    void qc.invalidateQueries({ queryKey: keys.eventCards });
+  };
+  return {
+    buy: useMutation({
+      mutationFn: (id: string) => post<{ items: ShopItemDto[]; wallet: WalletDto }>(`/shop/${id}/buy`),
+      onSuccess: (res) => {
+        qc.setQueryData(keys.shop, res.items);
+        qc.setQueryData(keys.wallet, res.wallet);
+        refresh();
+      },
+    }),
+    equip: useMutation({
+      mutationFn: ({ id, slot, unequip }: { id: string; slot: 'frame' | 'banner'; unequip?: boolean }) =>
+        post<ShopItemDto[]>(`/shop/${id}/equip`, { slot, unequip }),
+      onSuccess: (items) => {
+        qc.setQueryData(keys.shop, items);
+        refresh();
+      },
+    }),
+  };
+}
+
+export function useSearch(query: string) {
+  const q = query.trim();
+  return useQuery({
+    queryKey: keys.search(q),
+    queryFn: ({ signal }) => get<SearchResultDto>(`/search${qs({ q })}`, signal),
+    enabled: q.length >= 2,
+    staleTime: 10_000,
+  });
+}
+
+export function useActivity(worldId: string | null) {
+  return useQuery({
+    queryKey: keys.activity(worldId),
+    queryFn: ({ signal }) => get<ActivityDto>(`/activity${qs({ world: worldId ?? undefined })}`, signal),
+    refetchInterval: 30_000,
   });
 }

@@ -1,0 +1,514 @@
+/* ===== Spiel: Spielfiguren, Weltwechsel, Entscheidungen, Shop ===== */
+:root {
+  --blue: #5b9dff;
+  --blue-soft: rgba(91, 157, 255, 0.16);
+  --coin: #fcd34d;
+  --coin-soft: rgba(252, 211, 77, 0.14);
+}
+
+/* Verifizierte (bekannte) Figur */
+.verified {
+  display: inline-flex;
+  color: var(--blue);
+  flex: none;
+}
+.verified svg {
+  width: 16px;
+  height: 16px;
+}
+.badge-player {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.badge-coins {
+  background: var(--coin-soft);
+  color: var(--coin);
+}
+
+/* Weltwechsel in Seitenleiste und Kopfzeile */
+.sidebar-world .menu {
+  display: flex;
+  width: 100%;
+}
+.world-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+.world-switcher:hover {
+  border-color: var(--border-strong);
+}
+.world-switcher .world-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 0 10px currentColor;
+}
+.world-switcher-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.world-switcher-text strong {
+  font-size: var(--fs-sm);
+}
+.world-switcher-text span {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.world-switcher.compact {
+  width: auto;
+  max-width: 46vw;
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+}
+/* Tablet: schmale Seitenleiste zeigt nur den Farbpunkt */
+@media (min-width: 768px) and (max-width: 1199px) {
+  .sidebar .world-switcher {
+    justify-content: center;
+    padding: 10px;
+  }
+  .sidebar .world-switcher-text,
+  .sidebar .world-switcher > svg {
+    display: none;
+  }
+}
+.sidebar .nav {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+.coin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--coin-soft);
+  color: var(--coin);
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  text-decoration: none !important;
+}
+.coin-chip svg {
+  width: 16px;
+  height: 16px;
+}
+@media (max-width: 380px) {
+  .coin-chip span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+}
+
+/* Statusleiste der Spielfigur */
+.player-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  border-color: color-mix(in srgb, var(--blue) 30%, var(--border));
+}
+.player-bar-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  flex: 1 1 180px;
+  color: var(--text);
+  text-decoration: none !important;
+}
+.player-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  flex: 1 1 280px;
+}
+.player-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none !important;
+  min-width: 0;
+}
+.player-stat svg {
+  width: 16px;
+  height: 16px;
+  color: var(--blue);
+}
+.player-stat-link svg {
+  color: var(--coin);
+}
+.player-stat-value {
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+.player-stat-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.player-bar-cta {
+  flex: 1 1 100%;
+  justify-content: center;
+}
+
+/* Deine Welten auf „Entdecken“ */
+.joined-worlds {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.joined-world {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-left: 3px solid hsl(var(--world-hue, 220) 80% 60%);
+}
+
+/* Beitritt */
+.join-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  overflow: hidden;
+  padding: 0;
+}
+.join-hero-art {
+  width: 100%;
+  height: 140px;
+  display: block;
+}
+.join-hero-text {
+  padding: 0 var(--space-4) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+@media (min-width: 768px) {
+  .join-hero {
+    grid-template-columns: 280px minmax(0, 1fr);
+    align-items: center;
+  }
+  .join-hero-art {
+    height: 100%;
+    min-height: 160px;
+  }
+  .join-hero-text {
+    padding: var(--space-4);
+  }
+}
+.join-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.mode-switch {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.mode-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.mode-option svg {
+  width: 22px;
+  height: 22px;
+  color: var(--blue);
+}
+.mode-option.selected {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+.mode-option:disabled {
+  opacity: 0.5;
+}
+.figure-grid {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.figure-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+.figure-option.selected {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+.join-actions {
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* Entscheidungen */
+.decision {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--border));
+}
+.decision-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.decision-header h3 {
+  flex: 1;
+  font-size: var(--fs-lg);
+}
+.decision-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.decision-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+}
+.stack-xs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.effect-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.effect-chip {
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--surface-3);
+  color: var(--text-muted);
+}
+.effect-chip.up {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.effect-chip.down {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.effect-chip.neutral {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.decision-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.chip-static {
+  cursor: default;
+  gap: 6px;
+}
+
+/* Premium-Ereigniskarten */
+.event-card.premium svg {
+  color: var(--coin);
+}
+.event-card.locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Spielfiguren im Profil */
+.player-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  border-left: 3px solid hsl(var(--world-hue, 220) 70% 55%);
+}
+.player-row.active {
+  background: var(--blue-soft);
+}
+
+/* Suche */
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.search-box svg {
+  color: var(--text-faint);
+  flex: none;
+}
+.search-box .input {
+  border: none;
+  background: transparent;
+}
+
+/* Shop */
+.coin-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  background: var(--coin-soft);
+  color: var(--coin);
+  font-weight: 700;
+}
+.coin-balance svg {
+  width: 18px;
+  height: 18px;
+}
+.shop-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+.shop-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+.shop-item.owned {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+}
+.shop-preview {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--surface-3);
+}
+.shop-preview.banner-preview {
+  width: 100%;
+  height: 48px;
+  border-radius: var(--radius);
+}
+.shop-preview.card-preview svg {
+  color: var(--coin);
+}
+.ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.danger-text {
+  color: var(--danger);
+}
+
+/* Rahmen und Banner (kosmetisch) */
+.avatar-frame-wrap {
+  display: inline-flex;
+  border-radius: 50%;
+}
+.frame-gold {
+  box-shadow: 0 0 0 3px #f5c451, 0 0 14px rgba(245, 196, 81, 0.5);
+}
+.frame-neon {
+  box-shadow: 0 0 0 3px #3ee0d0, 0 0 16px rgba(62, 224, 208, 0.6);
+}
+.frame-aurora {
+  box-shadow: 0 0 0 3px #9a8cff, 0 0 0 6px #5fb3ff, 0 0 18px rgba(95, 179, 255, 0.5);
+}
+.frame-leaf {
+  box-shadow: 0 0 0 3px #4ade80, 0 0 12px rgba(74, 222, 128, 0.45);
+}
+.banner-sunset {
+  background: linear-gradient(120deg, #ff7a59 0%, #ffb347 45%, #b05cff 100%);
+}
+.banner-nebula {
+  background: radial-gradient(circle at 30% 40%, #9a8cff 0%, #2a1f5e 45%, #0a0b14 100%);
+}
+.banner-ocean {
+  background: linear-gradient(180deg, #0e3a5f 0%, #1c6fa8 60%, #3ee0d0 100%);
+}
+
+/* Weltanpassung */
+.world-settings-card {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.world-settings-art {
+  width: 220px;
+  max-width: 100%;
+  height: 120px;
+  border-radius: var(--radius);
+  flex: none;
+}
+
+.effect-chips,
+.decision-options,
+.decision-history,
+.player-list,
+.joined-worlds,
+.shop-grid,
+.ledger {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.joined-worlds {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+}
+.joined-world .btn {
+  flex: none;
+}
+.profile-header.no-banner .profile-head {
+  margin-top: 0;
+  padding-top: var(--space-5);
+}
+.page.stack > .page-header {
+  margin-bottom: 0;
+}
+.mini-role {
+  max-width: 45%;
+}

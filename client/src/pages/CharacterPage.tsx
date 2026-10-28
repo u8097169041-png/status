@@ -1,4 +1,5 @@
-import { ArrowLeft, Bot, Drama, Edit3, Globe2, MessageCircle, Trash2 } from 'lucide-react';
+import { ArrowLeft, Bot, Drama, Edit3, Gamepad2, Globe2, MessageCircle, Target, Trash2 } from 'lucide-react';
+import { VerifiedBadge } from '../components/play/PlayUI';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../api/client';
@@ -55,6 +56,8 @@ export function CharacterPage() {
     );
 
   const c = query.data.character;
+  // Eigene Spielfiguren und aktuell gespielte Figuren: kein Chat mit sich selbst, kein erneutes Übernehmen.
+  const controlled = c.isPlayer || c.playedByYou;
   return (
     <div className="page page-narrow">
       <Link to="/characters" className="back-link">
@@ -65,9 +68,16 @@ export function CharacterPage() {
         <div className="profile-head">
           <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="xxl" ring="muted" />
           <div className="profile-actions">
-            <Link to={`/chats/${c.id}`} className="btn btn-primary">
-              <MessageCircle aria-hidden /> {t('characters.chat')}
-            </Link>
+            {!controlled && (
+              <Link to={`/chats/${c.id}`} className="btn btn-primary">
+                <MessageCircle aria-hidden /> {t('characters.chat')}
+              </Link>
+            )}
+            {!controlled && c.worldId && (
+              <Link to={`/worlds/${c.worldId}/join?character=${c.id}`} className="btn btn-secondary">
+                <Gamepad2 aria-hidden /> {t('play.modeExisting')}
+              </Link>
+            )}
             {c.isCustom && (
               <>
                 <Link to={`/characters/${c.id}/edit`} className="btn btn-secondary" aria-label={t('characters.edit')}>
@@ -81,7 +91,9 @@ export function CharacterPage() {
           </div>
         </div>
         <div className="profile-info">
-          <h1>{c.name}</h1>
+          <h1 className="row">
+            {c.name} {c.prominent && <VerifiedBadge />}
+          </h1>
           <span className="muted">@{c.handle}</span>
           <div className="row wrap">
             <span className="badge badge-ai">
@@ -93,6 +105,7 @@ export function CharacterPage() {
               </span>
             )}
             <span className="badge">{c.isCustom ? t('labels.custom') : t('labels.preset')}</span>
+            {controlled && <span className="badge badge-player">{t('play.playerBadge')}</span>}
           </div>
           {c.isRealPersonSim && <div className="notice notice-warning small">{t('labels.fictionalSimHint')}</div>}
           {c.tagline && <p className="profile-tagline">{c.tagline}</p>}
@@ -150,6 +163,20 @@ export function CharacterPage() {
                 ))}
               </div>
             </section>
+            {c.goals.length > 0 && (
+              <section className="card stack-sm">
+                <h2 className="card-heading row">
+                  <Target aria-hidden className="icon-xs accent" /> {t('play.figureGoals')}
+                </h2>
+                <ul className="rule-list">
+                  {c.goals.map((g, i) => (
+                    <li key={i} className="small muted">
+                      {g}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             {c.background && (
               <section className="card stack-sm">
                 <h2 className="card-heading">{t('characters.background')}</h2>
@@ -241,9 +268,11 @@ export function CharacterPage() {
                 <dd>{c.stats.eventsInvolved}</dd>
               </div>
             </dl>
-            <Link to={`/chats/${c.id}`} className="btn btn-secondary">
-              <MessageCircle aria-hidden /> {t('characters.chat')}
-            </Link>
+            {!controlled && (
+              <Link to={`/chats/${c.id}`} className="btn btn-secondary">
+                <MessageCircle aria-hidden /> {t('characters.chat')}
+              </Link>
+            )}
           </section>
         )}
       </div>

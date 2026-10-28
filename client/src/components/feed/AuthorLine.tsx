@@ -2,6 +2,7 @@ import { Bot, Drama } from 'lucide-react';
 import { Link } from 'react-router';
 import type { AuthorRef } from '../../../../shared/types';
 import { useI18n } from '../../i18n';
+import { VerifiedBadge } from '../play/PlayUI';
 import { Avatar } from '../ui/Avatar';
 
 export function authorLink(author: AuthorRef): string {
@@ -24,6 +25,7 @@ export function AuthorName({ author }: { author: AuthorRef }) {
       <Link to={authorLink(author)} className="name">
         {author.name}
       </Link>
+      {author.verified && <VerifiedBadge />}
       {author.type === 'character' && (
         <span className="badge badge-ai" title={t('labels.aiCharacter')}>
           <Bot aria-hidden />
