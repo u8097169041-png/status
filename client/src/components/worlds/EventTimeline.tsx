@@ -1,4 +1,7 @@
-import { ArrowDown, ArrowUp, BookOpen, Heart, HeartCrack, Repeat } from 'lucide-react';
+import { ArrowDown, ArrowUp, BookOpen, Heart, HeartCrack, Lock, Megaphone, Repeat } from 'lucide-react';
+import { useBootstrap, useReactToEvent } from '../../api/hooks';
+import { useErrorToast, useProgressFeedback } from '../progress/useProgressFeedback';
+import { useToast } from '../ui/Toast';
 import type { EventEffect, WorldEventDto } from '../../../../shared/types';
 import { useI18n } from '../../i18n';
 import { Avatar } from '../ui/Avatar';
@@ -54,7 +57,63 @@ export function eventKindLabel(kind: string, td: (k: string, f?: string) => stri
   return td(`eventKinds.${kind}`, kind);
 }
 
-export function EventItem({ event, worldName }: { event: WorldEventDto; worldName?: string }) {
+/** Öffentliche Reaktion auf ein Ereignis (Medienkompetenz 1) – nur in der Welt, in der man spielt. */
+function ReactButton({ event }: { event: WorldEventDto }) {
+  const { t } = useI18n();
+  const { data: boot } = useBootstrap();
+  const react = useReactToEvent();
+  const feedback = useProgressFeedback();
+  const showError = useErrorToast();
+  const { push } = useToast();
+  const player = boot?.activePlayer;
+  if (!player || player.worldId !== event.worldId || !REACTABLE.has(event.kind)) return null;
+  const locked = player.skills.media < 1;
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost btn-sm event-react"
+      disabled={locked || react.isPending}
+      title={locked ? t('questBoard.reactLocked') : undefined}
+      onClick={() =>
+        react.mutate(
+          { eventId: event.id },
+          {
+            onSuccess: (r) => {
+              push('success', t('questBoard.reacted'), t('composer.reach', { followers: r.reach.followers }));
+              feedback(r.progress);
+            },
+            onError: showError,
+          },
+        )
+      }
+    >
+      {locked ? <Lock aria-hidden /> : <Megaphone aria-hidden />}
+      {t('questBoard.react')}
+    </button>
+  );
+}
+
+const REACTABLE = new Set([
+  'conflict',
+  'rumor',
+  'rivalry',
+  'celebration',
+  'discovery',
+  'setback',
+  'reconciliation',
+  'friendship',
+  'storyline',
+  'storyline-new',
+  'storyline-resolved',
+  'storyline-ending',
+  'gathering',
+  'crisis',
+  'mystery',
+  'milestone',
+  'cooperation',
+]);
+
+export function EventItem({ event, worldName, reactable }: { event: WorldEventDto; worldName?: string; reactable?: boolean }) {
   const { t, td } = useI18n();
   return (
     <li className={`event-item kind-${event.kind.startsWith('card-') ? 'user' : event.kind}`}>
@@ -83,16 +142,25 @@ export function EventItem({ event, worldName }: { event: WorldEventDto; worldNam
             ))}
           </div>
         )}
+        {reactable && <ReactButton event={event} />}
       </div>
     </li>
   );
 }
 
-export function EventTimeline({ events, showWorld }: { events: (WorldEventDto & { worldName?: string })[]; showWorld?: boolean }) {
+export function EventTimeline({
+  events,
+  showWorld,
+  reactable,
+}: {
+  events: (WorldEventDto & { worldName?: string })[];
+  showWorld?: boolean;
+  reactable?: boolean;
+}) {
   return (
     <ol className="timeline">
       {events.map((e) => (
-        <EventItem key={e.id} event={e} worldName={showWorld ? e.worldName : undefined} />
+        <EventItem key={e.id} event={e} worldName={showWorld ? e.worldName : undefined} reactable={reactable} />
       ))}
     </ol>
   );

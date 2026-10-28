@@ -40,7 +40,12 @@ export function FeedPage() {
     <div className="page" style={{ '--world-hue': world.hue } as React.CSSProperties}>
       <header className="page-header">
         <div className="titles">
-          <h1>{world.name}</h1>
+          <h1 className="row wrap">
+            {world.name}
+            <span className="badge" title={t('discover.activityHint')}>
+              {t('play.simulationBadge')}
+            </span>
+          </h1>
           <p>
             {t('play.worldDay', { day: world.day })} · {world.tagline}
           </p>

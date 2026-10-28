@@ -6,6 +6,7 @@ import type { ChatDetail } from '../../../shared/types';
 import { ApiError } from '../api/client';
 import { useCharacters, useChat, useChatActions, useChats, usePromptPreview } from '../api/hooks';
 import { AuthorName } from '../components/feed/AuthorLine';
+import { ChatActionsBar } from '../components/play/ChatActionsBar';
 import { NotJoinedState, useActivePlay } from '../components/play/PlayUI';
 import { useErrorToast, useProgressFeedback } from '../components/progress/useProgressFeedback';
 import { Avatar } from '../components/ui/Avatar';
@@ -293,6 +294,7 @@ function Conversation({ characterId }: { characterId: string }) {
         <div ref={endRef} />
       </div>
 
+      <ChatActionsBar characterId={characterId} characterName={c.name} disabled={actions.send.isPending} />
       <form
         className="chat-composer"
         onSubmit={(e) => {

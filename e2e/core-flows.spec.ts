@@ -36,30 +36,58 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await dialog.getByRole('button', { name: 'Los geht’s' }).click();
     await expect(dialog).toBeHidden();
     await expect(page).toHaveURL(/\/discover$/);
-    await expect(page.getByRole('heading', { name: 'Entdecken', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Welten entdecken', level: 1 })).toBeVisible();
     await expect(page.locator('.sidebar-profile')).toContainText('Testerin');
   });
 
-  test('1 · Entdecken zeigt Vorschauen ohne globale Stories', async () => {
+  test('1 · Startseite: Weltauswahl ohne weltinterne Inhalte', async () => {
     await page.goto('/discover');
+    await expect(page.getByRole('heading', { name: 'Beliebte Welten' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Interaktive Handlungsbögen' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Bekannte Figuren' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Szenarien & Geschichten' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Eigene Welten' })).toBeVisible();
+    // Vor dem Beitritt: keine Stories, Beiträge, Quests oder Ereignisse
     await expect(page.locator('.stories-bar')).toHaveCount(0);
     await expect(page.locator('.story-ring')).toHaveCount(0);
+    await expect(page.locator('article.post-card')).toHaveCount(0);
+    await expect(page.locator('.quest-card, .event-item')).toHaveCount(0);
+    // Weltkarten mit Kategorie, Beschreibung, Figuren und Aktivität
+    const card = page.locator('.world-card').filter({ hasText: 'Neonhafen' }).first();
+    await expect(card.locator('.world-card-genre')).toBeVisible();
+    await expect(card.getByRole('link', { name: 'Beitreten: Neonhafen' })).toBeVisible();
+    await card.getByRole('link', { name: 'Vorschau: Neonhafen' }).click();
+    await expect(page.getByRole('heading', { name: 'Neonhafen', level: 1 })).toBeVisible();
+    await page.goBack();
+
     const categories = page.getByRole('group', { name: 'Kategorie' });
-    for (const label of ['Politik', 'Promis', 'Wirtschaft', 'Sport', 'Unterhaltung', 'Szenarien', 'Fiktion']) {
+    for (const label of ['Promis', 'Politik', 'Internet', 'Fantasy', 'Eigene Welten']) {
       await expect(categories.getByRole('button', { name: label })).toBeVisible();
     }
     await categories.getByRole('button', { name: 'Sport' }).click();
     await expect(page.locator('.world-card')).toHaveCount(1);
     await expect(page.locator('.world-card')).toContainText('FC Hafenstadt');
+    await categories.getByRole('button', { name: 'Internet' }).click();
+    await expect(page.locator('.world-card')).toContainText('Trendwelle');
+    await categories.getByRole('button', { name: 'Eigene Welten' }).click();
+    await expect(page.getByRole('link', { name: /Eigene Welt erstellen/ })).toBeVisible();
+    await categories.getByRole('button', { name: 'Alle' }).click();
     await expect(page.getByText('Alle vorgefertigten Welten und Figuren sind frei erfunden', { exact: false })).toBeVisible();
 
-    // Ohne Beitritt: kein Feed, keine Chats
-    await sidebar().getByRole('link', { name: 'Feed', exact: true }).click();
+    // Navigation vor dem Beitritt: nur Entdeckung und Weltauswahl
+    for (const label of ['Start', 'Suche', 'Erstellen', 'Aktivität', 'Profil']) {
+      await expect(sidebar().getByRole('link', { name: new RegExp(`^${label}( \\d+)?$`) }).first()).toBeVisible();
+    }
+    await expect(sidebar().getByRole('link', { name: 'Feed', exact: true })).toHaveCount(0);
+    await expect(sidebar().getByRole('link', { name: 'Chats', exact: true })).toHaveCount(0);
+    await sidebar().getByRole('link', { name: 'Erstellen', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Neue Welt erschaffen', level: 1 })).toBeVisible();
+    // Direkt aufgerufen zeigen Feed und Chats einen Hinweis statt Inhalten
+    await page.goto('/feed');
     await expect(page.getByRole('heading', { name: 'Noch in keiner Welt unterwegs' })).toBeVisible();
-    await sidebar().getByRole('link', { name: 'Chats', exact: true }).click();
+    await page.goto('/chats');
     await expect(page.getByRole('heading', { name: 'Noch in keiner Welt unterwegs' })).toBeVisible();
+    // Weltinterne Daten sind auch über die API gesperrt
+    expect((await page.request.get('/api/worlds/w-neon/events')).status()).toBe(409);
   });
 
   test('2/3 · Weltvorschau, Beitritt mit eigener Figur', async () => {
@@ -84,7 +112,7 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     const status = page.getByRole('region', { name: 'Status deiner Figur' });
     await expect(status).toContainText('Nia Funke');
     await expect(status).toContainText('Ansehen');
-    await expect(status.getByRole('link', { name: /1 offene Entscheidung/ })).toBeVisible();
+    await expect(status.getByRole('link', { name: /2 offene Entscheidung/ })).toBeVisible();
     await expect(sidebar().locator('.world-switcher')).toContainText('Neonhafen');
   });
 
@@ -109,7 +137,9 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     const post = page.locator('article.post-card').filter({ hasText: 'Mein erster Testbeitrag' });
     await expect(post).toBeVisible();
     await expect(post).toContainText('Nia Funke');
-    await expect(page.getByText('+15 XP').first()).toBeVisible();
+    // +15 XP für den Beitrag, ggf. plus Quest-Belohnung (Story und Beitrag schließen „Stell dich vor“ ab)
+    await expect(page.getByText(/^\+\d+ XP$/).first()).toBeVisible();
+    await expect(page.getByText(/Reichweite|Follower/).first()).toBeVisible();
     // Der Feed enthält nur Beiträge aus Neonhafen
     const worldNames = await page.locator('article.post-card .world-chip').allTextContents();
     expect(worldNames.every((name) => name.includes('Neonhafen'))).toBe(true);
@@ -187,6 +217,48 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await expect(page.locator('.event-item').filter({ hasText: 'Nia Funke' }).first()).toBeVisible();
   });
 
+  test('5 · Quests, Level und Fähigkeiten greifen ineinander', async () => {
+    await page.goto('/tasks');
+    await expect(page.getByRole('region', { name: 'Charakterlevel' })).toContainText('Level');
+    // Hervorgehobene Hauptquest mit Fortschritt und XP-Belohnung, passend zur Rolle
+    const main = page.locator('article.quest-card.quest-main');
+    await expect(main).toBeVisible();
+    await expect(main).toContainText('Hauptquest · Stufe 1/3');
+    await expect(main.locator('.quest-rewards')).toContainText('XP');
+    await expect(page.getByRole('heading', { name: 'Nebenquests' })).toBeVisible();
+    // Fähigkeitsabhängige Option einer Geschichte ist ohne Strategie gesperrt
+    const prepared = page.locator('.decision-option').filter({ hasText: 'Benötigt Strategie 1' }).first();
+    await expect(prepared.getByRole('button', { name: /Diese Option wählen/ })).toBeDisabled();
+
+    // Ohne Charisma ist das Kompliment im Chat gesperrt
+    await page.goto('/chats/c-mira');
+    const actions = page.getByRole('region', { name: 'Dialogoptionen' });
+    await expect(actions.getByRole('button', { name: /^Kompliment –/ })).toBeDisabled();
+
+    // Charisma ist Kernfähigkeit der Rolle und kostet einen Punkt
+    await page.goto('/skills');
+    const charisma = page.locator('article.skill-card').filter({ has: page.getByRole('heading', { name: /^Charisma/ }) });
+    await expect(charisma).toContainText('Passt zur Rolle');
+    await charisma.getByRole('button', { name: 'Steigern' }).click();
+    await expect(page.getByText('Charisma auf Stufe 1')).toBeVisible();
+    await expect(charisma.getByRole('img', { name: 'Stufe 1' })).toBeVisible();
+
+    // Danach ist die Dialogoption verfügbar und verändert die Beziehung
+    await page.goto('/chats/c-mira');
+    const affinity = actions.getByText(/Zuneigung: -?\d+/);
+    const before = Number((await affinity.textContent())?.replace(/[^\d-]/g, ''));
+    await actions.getByRole('button', { name: /^Kompliment/ }).click();
+    await expect(page.locator('.message.user').last()).toBeVisible();
+    await expect(affinity).toContainText(`Zuneigung: ${before + 6}`);
+    // Einmal täglich: kein zweiter Bonus
+    await expect(actions.getByRole('button', { name: /^Kompliment –/ })).toBeDisabled();
+
+    // Fortschritt bleibt nach dem Neuladen erhalten
+    await page.reload();
+    await page.goto('/skills');
+    await expect(charisma.getByRole('img', { name: 'Stufe 1' })).toBeVisible();
+  });
+
   test('3/6 · Bekannte Figur spielen und Figur kontrolliert wechseln', async () => {
     // Zweite Welt mit einer bekannten Figur über deren Profil
     await page.goto('/characters/c-brandt');
@@ -199,9 +271,9 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     // Stories der neuen Welt – nicht die aus Neonhafen
     await expect(page.getByRole('button', { name: 'Story von KITO-7' })).toHaveCount(0);
 
-    // Weltwechsel über die Seitenleiste
-    await sidebar().getByRole('button', { name: 'Welt wechseln' }).click();
-    await page.getByRole('menuitem', { name: 'Zu Neonhafen wechseln' }).click();
+    // Weltwechsel über den Rollenwechsler
+    await sidebar().getByRole('button', { name: 'Rolle und Welt wechseln' }).click();
+    await page.getByRole('menuitem', { name: 'Als Nia Funke in Neonhafen spielen' }).click();
     await expect(page.getByRole('heading', { name: 'Neonhafen', level: 1 })).toBeVisible();
     await expect(page.locator('article.post-card').filter({ hasText: 'Mein erster Testbeitrag' })).toBeVisible();
 
@@ -233,7 +305,8 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
       ['Aufgaben', 'Aufgaben'],
       ['Chats', 'Chats'],
       ['Aktivität', 'Aktivität'],
-      ['Entdecken', 'Entdecken'],
+      ['Entdecken', 'Welten entdecken'],
+      ['Fähigkeiten', 'Fähigkeiten'],
       ['Charaktere', 'Charaktere'],
       ['Suche', 'Suche'],
       ['Shop', 'Shop'],
@@ -366,7 +439,7 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await expect(page.getByText('Kein Schlüssel hinterlegt', { exact: false })).toBeVisible();
   });
 
-  test('6 · Mobile Ansicht mit unterer Navigation, Weltwechsel und Funken', async () => {
+  test('6 · Mobile Ansicht mit unterer Navigation, Kopfzeile und Weltwechsel', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
     await expect(page).toHaveURL(/\/feed$/);
@@ -380,11 +453,14 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await bottom.getByRole('link', { name: 'Chats' }).click();
     await expect(page.getByRole('heading', { name: 'Chats', level: 1 })).toBeVisible();
     const topbar = page.locator('header.topbar');
-    await expect(topbar.locator('.coin-chip')).toBeVisible();
+    await expect(topbar.getByRole('button', { name: 'Rolle und Welt wechseln' })).toBeVisible();
+    await expect(topbar.getByRole('link', { name: /Mitteilungen/ })).toBeVisible();
+    await topbar.getByRole('link', { name: 'Einstellungen' }).click();
+    await expect(page.getByRole('heading', { name: 'Einstellungen', level: 1 })).toBeVisible();
     await topbar.getByRole('button', { name: 'Weitere Bereiche' }).click();
     await page.getByRole('menuitem', { name: 'Entdecken' }).click();
-    await expect(page.getByRole('heading', { name: 'Entdecken', level: 1 })).toBeVisible();
-    for (const path of ['/feed', '/tasks', '/discover', '/profile', '/shop', '/worlds/w-neon/join']) {
+    await expect(page.getByRole('heading', { name: 'Welten entdecken', level: 1 })).toBeVisible();
+    for (const path of ['/feed', '/tasks', '/skills', '/discover', '/profile', '/shop', '/worlds/w-neon/join']) {
       await page.goto(path);
       await expect(page.locator('main h1').first()).toBeVisible();
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

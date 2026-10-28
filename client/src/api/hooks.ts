@@ -16,6 +16,8 @@ import type {
   CharacterDetail,
   CharacterInput,
   CharacterSummary,
+  ChatActionResult,
+  ChatActionsDto,
   ChatDetail,
   ChatSummary,
   ActivityDto,
@@ -33,6 +35,8 @@ import type {
   PostDetailDto,
   PlayerDto,
   PostDto,
+  PostReach,
+  QuestBoardDto,
   ProgressDelta,
   ProgressDto,
   RelationshipDto,
@@ -41,6 +45,8 @@ import type {
   ShopItemDto,
   SimulationResult,
   SimulationStatusDto,
+  SkillBoardDto,
+  SkillDto,
   StoryDto,
   StorylineDto,
   TrendingTag,
@@ -92,6 +98,12 @@ export const keys = {
   search: (q: string) => ['search', q] as const,
   activity: (world: string | null) => ['activity', world] as const,
   activityAll: ['activity'] as const,
+  quests: (world: string | null) => ['quests', world] as const,
+  questsAll: ['quests'] as const,
+  skills: (world: string | null) => ['skills', world] as const,
+  skillsAll: ['skills'] as const,
+  chatActions: (characterId: string) => ['chat-actions', characterId] as const,
+  chatActionsAll: ['chat-actions'] as const,
 };
 
 export interface CharacterFilters {
@@ -253,11 +265,13 @@ export function usePostActions() {
 export function useCreatePost() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { content: string; worldId: string | null }) => post<WithProgress<{ post: PostDto }>>('/posts', input),
+    mutationFn: (input: { content: string; worldId: string | null; statement?: boolean }) =>
+      post<WithProgress<{ post: PostDto; reach: PostReach }>>('/posts', input),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.feedAll });
       void qc.invalidateQueries({ queryKey: keys.trending });
       void qc.invalidateQueries({ queryKey: keys.worldQuestsAll });
+      void qc.invalidateQueries({ queryKey: keys.questsAll });
       invalidateProgress(qc);
     },
   });
@@ -402,6 +416,8 @@ export function useChatActions(characterId: string) {
         invalidateProgress(qc);
         void qc.invalidateQueries({ queryKey: keys.aiStatus });
         void qc.invalidateQueries({ queryKey: keys.worldQuestsAll });
+        void qc.invalidateQueries({ queryKey: keys.questsAll });
+        void qc.invalidateQueries({ queryKey: keys.chatActions(characterId) });
       },
     }),
     settings: useMutation({
@@ -688,6 +704,9 @@ function refreshPlay(qc: QueryClient) {
     keys.charactersAll,
     keys.progress,
     keys.wallet,
+    keys.questsAll,
+    keys.skillsAll,
+    keys.chatActionsAll,
   ]) {
     void qc.invalidateQueries({ queryKey: key });
   }
@@ -813,5 +832,73 @@ export function useActivity(worldId: string | null) {
     queryKey: keys.activity(worldId),
     queryFn: ({ signal }) => get<ActivityDto>(`/activity${qs({ world: worldId ?? undefined })}`, signal),
     refetchInterval: 30_000,
+  });
+}
+
+// ---------- Quests, Fähigkeiten, Dialogoptionen, Reaktionen ----------
+
+export function useQuestBoard(worldId: string | null) {
+  return useQuery({
+    queryKey: keys.quests(worldId),
+    queryFn: ({ signal }) => get<QuestBoardDto & { progress: ProgressDelta }>(`/quests${qs({ world: worldId ?? undefined })}`, signal),
+    enabled: Boolean(worldId),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useSkills(worldId: string | null) {
+  return useQuery({
+    queryKey: keys.skills(worldId),
+    queryFn: ({ signal }) => get<SkillBoardDto>(`/skills${qs({ world: worldId ?? undefined })}`, signal),
+    enabled: Boolean(worldId),
+  });
+}
+
+export function useUpgradeSkill(worldId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (skillId: string) =>
+      post<{ player: PlayerDto; skills: SkillDto[] }>(`/skills/${skillId}/upgrade${qs({ world: worldId ?? undefined })}`),
+    onSuccess: (res) => {
+      qc.setQueryData<SkillBoardDto>(keys.skills(worldId), { player: res.player, skills: res.skills });
+      refreshPlay(qc);
+    },
+  });
+}
+
+export function useChatActionList(characterId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.chatActions(characterId),
+    queryFn: ({ signal }) => get<ChatActionsDto>(`/chats/${characterId}/actions`, signal),
+    enabled: enabled && Boolean(characterId),
+    retry: false,
+  });
+}
+
+export function usePerformChatAction(characterId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (actionId: string) => post<ChatActionResult>(`/chats/${characterId}/actions/${actionId}`),
+    onSuccess: (res) => {
+      qc.setQueryData(keys.chatActions(characterId), res.actions);
+      void qc.invalidateQueries({ queryKey: keys.chat(characterId) });
+      void qc.invalidateQueries({ queryKey: keys.chatsAll });
+      void qc.invalidateQueries({ queryKey: keys.questsAll });
+      void qc.invalidateQueries({ queryKey: keys.feedAll });
+      invalidateProgress(qc);
+    },
+  });
+}
+
+export function useReactToEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, content }: { eventId: string; content?: string }) =>
+      post<WithProgress<{ post: PostDto; reach: PostReach }>>(`/events/${eventId}/react`, { content }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.feedAll });
+      void qc.invalidateQueries({ queryKey: keys.questsAll });
+      invalidateProgress(qc);
+    },
   });
 }

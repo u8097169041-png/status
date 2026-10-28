@@ -69,9 +69,10 @@ Wichtige Tabellen:
 
 | Tabelle | Inhalt |
 | --- | --- |
-| `worlds`, `characters`, `relationships`, `groups`, `group_members`, `storylines`, `world_events` | Welten und ihre Gesellschaft; Metriken Harmonie/Spannung/Entdeckung direkt in `worlds` |
+| `worlds`, `characters`, `relationships`, `groups`, `group_members`, `storylines`, `world_events` | Welten und ihre Gesellschaft; Metriken Harmonie/Spannung/Entdeckung direkt in `worlds`; `storylines.endings`, `path_scores`, `ending_id` für die Enden von Handlungsbögen |
 | `posts`, `post_tags`, `comments`, `user_likes`, `character_likes`, `bookmarks`, `stories`, `story_views` | Social-Media-Inhalte |
-| `players` | Spielfiguren: Welt, Figur, Modus (eigene/bekannte Figur), Werte (Ansehen, Einfluss, Follower, XP), aktiv/pausiert |
+| `players` | Spielfiguren: Welt, Figur, Modus (eigene/bekannte Figur), Werte (Ansehen, Einfluss, Follower, XP), Archetyp und Hauptziel, aktiv/pausiert |
+| `player_skills`, `quests`, `action_uses` | Fähigkeitsstufen je Spielfigur; Quests je Spielfigur (`UNIQUE(player_id, dedupe_key)`); einmalige bzw. tägliche Nutzung von Spielaktionen (`(player_id, action, ref, day)`, `day` = Datum oder `once`) |
 | `decisions` | Entscheidungen einer Spielfigur mit gespeicherten Optionen und Auswirkungen, Wahl, Ergebnis und Ereignis |
 | `conversations`, `conversation_messages`, `conversation_memories` | Gespräche je (Spielfigur, Figur), gemerkte Fakten und Zusammenfassung |
 | `wallet_ledger`, `purchases` | Spielwährung („Funken“) als Buchungsjournal mit eindeutigen Schlüsseln; freigeschaltete Shop-Artikel |
@@ -86,8 +87,11 @@ Wichtige Tabellen:
   gespielte bekannte Figur erneut gewählt, wird ihr alter Spielstand fortgesetzt.
 - **Aktive Welt:** `user_profile.active_world_id`; gültig nur, solange dort eine aktive Figur existiert.
 - **Weltbindung:** Beiträge, Kommentare und Stories in einer Welt verlangen eine aktive Figur (sonst `409 not_joined`)
-  und werden als diese Figur angezeigt. Stories und Gespräche werden nur für die eigene Welt geliefert; *Entdecken*
-  enthält keine Stories.
+  und werden als diese Figur angezeigt. Stories und Gespräche werden nur für die eigene Welt geliefert.
+- **Sichtbarkeit vor dem Beitritt:** `GET /api/discover` liefert nur Weltkarten (inkl. Top-Figuren und simulierter
+  Aktivität), beliebte Welten, Handlungsbögen und Figuren – keine Stories, Beiträge, Quests oder Ereignisse.
+  `listPosts` blendet Beiträge aus Welten ohne Beitritt aus (außer eigenen und gemerkten); Beitragsdetail und
+  `GET /api/worlds/:id/events` antworten mit `409 not_joined`; `GET /api/worlds/:id` liefert dann keine Ereignisse.
 - **Gesteuerte Figuren:** eigene Spielfiguren (`characters.is_player = 1`) und aktuell gespielte bekannte Figuren
   werden von Simulation, Reaktionen und Ereigniskarten nicht automatisch bewegt.
 - **Chats:** Ein Gespräch gehört zu (Spielfigur, Figur). Gespräche aus Version 1 (ohne Spielfigur) übernimmt die erste
@@ -106,6 +110,34 @@ Wichtige Tabellen:
   Beziehungsart), ggf. Geschichte um ein Kapitel voranbringen, Ereignis `decision` schreiben, öffentliche Reaktion
   einer beteiligten Figur posten. Danach XP (`decide`) und Funken (Schlüssel `decision:<id>`).
 
+## Rollen, Quests, Level und Fähigkeiten
+
+- **Rolle:** `shared/skills.ts` leitet aus Rolle/Beruf und Weltkategorie einen Archetyp ab (`archetypeFor`). Er legt
+  die beiden Kernfähigkeiten (1 Punkt je Stufe, sonst 2) und das vorgeschlagene Hauptziel fest. Bekannte Figuren haben
+  ein festes Hauptziel (`CHARACTER_GOAL_TYPES`). Archetyp und Ziel werden beim Beitritt bzw. bei alten Spielständen
+  beim ersten Zugriff gespeichert (`ensureRole`).
+- **Level:** Das Charakterlevel ergibt sich aus `players.xp` (dieselbe Kurve wie das Profillevel). Fähigkeitspunkte =
+  Charakterlevel + abgeschlossene Hauptquest-Stufen − ausgegebene Punkte. Stufe 1/2/3 erfordert Charakterlevel 1/3/5.
+- **Fähigkeitswirkungen** sind zentral in `SKILL_RULES`/`CHAT_ACTION_RULES` definiert und werden serverseitig geprüft
+  (`requireSkill` → `403 skill_required`): Reichweite von Beiträgen und Stories, Statement-Beiträge, Reaktion auf
+  Ereignisse, Dialogoptionen im Chat (`services/chatActions.ts`), Kooperationsschwelle, gesperrte
+  Entscheidungsoptionen (`requires`), Ergebnisvorschau und Bogenprognose (Strategie 2), doppelte Gewichtung für
+  Enden (Strategie 3) sowie alternative Questwege.
+- **Quests (`services/quests.ts`, Vorlagen in `content/questTemplates.ts`):** Hauptquest-Kette mit drei Stufen je
+  Hauptziel, Nebenquests aus der Lage der Welt (Vorstellung, Rivalität, Versöhnung nach einer Entscheidung, Bitte,
+  Kooperation, Handlungsbogen, Kontakte, Aufmerksamkeit) und Ereignis-Quests, die nach zwei Welttagen ablaufen.
+  Jede Quest hat einen oder mehrere Wege mit Zielen; Kennzahlen werden aus gespeicherten Daten seit `created_at`
+  gemessen. `recordAction` ruft nach jeder Spielaktion `evaluateQuests` auf. Abschluss per
+  `UPDATE … WHERE status = 'active'` und Belohnungen mit eindeutigen Schlüsseln – jede Quest zahlt genau einmal.
+  Folgen von Entscheidungen erhalten einen Vorrangplatz (Nebenquest-Limit + 1).
+- **Handlungsbögen (`services/arcs.ts`):** Jede Geschichte hat drei Enden (`bold`, `diplomatic`, `neutral`;
+  Texte in `content/arcEndings.ts`). Entscheidungsoptionen tragen einen `arcPath`; die Wahl addiert Punkte in
+  `path_scores`. Beim Abschluss bestimmt der führende Weg das Ende (Gleichstand oder keine Beteiligung → neutral),
+  es entsteht ein Ereignis `storyline-ending`, und jede beteiligte Figur erhält einmalig XP und Funken
+  (Schlüssel `arc:<storylineId>:<playerId>`).
+- **Trennung:** Quests, Fähigkeiten, Level und Nutzungen hängen an `player_id` – also an Welt und Figur. Ein Wechsel
+  von Welt oder Figur beeinflusst keine anderen Spielstände.
+
 ## Spielwährung und Shop
 
 - Funken entstehen nur durch Spielen: Entscheidungen, Quests/Weltaufgaben, Level-Aufstiege, Erfolge. Jede Gutschrift
@@ -118,6 +150,9 @@ Wichtige Tabellen:
 `meta.content_version` merkt sich den Stand der Beispielinhalte. Beim Start ergänzt `applyContentUpdates` fehlende
 neue Welten samt Figuren, Beziehungen, Gruppen, Geschichten, Beiträgen und Stories sowie Ziele und „bekannt“-Markierung
 der alten Figuren. Welten, deren Figuren-IDs oder Handles bereits belegt sind, werden übersprungen.
+Inhaltsstand 3 ergänzt die Welt „Trendwelle“ und füllt die Enden bestehender Geschichten; Migration 3
+(`quests-skills-arcs`) legt die neuen Spalten und Tabellen an. Bestehende Spielstände behalten XP und Werte;
+Archetyp, Hauptziel und Quests werden beim ersten Zugriff ergänzt.
 
 ## Fortschritt ohne Mehrfachbelohnung
 
@@ -187,10 +222,11 @@ Statt den gesamten Verlauf zu senden, besteht der Kontext aus:
 
 ## Frontend
 
-- **Navigation:** Hauptbereiche Feed, Aufgaben, Chats, Aktivität, Profil (Seitenleiste bzw. untere Leiste auf dem
-  Handy); weitere Bereiche über „Mehr“: Entdecken, Charaktere, Suche, Shop, Weltanpassung, Welten, Fortschritt,
-  Einstellungen, Datenschutz. Der Weltwechsel sitzt oben in Seitenleiste und Kopfzeile. `/` leitet zum Feed (aktive
-  Welt) oder zu *Entdecken* (noch keine Welt).
+- **Navigation:** In einer Welt: Feed, Aufgaben, Chats, Aktivität, Profil (Seitenleiste bzw. untere Leiste auf dem
+  Handy); weitere Bereiche über „Mehr“: Entdecken, Fähigkeiten, Charaktere, Suche, Shop, Weltanpassung, Welten,
+  Fortschritt, Einstellungen, Datenschutz. Ohne aktive Welt: Start, Suche, Erstellen, Aktivität, Profil. Die
+  Kopfzeile enthält Logo, Rollen- und Weltwechsler, Mitteilungen, Einstellungen und das Menü „Weitere Bereiche“.
+  `/` leitet zum Feed (aktive Welt) oder zur Startseite (noch keine Welt).
 - **Daten:** TanStack Query mit gezielter Cache-Aktualisierung (z. B. Likes aktualisieren den Beitrag in allen
   Listen sofort) und regelmäßiger Aktualisierung (Bootstrap 20 s, Feed 30 s), damit Reaktionen sichtbar werden.
 - **Designsystem:** CSS-Variablen in `tokens.css` (Farben, Abstände, Radien, Typografie); Akzentfarbe per

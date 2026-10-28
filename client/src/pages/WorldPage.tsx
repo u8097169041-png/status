@@ -48,7 +48,7 @@ function EventsTab({ worldId }: { worldId: string }) {
   if (list.length === 0) return <EmptyState icon={Sparkles} title={t('worlds.eventsEmpty')} />;
   return (
     <div className="card">
-      <EventTimeline events={list} />
+      <EventTimeline events={list} reactable />
       {events.hasNextPage && (
         <button type="button" className="btn btn-secondary btn-block" onClick={() => void events.fetchNextPage()} disabled={events.isFetchingNextPage}>
           {t('worlds.loadOlder')}
@@ -353,8 +353,12 @@ export function WorldPage() {
               { id: 'residents', label: t('worlds.tabResidents'), count: world.characters.length },
               { id: 'relationships', label: t('worlds.tabRelationships'), count: world.relationships.length },
               { id: 'groups', label: t('worlds.tabGroups'), count: world.groups.length },
-              { id: 'events', label: t('worlds.tabEvents') },
-              { id: 'posts', label: t('worlds.tabPosts') },
+              ...(world.joined
+                ? [
+                    { id: 'events' as const, label: t('worlds.tabEvents') },
+                    { id: 'posts' as const, label: t('worlds.tabPosts') },
+                  ]
+                : []),
             ]}
           />
           <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="stack">

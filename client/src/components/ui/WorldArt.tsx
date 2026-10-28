@@ -364,6 +364,42 @@ export function WorldArt({ seed, style, hue, className, label }: WorldArtProps) 
       }
       els.push(<line key="half" x1={W / 2} y1={140} x2={W / 2} y2={H} stroke={hsl(hue, 20, 85, 0.7)} strokeWidth={1.5} />);
       els.push(<ellipse key="circle" cx={W / 2} cy={172} rx={40} ry={14} fill="none" stroke={hsl(hue, 20, 85, 0.7)} strokeWidth={1.5} />);
+    } else if (style === 'network') {
+      // Internet: leuchtende Knoten, Verbindungen und schwebende Bildschirme
+      defs = (
+        <>
+          <linearGradient id={sky} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor={hsl(hue + 220, 45, 8)} />
+            <stop offset="1" stopColor={hsl(hue, 60, 20)} />
+          </linearGradient>
+          <radialGradient id={glow}>
+            <stop offset="0" stopColor={hsl(hue, 100, 75, 0.9)} />
+            <stop offset="1" stopColor={hsl(hue, 100, 60, 0)} />
+          </radialGradient>
+        </>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      const nodes = Array.from({ length: 16 }, () => ({ x: rng.range(10, W - 10), y: rng.range(10, H - 10), r: rng.range(2, 5) }));
+      nodes.forEach((a, i) => {
+        nodes.slice(i + 1).forEach((b, j) => {
+          if (Math.hypot(a.x - b.x, a.y - b.y) < 110 && rng.next() < 0.6) {
+            els.push(<line key={`l${i}-${j}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={hsl(hue, 80, 65, 0.25)} strokeWidth={1} />);
+          }
+        });
+      });
+      nodes.forEach((n, i) => {
+        els.push(<circle key={`h${i}`} cx={n.x} cy={n.y} r={n.r * 4} fill={`url(#${glow})`} />);
+        els.push(<circle key={`n${i}`} cx={n.x} cy={n.y} r={n.r} fill={hsl(rng.next() < 0.3 ? hue + 160 : hue, 100, 75)} />);
+      });
+      for (let i = 0; i < 3; i++) {
+        const x = rng.range(30, W - 110);
+        const y = rng.range(30, H - 80);
+        const w = rng.range(70, 100);
+        els.push(<rect key={`s${i}`} x={x} y={y} width={w} height={w * 0.6} rx={6} fill={hsl(hue + 220, 40, 12, 0.85)} stroke={hsl(hue, 80, 65, 0.6)} />);
+        els.push(<rect key={`sb${i}`} x={x + 8} y={y + 8} width={w * 0.5} height={4} rx={2} fill={hsl(hue, 90, 70, 0.8)} />);
+        els.push(<rect key={`sc${i}`} x={x + 8} y={y + 18} width={w * 0.7} height={3} rx={1.5} fill={hsl(hue, 30, 80, 0.4)} />);
+        els.push(<circle key={`sh${i}`} cx={x + w - 14} cy={y + w * 0.6 - 12} r={5} fill={hsl(340, 90, 65)} />);
+      }
     } else {
       // dunes
       defs = (

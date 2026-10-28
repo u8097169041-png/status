@@ -58,7 +58,7 @@ export function ActivityPage() {
             <EmptyState title={t('activity.empty')} />
           ) : (
             <div className="card">
-              <EventTimeline events={data.events} />
+              <EventTimeline events={data.events} reactable />
             </div>
           ))}
         {data && tab === 'decisions' &&

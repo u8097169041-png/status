@@ -60,15 +60,26 @@ export function PlayerStatusBar({ player, coins }: { player: PlayerDto; coins: n
   const c = player.character;
   return (
     <section className="player-bar card" aria-label={t('play.statusLabel')}>
-      <Link to="/profile" className="player-bar-who">
-        <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="md" decorative />
+      <div className="player-bar-who">
+        <Link to="/profile" className="player-bar-avatar" tabIndex={-1} aria-hidden>
+          <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="md" decorative />
+        </Link>
         <span className="min-w-0">
-          <strong className="row truncate">
-            {c.name} {c.prominent && <VerifiedBadge />}
-          </strong>
+          <Link to="/profile" className="row truncate player-bar-name">
+            <strong className="truncate">{c.name}</strong> {c.prominent && <VerifiedBadge />}
+          </Link>
           <span className="xsmall muted truncate block">{t('play.playingAs', { name: c.role || c.handle })}</span>
+          <Link to="/skills" className="player-level" aria-label={`${t('play.level', { level: player.level.level })} – ${t('nav.skills')}`}>
+            <span className="badge badge-player">{t('play.level', { level: player.level.level })}</span>
+            <span className="progress progress-sm player-level-bar" aria-hidden>
+              <span style={{ width: `${Math.round(player.level.progress * 100)}%` }} />
+            </span>
+            {player.skillPoints.available > 0 && (
+              <span className="badge badge-coins">{t('play.skillPointsFree', { count: player.skillPoints.available })}</span>
+            )}
+          </Link>
         </span>
-      </Link>
+      </div>
       <div className="player-stats">
         <Stat icon={Crown} label={t('play.reputation')} value={formatNumber(player.reputation, locale)} />
         <Stat icon={Megaphone} label={t('play.influence')} value={formatNumber(player.influence, locale)} />
