@@ -16,7 +16,15 @@ import { dayKey, monthKey } from '../lib/time';
 import { deleteSecret, getSecret, getSettings } from '../services/settings';
 import type { RemoteModel } from './openaiClient';
 import { FallbackProvider, isLoopback, LocalProvider, ServerProvider } from './providers';
-import { safeMessage, type AiErrorCode, type ChatMessage, type CompletionOutcome, type FetchFn, type ProviderId } from './types';
+import {
+  safeMessage,
+  type AiErrorCode,
+  type ChatMessage,
+  type CompletionOutcome,
+  type FetchFn,
+  type JsonSchema,
+  type ProviderId,
+} from './types';
 
 /** Früher in der App gespeicherter OpenRouter-Schlüssel (Version 1). Wird nicht mehr verwendet. */
 export const LEGACY_API_KEY_SECRET = 'openrouter_api_key';
@@ -30,8 +38,14 @@ export interface AiCallRequest {
   messages: ChatMessage[];
   maxTokens?: number;
   temperature?: number;
-  /** Antwort als JSON-Objekt anfordern. */
-  json?: boolean;
+  /** Antwort als JSON-Objekt anfordern; ein Schema begrenzt bei der lokalen KI Aufbau und Länge. */
+  json?: boolean | JsonSchema;
+  /** Lange Generierung (Weltentwurf): längeres Gesamtzeitlimit. */
+  long?: boolean;
+  /** Abbruch durch den Nutzer. */
+  signal?: AbortSignal;
+  /** Fortschritt in erzeugten Tokens. */
+  onProgress?: (tokens: number) => void;
   /** Regelbasierter Ersatz (simulierte KI), wenn keine echte KI verfügbar ist oder sie scheitert. */
   fallback?: () => string;
 }
@@ -43,6 +57,8 @@ export type AiCallResult =
       provider: ProviderId;
       model: string | null;
       costUsd: number | null;
+      /** Ausgabe am Token-Limit abgeschnitten. */
+      truncated?: boolean;
       /** Gesetzt, wenn eine echte KI gewählt war, aber nicht geantwortet hat (Antwort stammt dann vom Fallback). */
       notice?: { code: AiErrorCode; message: string };
     }
@@ -57,6 +73,8 @@ interface Selection {
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 /** Hintergrundanfragen (Welt, Reaktionen) warten nicht auf ein belegtes lokales Modell. */
 const BACKGROUND_PURPOSES: AiPurpose[] = ['world', 'reaction', 'summary'];
+/** So lange warten Chats und Generator höchstens auf ein belegtes lokales Modell. */
+const SLOT_WAIT_MS = 15_000;
 const WORLD_PURPOSES: AiPurpose[] = ['world', 'reaction'];
 
 export class AiService {
@@ -227,6 +245,12 @@ export class AiService {
         checkedAt: health.checkedAt ? new Date(health.checkedAt).toISOString() : null,
         error: health.error,
         timeoutSeconds: Math.round(this.config.localAi.timeoutMs / 1000),
+        longTimeoutSeconds: Math.round(this.config.localAi.longTimeoutMs / 1000),
+        loadTimeoutSeconds: Math.round(this.config.localAi.loadTimeoutMs / 1000),
+        tokensPerSecond: this.local.observed.tokensPerSecond,
+        lastTimeout: this.local.observed.lastTimeout
+          ? { at: new Date(this.local.observed.lastTimeout.at).toISOString(), message: this.local.observed.lastTimeout.message }
+          : null,
       },
       server: {
         configured: this.server.configured(),
@@ -371,14 +395,24 @@ export class AiService {
     const temperature = req.temperature ?? ai.temperature;
     const requested = req.maxTokens ?? ai.maxTokens;
     if (provider === 'local') {
-      const cap = req.purpose === 'generator' ? Math.max(this.config.localAi.maxTokens, 1_200) : this.config.localAi.maxTokens;
+      const cap = req.purpose === 'generator' ? Math.max(this.config.localAi.maxTokens, 2_200) : this.config.localAi.maxTokens;
       const maxTokens = Math.min(requested, cap);
       // Chats warten kurz auf ein belegtes Modell; Hintergrundaufgaben verzichten in diesem Fall auf KI.
-      const release = await this.local.acquire(BACKGROUND_PURPOSES.includes(req.purpose) ? 0 : this.config.localAi.timeoutMs);
+      const release = await this.local.acquire(BACKGROUND_PURPOSES.includes(req.purpose) ? 0 : SLOT_WAIT_MS);
       if (!release) return { ok: false, code: 'busy', message: 'Die lokale KI ist gerade ausgelastet.', retriable: false };
       const started = Date.now();
       try {
-        const outcome = await this.local.complete({ kind: req.kind, messages: req.messages, maxTokens, temperature, json: Boolean(req.json), model });
+        const outcome = await this.local.complete({
+          kind: req.kind,
+          messages: req.messages,
+          maxTokens,
+          temperature,
+          json: req.json ?? false,
+          long: req.long,
+          signal: req.signal,
+          onProgress: req.onProgress,
+          model,
+        });
         this.logUsage({
           provider: 'local',
           purpose: req.purpose,
@@ -397,11 +431,20 @@ export class AiService {
       }
     }
 
-    const maxTokens = Math.min(requested, this.config.serverAi.maxTokens);
+    const maxTokens = Math.min(requested, req.purpose === 'generator' ? this.config.serverAi.maxTokensLong : this.config.serverAi.maxTokens);
     const check = await this.checkServerLimits(req, model, maxTokens);
     if ('code' in check) return { ok: false, code: check.code, message: check.message, retriable: false };
     const started = Date.now();
-    const outcome = await this.server.complete({ kind: req.kind, messages: req.messages, maxTokens, temperature, json: Boolean(req.json), model });
+    const outcome = await this.server.complete({
+      kind: req.kind,
+      messages: req.messages,
+      maxTokens,
+      temperature,
+      json: req.json ?? false,
+      long: req.long,
+      signal: req.signal,
+      model,
+    });
     let cost: number | null = null;
     let estimated = false;
     if (outcome.ok) {
@@ -451,9 +494,16 @@ export class AiService {
     const outcome = await this.callProvider(sel.provider, sel.model, req);
     if (outcome.ok) {
       this.lastError = null;
-      return { ok: true, text: outcome.text, provider: sel.provider, model: outcome.model, costUsd: outcome.costUsd ?? null };
+      return {
+        ok: true,
+        text: outcome.text,
+        provider: sel.provider,
+        model: outcome.model,
+        costUsd: outcome.costUsd ?? null,
+        ...(outcome.truncated ? { truncated: true } : {}),
+      };
     }
-    if (outcome.code !== 'busy') this.recordError(sel.provider, outcome.code, outcome.message);
+    if (outcome.code !== 'busy' && outcome.code !== 'cancelled') this.recordError(sel.provider, outcome.code, outcome.message);
     const notice = { code: outcome.code, message: outcome.message };
     return this.viaFallback(req, notice) ?? { ok: false, ...notice };
   }

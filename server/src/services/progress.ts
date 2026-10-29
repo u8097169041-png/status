@@ -18,6 +18,7 @@ import { AppError, notFound } from '../lib/errors';
 import { dayKey } from '../lib/time';
 import { COIN_REWARDS } from '../../../shared/economy';
 import { notify } from './notifications';
+import { coverUrlOf } from './covers';
 import { evaluateQuests } from './quests';
 import { playerLevel } from './skills';
 import { grantCoins } from './wallet';
@@ -230,9 +231,9 @@ export function getProgress(ctx: AppContext): ProgressDto {
        FROM characters c LEFT JOIN encounters e ON e.character_id = c.id
       ORDER BY e.first_at IS NULL, e.first_at, c.name`,
   );
-  const worlds = all<{ id: string; name: string; hue: number; art_style: string; first_at: string | null }>(
+  const worlds = all<{ id: string; name: string; hue: number; art_style: string; cover_image: string | null; first_at: string | null }>(
     ctx.db,
-    `SELECT w.id, w.name, w.hue, w.art_style, v.first_at
+    `SELECT w.id, w.name, w.hue, w.art_style, w.cover_image, v.first_at
        FROM worlds w LEFT JOIN world_visits v ON v.world_id = w.id
       ORDER BY v.first_at IS NULL, v.first_at, w.name`,
   );
@@ -268,6 +269,7 @@ export function getProgress(ctx: AppContext): ProgressDto {
         name: w.name,
         hue: w.hue,
         artStyle: w.art_style as never,
+        coverUrl: coverUrlOf(w.cover_image),
         visitedAt: w.first_at,
       })),
     },

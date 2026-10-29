@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LIMITS } from '../../../shared/constants';
+import { categoryOfGenre, LIMITS, type Genre } from '../../../shared/constants';
 import type {
   AiNotice,
   AiProviderId,
@@ -400,6 +400,11 @@ function insertMessage(
   return toMessage(get<MessageRow>(ctx.db, 'SELECT * FROM conversation_messages WHERE id = ?', lastInsertRowid)!);
 }
 
+function isDatingCharacter(ctx: AppContext, characterId: string): boolean {
+  const genre = get<{ genre: Genre }>(ctx.db, 'SELECT w.genre FROM characters c JOIN worlds w ON w.id = c.world_id WHERE c.id = ?', characterId)?.genre;
+  return genre ? categoryOfGenre(genre) === 'dating' : false;
+}
+
 function localReply(ctx: AppContext, characterId: string, conv: ConversationRow, player: PlayerRow | null, message: string): string {
   const settings = getSettings(ctx.db);
   const { character, world } = loadPromptCharacter(ctx, characterId);
@@ -432,6 +437,7 @@ function localReply(ctx: AppContext, characterId: string, conv: ConversationRow,
       worldName: world?.name ?? null,
       worldTagline: world?.tagline ?? null,
       relations: character.relationships.map((r) => r.name),
+      romantic: isDatingCharacter(ctx, characterId),
     },
     message,
     {

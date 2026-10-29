@@ -174,6 +174,8 @@ export interface WorldSummary {
   cast: CharacterRef[];
   /** Simulierte Beiträge der letzten 24 Stunden (keine Live-Daten). */
   postsToday: number;
+  /** Eigenes Titelbild (URL) oder null für die generierte Grafik. */
+  coverUrl: string | null;
 }
 
 export interface WorldDetail extends WorldSummary {
@@ -205,6 +207,21 @@ export interface WorldDraft extends WorldInput {
   characters: Omit<CharacterInput, 'worldId'>[];
   source: 'ai' | 'demo';
   notice?: string;
+}
+
+/** Weltentwurf als Hintergrundauftrag (lange lokale KI-Generierungen). */
+export interface GenerationJobDto {
+  id: string;
+  status: 'running' | 'done' | 'failed' | 'cancelled';
+  provider: AiProviderId;
+  model: string | null;
+  elapsedMs: number;
+  /** Bisher erzeugte Tokens und erwartete Gesamtzahl (für die Fortschrittsanzeige). */
+  tokens: number;
+  expectedTokens: number;
+  /** Ergebnis, sobald fertig: KI-Entwurf oder regelbasierter Entwurf mit Grund in `notice`. */
+  draft: WorldDraft | null;
+  notice: string | null;
 }
 
 export interface CharacterRef {
@@ -397,7 +414,7 @@ export interface ProgressDto {
   rewards: { id: string; type: 'title' | 'accent'; unlocked: boolean; unlock: { type: 'level'; level: number } | { type: 'achievement'; id: string } }[];
   collections: {
     characters: { id: string; name: string; avatarHue: number; avatarGlyph: AvatarGlyph; metAt: string | null }[];
-    worlds: { id: string; name: string; hue: number; artStyle: ArtStyle; visitedAt: string | null }[];
+    worlds: { id: string; name: string; hue: number; artStyle: ArtStyle; coverUrl: string | null; visitedAt: string | null }[];
   };
   recentXp: { action: string; amount: number; createdAt: string }[];
 }
@@ -509,6 +526,11 @@ export interface AiStatusDto {
     checkedAt: string | null;
     error: string | null;
     timeoutSeconds: number;
+    longTimeoutSeconds: number;
+    loadTimeoutSeconds: number;
+    /** Zuletzt gemessene Geschwindigkeit (Tokens pro Sekunde). */
+    tokensPerSecond: number | null;
+    lastTimeout: { at: string; message: string } | null;
   };
   server: {
     /** Vom Betreiber in .env aktiviert und vollständig (Zugang, Modell) konfiguriert. */
@@ -636,7 +658,7 @@ export interface DecisionEffectsDto {
   influence?: number;
   followers?: number;
   metrics?: Partial<Record<WorldMetric, number>>;
-  affinity?: { characterId: string; name: string; delta: number }[];
+  affinity?: { characterId: string; name: string; delta: number; becomes?: RelationshipKind; minAffinity?: number }[];
   /** Die Option treibt die verknüpfte Geschichte um ein Kapitel voran. */
   advancesStoryline?: boolean;
 }

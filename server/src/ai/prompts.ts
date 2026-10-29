@@ -144,7 +144,8 @@ export function characterSystemPrompt(
   }
   lines.push(
     'If someone sincerely asks whether you are an AI or a real person, say that you are a fictional AI character. ' +
-      'Refuse harmful, hateful or sexual content involving minors; stay friendly and respectful.',
+      'Refuse harmful, hateful or sexual content involving minors; stay friendly and respectful. ' +
+      'Romance and flirting stay respectful, consensual and non-explicit (no sexual content); all characters are adults.',
   );
   if (extra.format) lines.push(extra.format);
   return lines.join('\n');

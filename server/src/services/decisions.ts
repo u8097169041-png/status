@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { COIN_REWARDS } from '../../../shared/economy';
-import { LIMITS, type Lang, type WorldMetric } from '../../../shared/constants';
+import { categoryOfGenre, LIMITS, type Genre, type Lang, type RelationshipKind, type WorldMetric } from '../../../shared/constants';
 import { clampMetric } from '../../../shared/relationships';
 import { SKILL_RULES, type SkillId } from '../../../shared/skills';
 import type { ArcPath, CharacterRef, DecisionDto, DecisionEffectsDto, DecisionResult, EventEffect } from '../../../shared/types';
@@ -13,6 +13,7 @@ import {
   type DecisionTemplate,
   type OptionTemplate,
 } from '../content/decisionTemplates';
+import { DATING_DECISION_TEMPLATES, DATING_INTRO_DECISION } from '../content/datingDecisions';
 import { STORYLINE_TEXT } from '../content/simulationTemplates';
 import { all, get, parseJson, run, tx } from '../db/database';
 import { AppError, badRequest, notFound } from '../lib/errors';
@@ -26,7 +27,7 @@ import { adjustPlayerStats, controlledCharacterIds, getActivePlayerRow, getPlaye
 import { addCharacterLike, insertCharacterPost } from './posts';
 import { mergeDelta, recordAction } from './progress';
 import { getLanguage } from './settings';
-import { adjustAffinity } from './society';
+import { adjustAffinity, setRelationshipKind } from './society';
 import { addArcScore, resolveArc } from './arcs';
 import { refreshQuests } from './quests';
 import { requireSkill, skillLevels } from './skills';
@@ -170,10 +171,10 @@ function instantiate(
   };
   const targetOf = (t: 'npc' | 'a' | 'b') => (t === 'npc' ? ctxVars.npc : t === 'a' ? ctxVars.a : ctxVars.b);
   const options: StoredOption[] = template.options.map((o: OptionTemplate) => {
-    const affinity: { characterId: string; name: string; delta: number }[] = [];
+    const affinity: { characterId: string; name: string; delta: number; becomes?: RelationshipKind; minAffinity?: number }[] = [];
     for (const a of o.affinity ?? []) {
       const target = targetOf(a.target);
-      if (target) affinity.push({ characterId: target.id, name: target.name, delta: a.delta });
+      if (target) affinity.push({ characterId: target.id, name: target.name, delta: a.delta, becomes: a.becomes, minAffinity: a.minAffinity });
     }
     if (o.networkAffinity) {
       for (const n of ctxVars.network ?? []) affinity.push({ characterId: n.id, name: n.name, delta: o.networkAffinity });
@@ -217,12 +218,22 @@ function instantiate(
   return id;
 }
 
+/** Dating-Welten haben eigene Entscheidungen rund um Beziehungen; alle anderen Welten die allgemeinen. */
+function isDatingWorld(ctx: AppContext, worldId: string): boolean {
+  const genre = get<{ genre: Genre }>(ctx.db, 'SELECT genre FROM worlds WHERE id = ?', worldId)?.genre;
+  return genre ? categoryOfGenre(genre) === 'dating' : false;
+}
+
+function templatesFor(ctx: AppContext, worldId: string): DecisionTemplate[] {
+  return isDatingWorld(ctx, worldId) ? DATING_DECISION_TEMPLATES : DECISION_TEMPLATES;
+}
+
 export function createIntroDecision(ctx: AppContext, worldId: string, playerId: string): string | null {
   const lang = getLanguage(ctx.db);
   const npcs = npcsOf(ctx, worldId);
   const famous = npcs.filter((n) => n.prominent);
   const network = (famous.length >= 2 ? famous : npcs).slice(0, 2);
-  return instantiate(ctx, worldId, playerId, INTRO_DECISION, lang, { network });
+  return instantiate(ctx, worldId, playerId, isDatingWorld(ctx, worldId) ? DATING_INTRO_DECISION : INTRO_DECISION, lang, { network });
 }
 
 /** Wird von der Simulation aufgerufen: Gelegentlich wird die Spielfigur vor eine Entscheidung gestellt. */
@@ -233,7 +244,7 @@ export function maybeCreateDecision(ctx: AppContext, worldId: string, rng: Rng):
   const lang = getLanguage(ctx.db);
   const npcs = npcsOf(ctx, worldId);
   if (npcs.length === 0) return null;
-  const options = DECISION_TEMPLATES.filter((t) => t.needs !== 'storyline' && (t.needs !== 'pair' || npcs.length >= 2));
+  const options = templatesFor(ctx, worldId).filter((t) => t.needs !== 'storyline' && (t.needs !== 'pair' || npcs.length >= 2));
   const template = rng.pick(options);
   if (template.needs === 'pair') {
     // Bevorzugt Paare, die tatsächlich im Konflikt stehen.
@@ -263,7 +274,7 @@ export function maybeCreateDecision(ctx: AppContext, worldId: string, rng: Rng):
 export function createStorylineDecision(ctx: AppContext, worldId: string, storyline: { id: string; title: string; stage: string }): string | null {
   const player = getActivePlayerRow(ctx, worldId);
   if (!player) return null;
-  const template = DECISION_TEMPLATES.find((t) => t.id === 'storyline')!;
+  const template = templatesFor(ctx, worldId).find((t) => t.id === 'storyline')!;
   return instantiate(ctx, worldId, player.id, template, getLanguage(ctx.db), { storyline });
 }
 
@@ -342,8 +353,14 @@ export function chooseOption(ctx: AppContext, decisionId: string, input: unknown
       const change = adjustAffinity(ctx, row.world_id, player.character_id, a.characterId, a.delta);
       const other = getCharacterRow(ctx, a.characterId);
       effects.push({ type: 'affinity', a: toCharacterRef(playerChar), b: toCharacterRef(other), delta: change.after - change.before, affinity: change.after });
-      if (change.kindAfter !== change.kindBefore) {
-        effects.push({ type: 'relationshipKind', a: toCharacterRef(playerChar), b: toCharacterRef(other), from: change.kindBefore, to: change.kindAfter });
+      // Spielregel: Eine Beziehung wird erst ab der genannten Zuneigung zu einer Romanze bzw. Freundschaft.
+      let kindAfter = change.kindAfter;
+      if (a.becomes && a.becomes !== kindAfter && change.after >= (a.minAffinity ?? 0)) {
+        setRelationshipKind(ctx, player.character_id, a.characterId, a.becomes);
+        kindAfter = a.becomes;
+      }
+      if (kindAfter !== change.kindBefore) {
+        effects.push({ type: 'relationshipKind', a: toCharacterRef(playerChar), b: toCharacterRef(other), from: change.kindBefore, to: kindAfter });
       }
     }
 

@@ -289,7 +289,7 @@ export function WorldPage() {
         <ArrowLeft aria-hidden /> {t('nav.worlds')}
       </Link>
       <section className="world-hero">
-        <WorldArt seed={world.id} style={world.artStyle} hue={world.hue} className="world-hero-art" label={world.name} />
+        <WorldArt seed={world.id} style={world.artStyle} hue={world.hue} imageUrl={world.coverUrl} className="world-hero-art" label={world.name} />
         <div className="hero-overlay" />
         <div className="world-hero-content">
           <div className="row wrap">

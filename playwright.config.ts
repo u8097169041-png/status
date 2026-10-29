@@ -30,6 +30,8 @@ export default defineConfig({
       command: `node e2e/mock-ollama.mjs ${OLLAMA_PORT}`,
       port: OLLAMA_PORT,
       reuseExistingServer: false,
+      // Langsame Token-Ausgabe, damit Fortschrittsanzeige und Abbruch beim Weltentwurf testbar sind.
+      env: { MOCK_OLLAMA_TOKEN_DELAY_MS: '40' },
     },
     {
       // Startet den Produktionsbuild mit einer frischen, temporären Datenbank (ohne echte KI).

@@ -7,7 +7,14 @@ export interface LocalAiConfig {
   baseUrl: string;
   /** Fest vorgegebenes Modell; leer = in der App wählen bzw. automatisch aus den installierten Modellen. */
   model: string;
+  /** Gesamtzeit für Chat-Antworten. */
   timeoutMs: number;
+  /** Gesamtzeit für lange Generierungen (Weltentwurf). */
+  longTimeoutMs: number;
+  /** Wartezeit bis zum ersten Token – enthält das Laden des Modells in den Speicher. */
+  loadTimeoutMs: number;
+  /** Maximale Pause zwischen zwei Tokens; danach gilt die Ausgabe als hängengeblieben. */
+  idleTimeoutMs: number;
   maxTokens: number;
 }
 
@@ -23,7 +30,11 @@ export interface ServerAiConfig {
   model: string;
   worldModel: string;
   timeoutMs: number;
+  /** Zeitlimit für lange Generierungen (Weltentwurf). */
+  longTimeoutMs: number;
   maxTokens: number;
+  /** Token-Obergrenze für lange Generierungen (Weltentwurf). */
+  maxTokensLong: number;
   maxRequestsPerDay: number;
   maxRequestsPerMinute: number;
   dailyBudgetUsd: number;
@@ -38,6 +49,8 @@ export interface AppConfig {
   host: string;
   dataDir: string;
   dbFile: string;
+  /** Ordner für hochgeladene Dateien (Weltbilder). */
+  uploadsDir: string;
   localAi: LocalAiConfig;
   serverAi: ServerAiConfig;
   production: boolean;
@@ -113,11 +126,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.c
     host: env.HOST?.trim() || '127.0.0.1',
     dataDir,
     dbFile: resolve(dataDir, 'socialverse.db'),
+    uploadsDir: resolve(dataDir, 'uploads'),
     localAi: {
       enabled: bool(env.LOCAL_AI_ENABLED, true),
       baseUrl: url(env.LOCAL_AI_BASE_URL, DEFAULT_LOCAL_AI_URL),
       model: model(env.LOCAL_AI_MODEL),
-      timeoutMs: int(env.LOCAL_AI_TIMEOUT_MS, 60_000, 2_000, 300_000),
+      timeoutMs: int(env.LOCAL_AI_TIMEOUT_MS, 180_000, 5_000, 900_000),
+      longTimeoutMs: int(env.LOCAL_AI_LONG_TIMEOUT_MS, 600_000, 30_000, 3_600_000),
+      loadTimeoutMs: int(env.LOCAL_AI_LOAD_TIMEOUT_MS, 120_000, 5_000, 900_000),
+      idleTimeoutMs: int(env.LOCAL_AI_IDLE_TIMEOUT_MS, 30_000, 2_000, 300_000),
       maxTokens: int(env.LOCAL_AI_MAX_TOKENS, 350, 32, 2_000),
     },
     serverAi: {
@@ -127,7 +144,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.c
       model: model(env.SERVER_AI_MODEL),
       worldModel: model(env.SERVER_AI_WORLD_MODEL),
       timeoutMs: int(env.SERVER_AI_TIMEOUT_MS, 20_000, 2_000, 120_000),
+      longTimeoutMs: int(env.SERVER_AI_LONG_TIMEOUT_MS, 90_000, 5_000, 600_000),
       maxTokens: int(env.SERVER_AI_MAX_TOKENS, 400, 32, 4_000),
+      maxTokensLong: int(env.SERVER_AI_MAX_TOKENS_LONG, 2_200, 32, 8_000),
       maxRequestsPerDay: int(env.SERVER_AI_MAX_REQUESTS_PER_DAY, 200, 0, 100_000),
       maxRequestsPerMinute: int(env.SERVER_AI_MAX_REQUESTS_PER_MINUTE, 6, 0, 1_000),
       dailyBudgetUsd: num(env.SERVER_AI_DAILY_BUDGET_USD, 0.2, 0, 10_000),

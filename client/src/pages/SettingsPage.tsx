@@ -128,6 +128,29 @@ function AiSection({ settings, save }: { settings: AppSettings; save: (patch: De
                 hint={local.models.length === 0 ? t('aiSettings.localPullHint') : null}
               />
             )}
+            {local.reachable && local.tokensPerSecond !== null && (
+              <DiagRow
+                ok={local.tokensPerSecond >= 5}
+                label={t('aiSettings.speed')}
+                value={t('aiSettings.speedValue', {
+                  tps: formatNumber(local.tokensPerSecond, locale),
+                  // Ein Entwurf mit 3 Figuren umfasst etwa 950 Tokens.
+                  minutes: formatNumber(Math.max(0.1, Math.round((950 / local.tokensPerSecond / 60) * 10) / 10), locale),
+                })}
+              />
+            )}
+            {local.reachable && (
+              <DiagRow
+                ok={local.lastTimeout ? false : null}
+                label={t('aiSettings.timeouts')}
+                value={t('aiSettings.timeoutsValue', { load: local.loadTimeoutSeconds, chat: local.timeoutSeconds, long: local.longTimeoutSeconds })}
+                hint={
+                  local.lastTimeout
+                    ? t('aiSettings.lastTimeout', { time: formatDateTime(local.lastTimeout.at, locale), message: local.lastTimeout.message })
+                    : null
+                }
+              />
+            )}
             <DiagRow
               ok={server.configured ? server.consent && !server.blockedUntil : null}
               label={t('aiSettings.serverAi')}

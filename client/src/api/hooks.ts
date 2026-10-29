@@ -9,6 +9,7 @@ import {
 import type {
   AiProviderId,
   AiStatusDto,
+  GenerationJobDto,
   AiTestResult,
   AiUsageEntryDto,
   AppSettings,
@@ -53,14 +54,13 @@ import type {
   TriggerEventInput,
   UserProfileDto,
   WorldDetail,
-  WorldDraft,
   WorldEventDto,
   WalletDto,
   WorldInput,
   WorldQuestProgressDto,
   WorldSummary,
 } from '../../../shared/types';
-import { del, get, patch, post, put, qs } from './client';
+import { del, get, patch, post, put, qs, upload } from './client';
 
 export const keys = {
   bootstrap: ['bootstrap'] as const,
@@ -561,14 +561,47 @@ export function useWorldActions(id: string) {
   };
 }
 
+/** Fragt den Fortschritt eines Entwurfs-Auftrags ab, solange er läuft. */
+export function useGenerationJob(jobId: string | null) {
+  return useQuery({
+    queryKey: ['generation-job', jobId],
+    queryFn: ({ signal }) => get<GenerationJobDto>(`/worlds/generate-jobs/${jobId}`, signal),
+    enabled: Boolean(jobId),
+    refetchInterval: (query) => (query.state.data && query.state.data.status !== 'running' ? false : 1_000),
+    staleTime: 0,
+  });
+}
+
+/** Titelbild einer Welt speichern oder entfernen (für neue und bestehende eigene Welten). */
+export function useWorldCover() {
+  const qc = useQueryClient();
+  const refresh = (worldId: string) => {
+    refreshWorld(qc, worldId);
+    void qc.invalidateQueries({ queryKey: keys.worlds });
+    void qc.invalidateQueries({ queryKey: keys.discover });
+    void qc.invalidateQueries({ queryKey: keys.bootstrap });
+  };
+  return {
+    save: useMutation({
+      mutationFn: ({ worldId, file }: { worldId: string; file: Blob }) => upload<{ coverUrl: string }>(`/worlds/${worldId}/cover`, file),
+      onSuccess: (_r, v) => refresh(v.worldId),
+    }),
+    remove: useMutation({
+      mutationFn: (worldId: string) => del<void>(`/worlds/${worldId}/cover`),
+      onSuccess: (_r, worldId) => refresh(worldId),
+    }),
+  };
+}
+
 export function useWorldGenerator() {
   const qc = useQueryClient();
   return {
-    generate: useMutation({
+    /** Startet einen Entwurf als Hintergrundauftrag (lange lokale KI-Generierungen). */
+    start: useMutation({
       mutationFn: (input: { genre: string; prompt: string; characterCount: number; useAi: boolean }) =>
-        post<WorldDraft>('/worlds/generate', input),
-      onSuccess: () => void qc.invalidateQueries({ queryKey: keys.aiStatus }),
+        post<GenerationJobDto>('/worlds/generate-jobs', input),
     }),
+    cancel: useMutation({ mutationFn: (jobId: string) => del<GenerationJobDto>(`/worlds/generate-jobs/${jobId}`) }),
     create: useMutation({
       mutationFn: (input: { world: WorldInput; characters: Omit<CharacterInput, 'worldId'>[] }) =>
         post<WithProgress<{ world: WorldDetail }>>('/worlds', input),

@@ -39,7 +39,7 @@ Technische Details zu Aufbau, Datenmodell, Simulation und Erinnerungsstrategie s
 
 | Bereich | Was du tun kannst |
 | --- | --- |
-| **Startseite / Weltauswahl** | Dunkles, mobil optimiertes Layout: Kopfzeile mit Logo, Rollen- und Weltwechsler, Mitteilungen und Einstellungen; Kategorien (Promis, Politik, Internet, Fantasy, … und „Eigene Welten“); horizontal scrollbare Weltkarten mit Titelbild, Kategorie, Beschreibung, Figuren und (simulierter) Aktivität; „Deine Welten“, beliebte Welten, interaktive Handlungsbögen mit möglichen Enden, eigene Welt erstellen, bekannte Figuren. Vor dem Beitritt gibt es **nur** Entdeckung – keine Stories, Beiträge, Quests oder Ereignisse |
+| **Startseite / Weltauswahl** | Dunkles, mobil optimiertes Layout: Kopfzeile mit Logo, Rollen- und Weltwechsler, Mitteilungen und Einstellungen; Kategorien (Promis, Politik, Internet, Fantasy, Dating, … und „Eigene Welten“); horizontal scrollbare Weltkarten mit Titelbild, Kategorie, Beschreibung, Figuren und (simulierter) Aktivität; „Deine Welten“, beliebte Welten, interaktive Handlungsbögen mit möglichen Enden, eigene Welt erstellen, bekannte Figuren. Vor dem Beitritt gibt es **nur** Entdeckung – keine Stories, Beiträge, Quests oder Ereignisse |
 | **Beitritt** | Eigene Figur (Name, Beruf/Rolle, Hintergrund, Persönlichkeit, Ziele, **Hauptziel**, Avatar) oder bekannte Figur der Welt übernehmen; optional als klar gekennzeichnete Simulation einer realen öffentlichen Person; kontrollierter Figurenwechsel mit Bestätigung, ohne Datenverlust |
 | **Quests** | Hauptquest (3 Stufen, passend zu Rolle und Hauptziel), Nebenquests (Beziehungen, Rivalitäten, Kooperationen, Handlungsbögen, Folgen deiner Entscheidungen) und zeitlich begrenzte Ereignis-Quests; Fortschritt, Ziele, alternative Lösungswege und Belohnungen sichtbar |
 | **Level & Fähigkeiten** | Charakterlevel je Spielfigur mit XP-Balken; Fähigkeitspunkte für Charisma, Medienkompetenz, Verhandlung und Strategie mit konkreten Spielwirkungen je Stufe |
@@ -49,7 +49,9 @@ Technische Details zu Aufbau, Datenmodell, Simulation und Erinnerungsstrategie s
 | **Aktivität** | Mitteilungen, Weltgeschehen und deine Entscheidungen |
 | **Profil** | Deine aktive Figur mit Zielen und Werten, alle Spielfiguren mit Spielverlauf („Wieder spielen“), lokales Profil, Beiträge, Lesezeichen, Erfolge |
 | **Weitere Bereiche** | Charaktere, Suche, Shop (Rahmen, Banner, Premium-Ereigniskarten gegen Spielwährung – kein Echtgeld), Weltanpassung, Welten (Generator, Beziehungen, Gruppen, Storylines, Ereigniskarten), Fortschritt, Einstellungen, Datenschutz |
-| **Welten & Figuren** | 12 vorgefertigte, frei erfundene Welten (u. a. Regierungsviertel, Spotlight Boulevard, Trendwelle, Unicorn Valley, FC Hafenstadt, Late Night Live, Analog 2026) mit 44 Figuren, Zielen, Beziehungen und Geschichten mit je drei möglichen Enden; eigene Welten und Figuren |
+| **Welten & Figuren** | 13 vorgefertigte, frei erfundene Welten (u. a. Regierungsviertel, Spotlight Boulevard, Trendwelle, Herzklopfen, Unicorn Valley, FC Hafenstadt, Late Night Live, Analog 2026) mit 50 Figuren, Zielen, Beziehungen und Geschichten mit je drei möglichen Enden; eigene Welten und Figuren |
+| **Weltgenerator & -Editor** | Entwurf per lokaler KI als Hintergrundauftrag mit Fortschrittsanzeige und Abbruch; regelbasierter Entwurf als Rückfall (mit Grund und Lösungsschritten); **eigenes Titelbild** (JPEG, PNG, WebP) mit Vorschau, Ersetzen und Entfernen – für neue und bestehende eigene Welten |
+| **Dating** | Eigene Kategorie mit der Welt „Herzklopfen“: Kennenlernen, erste Dates, Freundschaft, Missverständnisse, Eifersucht, Liebesdreieck, lange Beziehungen, Trennung und zweite Chancen. Entscheidungen verändern Zuneigung und Beziehungsart (z. B. Romanze erst ab genug Zuneigung), drei Geschichten mit je drei Enden; nur erwachsene Figuren, romantisch, aber nie explizit |
 | **Einstellungen** | Sprache (Deutsch/Englisch), KI-Modus (automatisch/lokal, Server-KI mit Freigabe, nur simulierte KI), Diagnose mit Verbindungsstatus und Test, Wahl des lokalen Modells, Limits, Verbrauchsprotokoll, Simulationssteuerung, Erinnerungsoptionen, Datenexport und vollständiges Löschen |
 
 **Lebendige Welten:** Solange SocialVerse läuft, vergeht in regelmäßigen Abständen in einer Welt nach der anderen
@@ -239,6 +241,26 @@ bestinstallierte Modell wird automatisch gewählt; ein anderes installiertes Mod
 entladen). Deinstallation: Windows-Einstellungen → Apps → Ollama; Modelle entfernen mit `ollama rm <modell>`.
 
 `start.bat` zeigt beim Start eine Zeile zum KI-Status; `npm run ai:check` gibt eine ausführliche Diagnose.
+**`npm run ai:check -- --test`** führt zusätzlich eine kurze, echte Test-Generierung durch (lokal, kostenlos) und
+misst Ladezeit und Geschwindigkeit – daraus ergibt sich, wie lange ein Weltentwurf auf deinem Rechner dauert.
+
+### Wie lange dauert eine lokale Generierung?
+
+Ohne passende Grafikkarte erzeugt ein Modell wie `gemma3:4b` etwa 5–15 Wörter (Tokens) pro Sekunde, die erste Anfrage
+lädt das Modell zusätzlich in den Speicher. Ein Chat dauert damit wenige Sekunden, ein **Weltentwurf mit drei Figuren
+(≈ 950 Tokens) ein bis drei Minuten**. SocialVerse berücksichtigt das so:
+
+- Antworten werden **gestreamt**. Statt eines festen Gesamtlimits gibt es drei Zeitlimits: bis zum ersten Wort
+  inklusive Laden des Modells (`LOCAL_AI_LOAD_TIMEOUT_MS`, 2 Min.), die längste Pause zwischen zwei Wörtern
+  (`LOCAL_AI_IDLE_TIMEOUT_MS`, 30 s) und die Gesamtdauer: Chat 3 Min. (`LOCAL_AI_TIMEOUT_MS`), Weltentwurf 10 Min.
+  (`LOCAL_AI_LONG_TIMEOUT_MS`).
+- Der **Weltentwurf läuft im Hintergrund** mit Fortschrittsanzeige. Du kannst jederzeit abbrechen und den
+  regelbasierten Entwurf verwenden.
+- Ein festes JSON-Schema begrenzt die Länge aller Texte. Ab Ollama 0.5 erzwingt die KI damit gültiges JSON.
+- Ist Ollama nicht erreichbar, wird **nicht gewartet**. Der regelbasierte Entwurf erscheint sofort, mit Grund und
+  konkreten Lösungsschritten.
+- Die Diagnose unter **Einstellungen → KI & Modelle** zeigt die gemessene Geschwindigkeit, die Zeitlimits und die
+  letzte Zeitüberschreitung.
 
 ### Server-KI (optional, für einen späteren zentralen Betrieb)
 
@@ -301,12 +323,15 @@ Standardwerte ersetzt.
 | `LOCAL_AI_ENABLED` | `true` | Lokale KI suchen und verwenden |
 | `LOCAL_AI_BASE_URL` | `http://127.0.0.1:11434` | Adresse von Ollama |
 | `LOCAL_AI_MODEL` | leer | Festes Modell; leer = Auswahl in der App bzw. automatisch |
-| `LOCAL_AI_TIMEOUT_MS` / `LOCAL_AI_MAX_TOKENS` | `60000` / `350` | Zeitlimit und Antwortlänge der lokalen KI |
+| `LOCAL_AI_LOAD_TIMEOUT_MS` / `LOCAL_AI_IDLE_TIMEOUT_MS` | `120000` / `30000` | Zeit bis zum ersten Wort (inkl. Laden des Modells) / längste Pause zwischen zwei Wörtern |
+| `LOCAL_AI_TIMEOUT_MS` / `LOCAL_AI_LONG_TIMEOUT_MS` | `180000` / `600000` | Gesamtdauer Chat / Weltentwurf |
+| `LOCAL_AI_MAX_TOKENS` | `350` | Antwortlänge im Chat (Weltentwürfe nutzen ein eigenes, größeres Limit) |
 | `SERVER_AI_ENABLED` | `false` | Server-KI grundsätzlich erlauben (Betreiber) |
 | `SERVER_AI_BASE_URL` | `https://openrouter.ai/api/v1` | OpenAI-kompatible Adresse |
 | `SERVER_AI_API_KEY` | leer | Zugangsschlüssel – nur serverseitig, nie im Frontend |
 | `SERVER_AI_MODEL` / `SERVER_AI_WORLD_MODEL` | leer | Modell-IDs (Weltaktivität optional separat) |
 | `SERVER_AI_TIMEOUT_MS` / `SERVER_AI_MAX_TOKENS` | `20000` / `400` | Harte Obergrenzen pro Anfrage |
+| `SERVER_AI_LONG_TIMEOUT_MS` / `SERVER_AI_MAX_TOKENS_LONG` | `90000` / `2200` | Obergrenzen für Weltentwürfe |
 | `SERVER_AI_MAX_REQUESTS_PER_DAY` / `_PER_MINUTE` | `200` / `6` | Harte Anfragelimits |
 | `SERVER_AI_DAILY_BUDGET_USD` / `SERVER_AI_MONTHLY_BUDGET_USD` | `0.20` / `2` | Harte Kostenobergrenzen |
 | `SERVER_AI_PRICE_INPUT_PER_MTOK` / `_OUTPUT_PER_MTOK` | leer | Preise pro 1 Mio. Tokens; leer = Preisliste des Dienstes |
@@ -320,7 +345,7 @@ in Git gespeichert.
 
 ## Daten, Export, Backup und Löschen
 
-- **Speicherort:** `data/socialverse.db` (SQLite). Beim ersten Start wird die Datenbank angelegt, migriert und mit
+- **Speicherort:** `data/socialverse.db` (SQLite) und eigene Weltbilder in `data/uploads/covers/`. Beim ersten Start wird die Datenbank angelegt, migriert und mit
   Demo-Inhalten gefüllt. Spätere Schema-Änderungen werden über versionierte Migrationen eingespielt.
 - **Update einer bestehenden Installation:** Beim ersten Start nach dem Update wird die Datenbank automatisch
   migriert. Eigene Beiträge, Charaktere, Welten, Fortschritt und Chats bleiben erhalten; neue vorgefertigte Welten
@@ -329,9 +354,9 @@ in Git gespeichert.
   sichern.
 - **Export:** Einstellungen → Datenschutz & Daten → **Daten exportieren** lädt alle lokalen Daten als JSON herunter
   (ohne Schlüssel).
-- **Backup:** SocialVerse beenden und den Ordner `data/` kopieren.
+- **Backup:** SocialVerse beenden und den Ordner `data/` kopieren (enthält Datenbank und Weltbilder).
 - **Alles löschen:** Einstellungen → Datenschutz & Daten → `RESET` eingeben → **Endgültig löschen**. Gelöscht
-  werden Beiträge, Kommentare, Chats, Erinnerungen, Fortschritt, eigene Welten und Charaktere, Nutzungsprotokoll,
+  werden Beiträge, Kommentare, Chats, Erinnerungen, Fortschritt, eigene Welten und Charaktere samt Weltbildern, Nutzungsprotokoll,
   Einstellungen und ein eventuell aus Version 1 gespeicherter Schlüssel; die Datenbankdatei wird anschließend
   verdichtet (`VACUUM`). Danach werden die Demo-Inhalte neu angelegt. `.env` bleibt unverändert.
 - **Komplett zurücksetzen:** SocialVerse beenden und den Ordner `data/` löschen.
@@ -386,7 +411,13 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   Quest- und Bogenbelohnungen, Charakterlevel und Fähigkeitspunkte, Wirkung jeder Fähigkeit (Reichweite,
   Dialogoptionen, Kooperationsschwelle, gesperrte/freigeschaltete Entscheidungsoptionen, Prognose, alternative
   Questwege, doppelte Gewichtung), Enden von Handlungsbögen, Persistenz nach Neustart und Trennung zwischen Welten
-  sowie Sperre weltinterner Inhalte ohne Beitritt.
+  sowie Sperre weltinterner Inhalte ohne Beitritt; außerdem lange lokale Generierungen mit realistisch langsamer
+  Ollama-Simulation (Regression „Zeitüberschreitung“: Streaming, Lade-/Leerlauf-/Gesamtlimit, Abbruch, abgeschnittene
+  Ausgaben, JSON-Schema je Ollama-Version, keine falsche „nicht erreichbar“-Diagnose, sofortiger Rückfall ohne
+  Ollama), Weltentwurf als Hintergrundauftrag, Weltbilder (Upload, Typ-/Signatur-/Größenprüfung, Pfadschutz,
+  Ersetzen, Entfernen, Löschen mit Welt und Reset, Zuordnung nach Neustart) und die Dating-Kategorie (erwachsene
+  Figuren, Enden, Romanze erst ab genug Zuneigung, Liebesdreieck, regelbasierte Dating-Antworten ohne KI,
+  Generator-Vorgaben, Ergänzung bestehender Datenbanken).
 - **Ende-zu-Ende (Playwright):** Startseite/Weltauswahl (Kategorien, Weltkarten, Navigation vor dem Beitritt,
   keine weltinternen Inhalte), Quests/Level/Fähigkeiten (Hauptquest, gesperrte Optionen, Fähigkeit steigern,
   Dialogoption mit Wirkung, Persistenz), Weltvorschau und Beitritt, eigene und bekannte Figur,
@@ -394,7 +425,9 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   mobil, ohne horizontales Scrollen), Onboarding, Beiträge (erstellen, liken, merken, bearbeiten, kommentieren),
   Filter, Demo-Chat mit Erinnerung, Weltsimulation, Ereigniskarten, Beziehungen, Storylines, Charakter- und
   Weltgenerator, Quests, Sprachwechsel, KI-Einstellungen ohne Schlüsseleingabe, mobile Ansicht, vollständiges
-  Löschen sowie die Hybrid-KI gegen lokale Nachbauten von Ollama (`e2e/mock-ollama.mjs`) und einem
+  Löschen, Weltbild (ungültige Dateien, Vorschau, Speichern, Neuladen, Weltkarte, Ersetzen, Entfernen), Dating-Welt
+  (Kategoriefilter, Beitritt, Dating-Entscheidung, Dating im Generator), Weltentwurf mit lokaler KI (Fortschritt,
+  Abbruch, Ergebnis) sowie die Hybrid-KI gegen lokale Nachbauten von Ollama (`e2e/mock-ollama.mjs`) und einem
   OpenAI-kompatiblen Server (`e2e/mock-openrouter.mjs`) in einer zweiten App-Instanz.
 - **Barrierefreiheit:** Während der Entwicklung wurden alle Seiten (Desktop und Mobil) mit axe-core auf WCAG 2 A/AA
   geprüft; gefundene Probleme wurden behoben. Diese Prüfung ist nicht Teil der automatischen Testsuite.
@@ -412,7 +445,9 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
 | Browser zeigt „Server nicht erreichbar“ | Das schwarze Fenster wurde geschlossen oder der Start ist fehlgeschlagen – Meldungen im Fenster lesen. |
 | Browser öffnet sich nicht automatisch | Manuell <http://127.0.0.1:3001> aufrufen. |
 | Es antwortet nur die simulierte KI | Einstellungen → KI & Modelle → Diagnose lesen und „Erneut prüfen“. Läuft Ollama (Symbol im Infobereich)? Ist ein Modell installiert (`ollama list`)? `npm run ai:check` zeigt die nächsten Schritte. |
-| Lokale KI antwortet sehr langsam oder mit Zeitüberschreitung | Kleineres Modell wählen (z. B. `qwen2.5:3b`), andere Programme schließen oder `LOCAL_AI_TIMEOUT_MS` erhöhen. Die erste Antwort nach dem Start dauert länger. |
+| „KI-Generierung fehlgeschlagen (Zeitüberschreitung)“ beim Weltentwurf | Seit dieser Version läuft der Entwurf im Hintergrund mit Fortschritt (bis 10 Min.). Bleibt es zu langsam: `npm run ai:check -- --test` zeigt die Geschwindigkeit; kleineres Modell (z. B. `qwen2.5:3b`) wählen, weniger Figuren erzeugen oder `LOCAL_AI_LONG_TIMEOUT_MS`/`LOCAL_AI_LOAD_TIMEOUT_MS` in `.env` erhöhen. Enthält eine ältere `.env` noch `LOCAL_AI_TIMEOUT_MS=60000`, kann der Wert für Chats auf `180000` gesetzt werden. |
+| Lokale KI antwortet im Chat sehr langsam | Kleineres Modell wählen, andere Programme schließen. Die erste Antwort nach dem Start dauert länger (Modell wird geladen). |
+| Weltbild lässt sich nicht speichern | Nur JPEG, PNG und WebP bis 15 MB, mindestens 320 × 160 Pixel. „Konnte nicht gespeichert werden“: freien Speicherplatz und Schreibrechte für `data/uploads` prüfen. |
 | Inhalte in falscher Sprache | Demo-Inhalte entstehen in der Sprache des ersten Starts. Einstellungen → Allgemein → „Demo-Inhalte … neu laden“ (löscht alle Daten). |
 
 ---
@@ -424,6 +459,9 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
 - **Keine echte KI-Anfrage verifiziert:** In der Entwicklungsumgebung waren weder Ollama noch Modelle oder ein
   KI-Dienst erreichbar (Downloads gesperrt). Lokale KI und Server-KI sind gegen protokollgetreue Nachbauten der
   Ollama- bzw. OpenAI-kompatiblen API getestet. Die echte Anbindung bitte einmal mit „Lokale KI testen“ prüfen.
+- **Generierungsdauer:** Ein Weltentwurf mit lokaler KI dauert auf Rechnern ohne passende Grafikkarte meist ein bis drei
+  Minuten. Die tatsächliche Geschwindigkeit hängt vom Rechner ab und konnte hier nicht gemessen werden.
+- **Weltbilder nur für eigene Welten:** Vorgefertigte Welten sind (wie bisher) nicht bearbeitbar und behalten ihre Grafik.
 - **`ki-einrichten.bat` nicht auf Windows getestet:** Das Skript fragt vor jedem Download nach und nutzt nur
   `winget` und `ollama`; es wurde jedoch unter Linux geschrieben.
 - **Antwortqualität lokaler Modelle:** Kleine Modelle (3–4 Mrd. Parameter) antworten schlichter als große Cloud-Modelle

@@ -7,7 +7,7 @@
  */
 import type { AiFallbackReason } from '../../../shared/types';
 import type { LocalAiConfig, ServerAiConfig } from '../config';
-import { isChatModel, OllamaClient, type OllamaModel } from './ollamaClient';
+import { isChatModel, OllamaClient, supportsJsonSchema, type OllamaModel } from './ollamaClient';
 import { OpenAiCompatibleClient } from './openaiClient';
 import type { AiProvider, CompletionOutcome, FetchFn, ProviderRequest } from './types';
 
@@ -72,6 +72,15 @@ export interface LocalHealth {
   error: string | null;
 }
 
+/** Laufzeitbeobachtungen für die Diagnose: Geschwindigkeit und letzte Zeitüberschreitung. */
+export interface LocalStats {
+  tokensPerSecond: number | null;
+  lastTimeout: { at: number; message: string } | null;
+}
+
+/** Kontextlänge für lokale Modelle (Systemprompt + Verlauf + Antwort). */
+const LOCAL_NUM_CTX = 4096;
+
 export interface LocalReadiness {
   ready: boolean;
   model: string | null;
@@ -85,6 +94,8 @@ export class LocalProvider implements AiProvider {
   private health: LocalHealth = { reachable: null, version: null, models: [], checkedAt: 0, error: null };
   private probing: Promise<void> | null = null;
   private readonly slot = new Slot();
+  private busy = 0;
+  private stats: LocalStats = { tokensPerSecond: null, lastTimeout: null };
 
   constructor(
     readonly config: LocalAiConfig,
@@ -98,12 +109,18 @@ export class LocalProvider implements AiProvider {
     return this.health;
   }
 
+  get observed(): LocalStats {
+    return this.stats;
+  }
+
   /** Fragt Version und installierte Modelle ab (kostenlos, kurze Zeitüberschreitung). Ergebnis wird zwischengespeichert. */
   async refresh(force = false): Promise<void> {
     if (!this.config.enabled) return;
     const age = this.clock() - this.health.checkedAt;
     const ttl = this.health.reachable ? HEALTHY_TTL_MS : UNHEALTHY_TTL_MS;
     if (!force && this.health.checkedAt > 0 && age < ttl) return;
+    // Während einer laufenden Generierung ist Ollama ausgelastet; eine Prüfung könnte dann fälschlich scheitern.
+    if (!force && this.busy > 0 && this.health.reachable) return;
     if (this.probing) return this.probing;
     this.probing = (async () => {
       try {
@@ -164,19 +181,39 @@ export class LocalProvider implements AiProvider {
   }
 
   async complete(req: ProviderRequest & { model: string }): Promise<CompletionOutcome> {
-    const outcome = await this.client.chat({
-      model: req.model,
-      messages: req.messages,
-      maxTokens: req.maxTokens,
-      temperature: req.temperature,
-      json: req.json,
-      timeoutMs: this.config.timeoutMs,
-    });
-    if (!outcome.ok && (outcome.code === 'network' || outcome.code === 'timeout')) {
-      this.markUnreachable(outcome.code === 'timeout' ? 'Zeitüberschreitung' : 'Nicht erreichbar');
+    // JSON-Schema nur, wenn die installierte Ollama-Version es versteht; sonst einfacher JSON-Modus.
+    const format = typeof req.json === 'object' && !supportsJsonSchema(this.health.version) ? true : req.json;
+    this.busy++;
+    try {
+      const outcome = await this.client.chat({
+        model: req.model,
+        messages: req.messages,
+        maxTokens: req.maxTokens,
+        temperature: req.temperature,
+        format,
+        numCtx: LOCAL_NUM_CTX,
+        timeouts: {
+          firstTokenMs: this.config.loadTimeoutMs,
+          idleMs: this.config.idleTimeoutMs,
+          totalMs: req.long ? this.config.longTimeoutMs : this.config.timeoutMs,
+        },
+        signal: req.signal,
+        onProgress: req.onProgress,
+      });
+      if (outcome.ok) {
+        if (outcome.tokensPerSecond) this.stats.tokensPerSecond = outcome.tokensPerSecond;
+      } else if (outcome.code === 'network') {
+        // Nur echte Verbindungsfehler gelten als „nicht erreichbar“ – eine langsame KI ist erreichbar.
+        this.markUnreachable('Nicht erreichbar');
+      } else if (outcome.code === 'timeout') {
+        this.stats.lastTimeout = { at: this.clock(), message: outcome.message };
+      } else if (outcome.code === 'model_unavailable') {
+        void this.refresh(true);
+      }
+      return outcome;
+    } finally {
+      this.busy--;
     }
-    if (!outcome.ok && outcome.code === 'model_unavailable') void this.refresh(true);
-    return outcome;
   }
 }
 
@@ -244,7 +281,8 @@ export class ServerProvider implements AiProvider {
       messages: req.messages,
       maxTokens: req.maxTokens,
       temperature: req.temperature,
-      timeoutMs: this.config.timeoutMs,
+      timeoutMs: req.long ? this.config.longTimeoutMs : this.config.timeoutMs,
+      signal: req.signal,
     });
     if (!outcome.ok) {
       // Zugangs- oder Zahlungsprobleme beheben sich nicht von selbst: bis zum Neustart bzw. „Erneut prüfen“ sperren.

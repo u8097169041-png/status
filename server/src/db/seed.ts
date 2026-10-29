@@ -28,6 +28,16 @@ import {
   SEED_STORYLINES_V3,
   SEED_WORLDS_V3,
 } from '../content/seedWorlds3';
+import {
+  SEED_CHARACTERS_V4,
+  SEED_EVENTS_V4,
+  SEED_GROUPS_V4,
+  SEED_POSTS_V4,
+  SEED_RELATIONSHIPS_V4,
+  SEED_STORIES_V4,
+  SEED_STORYLINES_V4,
+  SEED_WORLDS_V4,
+} from '../content/seedWorlds4';
 import { extractTags } from '../lib/text';
 import { addHours, addMinutes } from '../lib/time';
 import { all, get, run, tx, type DB } from './database';
@@ -53,16 +63,16 @@ export function seedIfEmpty(db: DB, now: Date, lang: Lang = 'de'): boolean {
 }
 
 /** Version der mitgelieferten Inhalte. Erhöhen, wenn neue Welten oder Daten nachgetragen werden. */
-export const CONTENT_VERSION = 3;
+export const CONTENT_VERSION = 4;
 
-const ALL_WORLDS = [...SEED_WORLDS, ...SEED_WORLDS_V2, ...SEED_WORLDS_V3];
-const ALL_CHARACTERS = [...SEED_CHARACTERS, ...SEED_CHARACTERS_V2, ...SEED_CHARACTERS_V3];
-const ALL_RELATIONSHIPS = [...SEED_RELATIONSHIPS, ...SEED_RELATIONSHIPS_V2, ...SEED_RELATIONSHIPS_V3];
-const ALL_GROUPS = [...SEED_GROUPS, ...SEED_GROUPS_V2, ...SEED_GROUPS_V3];
-const ALL_STORYLINES = [...SEED_STORYLINES, ...SEED_STORYLINES_V2, ...SEED_STORYLINES_V3];
-const ALL_EVENTS = [...SEED_EVENTS, ...SEED_EVENTS_V2, ...SEED_EVENTS_V3];
-const ALL_POSTS = [...SEED_POSTS, ...SEED_POSTS_V2, ...SEED_POSTS_V3];
-const ALL_STORIES = [...SEED_STORIES, ...SEED_STORIES_V2, ...SEED_STORIES_V3];
+const ALL_WORLDS = [...SEED_WORLDS, ...SEED_WORLDS_V2, ...SEED_WORLDS_V3, ...SEED_WORLDS_V4];
+const ALL_CHARACTERS = [...SEED_CHARACTERS, ...SEED_CHARACTERS_V2, ...SEED_CHARACTERS_V3, ...SEED_CHARACTERS_V4];
+const ALL_RELATIONSHIPS = [...SEED_RELATIONSHIPS, ...SEED_RELATIONSHIPS_V2, ...SEED_RELATIONSHIPS_V3, ...SEED_RELATIONSHIPS_V4];
+const ALL_GROUPS = [...SEED_GROUPS, ...SEED_GROUPS_V2, ...SEED_GROUPS_V3, ...SEED_GROUPS_V4];
+const ALL_STORYLINES = [...SEED_STORYLINES, ...SEED_STORYLINES_V2, ...SEED_STORYLINES_V3, ...SEED_STORYLINES_V4];
+const ALL_EVENTS = [...SEED_EVENTS, ...SEED_EVENTS_V2, ...SEED_EVENTS_V3, ...SEED_EVENTS_V4];
+const ALL_POSTS = [...SEED_POSTS, ...SEED_POSTS_V2, ...SEED_POSTS_V3, ...SEED_POSTS_V4];
+const ALL_STORIES = [...SEED_STORIES, ...SEED_STORIES_V2, ...SEED_STORIES_V3, ...SEED_STORIES_V4];
 
 function setMeta(db: DB, key: string, value: string): void {
   run(db, `INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value);
@@ -331,6 +341,14 @@ export function applyContentUpdates(db: DB, now: Date): boolean {
       )) {
         run(db, 'UPDATE storylines SET endings = ? WHERE id = ?', JSON.stringify(buildEndings(s.id, s.title, s.world, lang)), s.id);
       }
+    }
+    if (current < 4) {
+      // Neue Dating-Welt; vorhandene Daten bleiben unverändert, belegte IDs/Handles werden nicht überschrieben.
+      const missing = SEED_WORLDS_V4.filter((w) => !get(db, 'SELECT 1 FROM worlds WHERE id = ?', w.id)).map((w) => w.id);
+      const conflicts = SEED_CHARACTERS_V4.filter(
+        (c) => missing.includes(c.worldId) && get(db, 'SELECT 1 FROM characters WHERE id = ? OR handle = ?', c.id, c.handle),
+      ).map((c) => c.worldId);
+      insertWorldContent(db, new Set(missing.filter((id) => !conflicts.includes(id))), now, lang);
     }
     setMeta(db, 'content_version', String(CONTENT_VERSION));
   });

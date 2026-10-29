@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AiService } from '../ai/aiService';
 import type { FetchFn } from '../ai/types';
 import { createApp } from '../app';
@@ -14,18 +17,28 @@ export interface TestContext extends AppContext {
   fetchCalls: { url: string; body: unknown }[];
 }
 
-export type MockHandler = (url: string, body: unknown) => { status: number; json: unknown } | Promise<{ status: number; json: unknown }>;
+/** Antwort eines simulierten Dienstes; `ndjson` liefert eine gestreamte Antwort (Zeilen mit Pause dazwischen). */
+export interface MockResult {
+  status: number;
+  json?: unknown;
+  ndjson?: { lines: unknown[]; firstDelayMs?: number; delayMs?: number };
+}
+export type MockHandler = (url: string, body: unknown) => MockResult | Promise<MockResult>;
 
 export const TEST_CONFIG: AppConfig = {
   port: 0,
   host: '127.0.0.1',
   dataDir: ':memory:',
   dbFile: ':memory:',
+  uploadsDir: join(tmpdir(), 'socialverse-test-uploads'),
   localAi: {
     enabled: true,
     baseUrl: 'http://ollama.test:11434',
     model: '',
     timeoutMs: 5_000,
+    longTimeoutMs: 10_000,
+    loadTimeoutMs: 5_000,
+    idleTimeoutMs: 2_000,
     maxTokens: 350,
   },
   serverAi: {
@@ -35,7 +48,9 @@ export const TEST_CONFIG: AppConfig = {
     model: '',
     worldModel: '',
     timeoutMs: 5_000,
+    longTimeoutMs: 10_000,
     maxTokens: 400,
+    maxTokensLong: 2_200,
     maxRequestsPerDay: 200,
     maxRequestsPerMinute: 6,
     dailyBudgetUsd: 0.2,
@@ -59,7 +74,7 @@ export function createTestContext(
     const url = String(input);
     const body = init?.body ? JSON.parse(String(init.body)) : null;
     fetchCalls.push({ url, body });
-    const handler = opts.handler ?? (() => ({ status: 500, json: { error: { message: 'no handler' } } }));
+    const handler: MockHandler = opts.handler ?? (() => ({ status: 500, json: { error: { message: 'no handler' } } }));
     const signal = init?.signal;
     const aborted = new Promise<never>((_, reject) => {
       signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
@@ -67,9 +82,36 @@ export function createTestContext(
     const result = await Promise.race([Promise.resolve(handler(url, body)), aborted]);
     // Status 0 simuliert einen Verbindungsfehler (z. B. kein Internet oder Dienst nicht gestartet).
     if (result.status === 0) throw new TypeError('fetch failed');
+    if (result.ndjson) {
+      const { lines, firstDelayMs = 0, delayMs = 0 } = result.ndjson;
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const wait = (ms: number) =>
+            new Promise<void>((resolve, reject) => {
+              const timer = setTimeout(resolve, ms);
+              signal?.addEventListener('abort', () => {
+                clearTimeout(timer);
+                reject(new DOMException('Aborted', 'AbortError'));
+              });
+            });
+          try {
+            for (let i = 0; i < lines.length; i++) {
+              await wait(i === 0 ? firstDelayMs : delayMs);
+              controller.enqueue(encoder.encode(`${JSON.stringify(lines[i])}\n`));
+            }
+            controller.close();
+          } catch (error) {
+            controller.error(error);
+          }
+        },
+      });
+      return new Response(stream, { status: result.status, headers: { 'Content-Type': 'application/x-ndjson' } });
+    }
     return new Response(JSON.stringify(result.json), { status: result.status, headers: { 'Content-Type': 'application/json' } });
   }) as FetchFn;
-  const config = { ...TEST_CONFIG, ...opts.config };
+  // Eigener Upload-Ordner je Testkontext, damit parallel laufende Tests sich nicht gegenseitig Dateien löschen.
+  const config = { ...TEST_CONFIG, uploadsDir: mkdtempSync(join(tmpdir(), 'socialverse-test-uploads-')), ...opts.config };
   const ctx: TestContext = {
     db,
     config,
@@ -129,16 +171,23 @@ export function openRouterMock(options: {
 export function ollamaMock(
   options: {
     models?: string[];
-    reply?: string | ((body: { model: string; messages: { content: string }[]; format?: string }) => string);
+    reply?: string | ((body: { model: string; messages: { content: string }[]; format?: unknown }) => string);
     chatStatus?: number;
+    /** Wartezeit bis zum ersten Token (z. B. Laden des Modells). */
     delayMs?: number;
+    /** Pause zwischen zwei Tokens (Generierungsgeschwindigkeit). */
+    tokenDelayMs?: number;
+    /** Antwort wird in so viele Tokens zerlegt. */
+    chunks?: number;
+    doneReason?: 'stop' | 'length';
+    version?: string;
     down?: boolean;
   } = {},
 ): MockHandler {
   const models = options.models ?? ['gemma3:4b', 'nomic-embed-text:latest'];
   return async (url, body) => {
     if (options.down) return { status: 0, json: null };
-    if (url.endsWith('/api/version')) return { status: 200, json: { version: '0.9.0' } };
+    if (url.endsWith('/api/version')) return { status: 200, json: { version: options.version ?? '0.9.0' } };
     if (url.endsWith('/api/tags')) {
       return {
         status: 200,
@@ -152,14 +201,29 @@ export function ollamaMock(
       };
     }
     if (url.endsWith('/api/chat')) {
-      if (options.delayMs) await new Promise((r) => setTimeout(r, options.delayMs));
       if (options.chatStatus) return { status: options.chatStatus, json: { error: `model not found, try pulling it first` } };
-      const req = body as { model: string; messages: { content: string }[]; format?: string };
+      const req = body as { model: string; messages: { content: string }[]; format?: unknown };
       const reply =
         typeof options.reply === 'function'
           ? options.reply(req)
           : (options.reply ?? JSON.stringify({ reply: 'Lokale Antwort der Figur.', tone: 'warm' }));
-      return { status: 200, json: { model: req.model, message: { role: 'assistant', content: reply }, done: true, prompt_eval_count: 300, eval_count: 25 } };
+      // Wie Ollama: gestreamte Zeilen mit je einem Textstück, zuletzt eine Zeile mit done = true und Statistik.
+      const parts = Math.max(1, Math.min(options.chunks ?? 4, reply.length));
+      const size = Math.ceil(reply.length / parts);
+      const lines: unknown[] = [];
+      for (let i = 0; i < reply.length; i += size) {
+        lines.push({ model: req.model, message: { role: 'assistant', content: reply.slice(i, i + size) }, done: false });
+      }
+      lines.push({
+        model: req.model,
+        message: { role: 'assistant', content: '' },
+        done: true,
+        done_reason: options.doneReason ?? 'stop',
+        prompt_eval_count: 300,
+        eval_count: lines.length,
+        eval_duration: lines.length * 100_000_000,
+      });
+      return { status: 200, ndjson: { lines, firstDelayMs: options.delayMs ?? 0, delayMs: options.tokenDelayMs ?? 0 } };
     }
     return { status: 404, json: { error: 'not found' } };
   };

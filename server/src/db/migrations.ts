@@ -521,4 +521,12 @@ ALTER TABLE conversation_messages ADD COLUMN provider TEXT;
 UPDATE conversation_messages SET provider = CASE source WHEN 'ai' THEN 'server' WHEN 'demo' THEN 'fallback' ELSE NULL END;
 `,
   },
+  {
+    version: 5,
+    name: 'world-cover-images',
+    sql: `
+-- Eigenes Titelbild einer Welt: Dateiname im Upload-Ordner (data/uploads/covers), NULL = generierte Grafik.
+ALTER TABLE worlds ADD COLUMN cover_image TEXT;
+`,
+  },
 ];
