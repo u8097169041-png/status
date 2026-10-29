@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Zentrale Benutzerabläufe gegen den Produktionsbuild (frische Datenbank, Demo-Modus).
+ * Zentrale Benutzerabläufe gegen den Produktionsbuild (frische Datenbank, ohne lokale KI und ohne Server-KI: simulierte KI).
  * Die Tests laufen nacheinander und bauen aufeinander auf.
  */
 test.describe.serial('SocialVerse – Kernabläufe', () => {
@@ -165,7 +165,7 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await input.fill('Hallo Mira! Ich heiße Testerin und ich mag Regen.');
     await input.press('Enter');
     await expect(page.locator('.message.assistant')).toHaveCount(1, { timeout: 10_000 });
-    await expect(page.getByText('Demo-Antwort · lokal erzeugt, keine KI')).toBeVisible();
+    await expect(page.getByText('Simulierte Antwort · regelbasiert, keine KI')).toBeVisible();
     await page.getByRole('button', { name: 'Erinnerung' }).click();
     const memory = page.getByRole('dialog', { name: 'Gesprächserinnerung' });
     await expect(memory.getByText('Name: Testerin')).toBeVisible();
@@ -421,22 +421,22 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await expect(page.getByRole('heading', { name: 'Einstellungen', level: 1 })).toBeVisible();
   });
 
-  test('7 · API-Schlüssel wird gespeichert, aber nie an den Browser gegeben', async () => {
-    const secret = 'sk-or-v1-e2e-geheim-0123456789abcdef';
-    const bodies: string[] = [];
-    page.on('response', async (response) => {
-      if (response.url().includes('/api/')) bodies.push(await response.text().catch(() => ''));
-    });
+  test('7 · KI-Einstellungen: ohne lokale KI und ohne Server antwortet die simulierte KI, keine Schlüsseleingabe', async () => {
     await page.goto('/settings#ai');
-    await page.getByLabel('OpenRouter-API-Schlüssel').fill(secret);
-    await page.getByRole('button', { name: 'Schlüssel speichern' }).click();
-    await expect(page.getByText(/Lokal gespeicherter Schlüssel: sk-or-…cdef/)).toBeVisible();
-    await page.reload();
-    await expect(page.getByText(/Lokal gespeicherter Schlüssel/)).toBeVisible();
-    expect(await page.content()).not.toContain(secret);
-    expect(bodies.join('\n')).not.toContain(secret);
-    await page.getByRole('button', { name: 'Schlüssel entfernen' }).click();
-    await expect(page.getByText('Kein Schlüssel hinterlegt', { exact: false })).toBeVisible();
+    const section = page.locator('section#ai');
+    await expect(section.getByRole('radio', { name: /Automatisch \(empfohlen\)/ })).toHaveAttribute('aria-checked', 'true');
+    // Server-KI ist ohne Betreiber-Konfiguration nicht wählbar.
+    await expect(section.getByRole('radio', { name: /Server-KI/ })).toBeDisabled();
+    await expect(section.getByText('Simulierte KI').first()).toBeVisible();
+    await expect(section.locator('.diag-row').filter({ hasText: 'Server-KI' })).toContainText('nicht eingerichtet');
+    // Spieler werden nie nach einem API-Schlüssel gefragt.
+    await expect(page.getByLabel(/Schlüssel|API key/i)).toHaveCount(0);
+    await expect(page.locator('input[type="password"]')).toHaveCount(0);
+    await section.getByRole('button', { name: 'Erneut prüfen' }).click();
+    await expect(section.getByRole('button', { name: 'Lokale KI testen' })).toBeDisabled();
+    await section.getByRole('radio', { name: /Nur simulierte KI/ }).click();
+    await expect(section.getByRole('radio', { name: /Nur simulierte KI/ })).toHaveAttribute('aria-checked', 'true');
+    await section.getByRole('radio', { name: /Automatisch/ }).click();
   });
 
   test('6 · Mobile Ansicht mit unterer Navigation, Kopfzeile und Weltwechsel', async () => {

@@ -3,9 +3,9 @@ import { get } from '../db/database';
 import { buildChatMessages, getChat, sendMessage } from '../services/chats';
 import { demoReply, extractFacts, keywordOf, localSummary } from '../services/demoResponder';
 import { updateSettings } from '../services/settings';
-import { setSecret } from '../services/settings';
-import { API_KEY_SECRET } from '../ai/aiService';
-import { createTestContext, joinAsCustom, openRouterMock } from './helpers';
+import { createTestContext, joinAsCustom, ollamaMock, openRouterMock, routeMocks, TEST_CONFIG } from './helpers';
+
+const SERVER = { ...TEST_CONFIG.serverAi, enabled: true, apiKey: 'sk-or-test-1234567890', model: 'test/free-model' };
 
 const character = {
   id: 'c-x',
@@ -93,13 +93,16 @@ describe('Chat-Service', () => {
     expect(summary?.content).toContain('Raumschiffe');
   });
 
-  it('verwendet OpenRouter, wenn Schlüssel und Modell gesetzt sind', async () => {
-    const ctx = createTestContext({ handler: openRouterMock({ reply: 'Echte KI-Antwort' }) });
-    setSecret(ctx.db, API_KEY_SECRET, 'sk-or-test-1234567890', ctx.now());
-    updateSettings(ctx.db, { ai: { chatModel: 'test/free-model' } });
+  it('verwendet die Server-KI nur mit Konfiguration und Freigabe', async () => {
+    const ctx = createTestContext({
+      handler: routeMocks(null, openRouterMock({ reply: 'Echte KI-Antwort' })),
+      config: { serverAi: SERVER },
+    });
+    updateSettings(ctx.db, { ai: { mode: 'server', serverConsent: true } });
     joinAsCustom(ctx, 'w-neon', 'Lena Probe');
     const result = await sendMessage(ctx, 'c-mira', { content: 'Hallo KI' });
     expect(result.reply.source).toBe('ai');
+    expect(result.reply.provider).toBe('server');
     expect(result.reply.content).toBe('Echte KI-Antwort');
     expect(result.reply.model).toBe('test/free-model');
     const call = ctx.fetchCalls.find((c) => c.url.endsWith('/chat/completions'));
@@ -111,13 +114,33 @@ describe('Chat-Service', () => {
     expect(body.max_tokens).toBe(400);
   });
 
-  it('fällt bei KI-Fehlern auf den Demo-Modus zurück und meldet den Grund', async () => {
-    const ctx = createTestContext({ handler: openRouterMock({ failModels: { 'test/free-model': 401 } }) });
-    setSecret(ctx.db, API_KEY_SECRET, 'sk-or-test-1234567890', ctx.now());
-    updateSettings(ctx.db, { ai: { chatModel: 'test/free-model' } });
+  it('fällt bei KI-Fehlern auf die simulierte KI zurück und meldet den Grund', async () => {
+    const ctx = createTestContext({
+      handler: routeMocks(null, openRouterMock({ failModels: { 'test/free-model': 401 } })),
+      config: { serverAi: SERVER },
+    });
+    updateSettings(ctx.db, { ai: { mode: 'server', serverConsent: true } });
     joinAsCustom(ctx, 'w-neon');
     const result = await sendMessage(ctx, 'c-mira', { content: 'Hallo' });
     expect(result.reply.source).toBe('demo');
+    expect(result.reply.provider).toBe('fallback');
     expect(result.notice?.code).toBe('unauthorized');
+  });
+
+  it('antwortet mit der lokalen KI inklusive Spielkontext und strukturiertem Ergebnis', async () => {
+    const ctx = createTestContext({ handler: routeMocks(ollamaMock(), null) });
+    joinAsCustom(ctx, 'w-neon', 'Lena Probe');
+    const result = await sendMessage(ctx, 'c-mira', { content: 'Hallo Mira' });
+    expect(result.reply.provider).toBe('local');
+    expect(result.reply.model).toBe('gemma3:4b');
+    expect(result.reply.content).toBe('Lokale Antwort der Figur.');
+    const call = ctx.fetchCalls.find((c) => c.url.endsWith('/api/chat'));
+    const body = call?.body as { format?: string; messages: { content: string }[]; options: { num_predict: number } };
+    expect(body.format).toBe('json');
+    expect(body.options.num_predict).toBeLessThanOrEqual(350);
+    expect(body.messages[0].content).toContain('Game context (read-only)');
+    expect(body.messages[0].content).toContain('never claim to award XP');
+    // Kein Aufruf an einen kostenpflichtigen Dienst.
+    expect(ctx.fetchCalls.some((c) => c.url.includes('openrouter.test'))).toBe(false);
   });
 });

@@ -510,4 +510,15 @@ ALTER TABLE storylines ADD COLUMN path_scores TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE storylines ADD COLUMN ending_id TEXT;
 `,
   },
+  {
+    version: 4,
+    name: 'hybrid-ai-providers',
+    sql: `
+-- Herkunft von KI-Inhalten: lokale KI, Server-KI oder simulierte (regelbasierte) KI.
+ALTER TABLE ai_usage ADD COLUMN provider TEXT NOT NULL DEFAULT 'server';
+CREATE INDEX idx_ai_usage_provider_day ON ai_usage(provider, day);
+ALTER TABLE conversation_messages ADD COLUMN provider TEXT;
+UPDATE conversation_messages SET provider = CASE source WHEN 'ai' THEN 'server' WHEN 'demo' THEN 'fallback' ELSE NULL END;
+`,
+  },
 ];

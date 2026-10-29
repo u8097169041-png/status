@@ -32,11 +32,26 @@ const server = app.listen(config.port, config.host, () => {
   console.log('  SocialVerse läuft.');
   console.log(`  API:       ${url}/api/health`);
   console.log(`  Daten:     ${config.dbFile}`);
-  console.log(`  KI-Modus:  ${ctx.ai.status().mode === 'ai' ? 'OpenRouter aktiv' : 'Lokaler Demo-Modus'}`);
+  console.log('  KI:        wird geprüft …');
   if (config.host !== '127.0.0.1' && config.host !== 'localhost') {
     console.log(`  Hinweis:   Der Server ist an ${config.host} gebunden und ggf. im Netzwerk erreichbar.`);
   }
   console.log('');
+});
+
+// Einmalige, kostenlose Prüfung der lokalen KI beim Start. Die Server-KI wird dabei nie angefragt.
+void ctx.ai.refreshHealth(true).then(() => {
+  const status = ctx.ai.status();
+  const label =
+    status.active === 'local'
+      ? `lokale KI aktiv (${status.activeModel})`
+      : status.active === 'server'
+        ? `Server-KI aktiv (${status.activeModel})`
+        : 'simulierte KI (keine echte KI verfügbar oder ausgewählt)';
+  console.log(`  KI-Modus:  ${label}`);
+  if (status.reason === 'local-unreachable') {
+    console.log(`  Hinweis:   Keine lokale KI unter ${status.local.baseUrl} – Einrichtung: README, Abschnitt „Lokale KI einrichten“.`);
+  }
 });
 
 server.on('error', (error: NodeJS.ErrnoException) => {

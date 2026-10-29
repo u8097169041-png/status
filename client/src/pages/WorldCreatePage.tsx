@@ -82,7 +82,7 @@ export function WorldCreatePage() {
   const [count, setCount] = useState(3);
   const [useAi, setUseAi] = useState(true);
   const [draft, setDraft] = useState<WorldDraft | null>(null);
-  const aiAvailable = ai?.mode === 'ai';
+  const aiAvailable = Boolean(ai && ai.active !== 'fallback');
 
   const runGenerate = () =>
     generate.mutate(

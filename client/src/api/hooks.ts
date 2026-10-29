@@ -7,7 +7,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import type {
-  AiModelDto,
+  AiProviderId,
   AiStatusDto,
   AiTestResult,
   AiUsageEntryDto,
@@ -84,7 +84,6 @@ export const keys = {
   progress: ['progress'] as const,
   notifications: ['notifications'] as const,
   aiStatus: ['ai-status'] as const,
-  aiModels: ['ai-models'] as const,
   aiUsage: ['ai-usage'] as const,
   simStatus: ['simulation-status'] as const,
   players: (world?: string) => ['players', world ?? 'all'] as const,
@@ -441,7 +440,7 @@ export function usePromptPreview(characterId: string, enabled: boolean) {
   return useQuery({
     queryKey: ['prompt-preview', characterId],
     queryFn: ({ signal }) =>
-      get<{ messages: { role: string; content: string }[]; model: string | null; mode: 'ai' | 'demo' }>(
+      get<{ messages: { role: string; content: string }[]; model: string | null; mode: 'ai' | 'demo'; provider: AiProviderId }>(
         `/chats/${characterId}/prompt-preview`,
         signal,
       ),
@@ -647,16 +646,6 @@ export function useAiStatus() {
   return useQuery({ queryKey: keys.aiStatus, queryFn: ({ signal }) => get<AiStatusDto>('/ai/status', signal) });
 }
 
-export function useAiModels(enabled: boolean) {
-  return useQuery({
-    queryKey: keys.aiModels,
-    queryFn: ({ signal }) => get<AiModelDto[]>('/ai/models', signal),
-    enabled,
-    staleTime: 30 * 60_000,
-    retry: false,
-  });
-}
-
 export function useAiUsage() {
   return useQuery({
     queryKey: keys.aiUsage,
@@ -672,9 +661,16 @@ export function useAiActions() {
     void qc.invalidateQueries({ queryKey: keys.aiUsage });
   };
   return {
-    saveKey: useMutation({ mutationFn: (key: string) => put<AiStatusDto>('/ai/key', { key }), onSuccess: refresh }),
-    removeKey: useMutation({ mutationFn: () => del<AiStatusDto>('/ai/key'), onSuccess: refresh }),
-    test: useMutation({ mutationFn: () => post<AiTestResult>('/ai/test'), onSuccess: refresh }),
+    /** Prüft die lokale KI sofort neu (kostenlos) und hebt eine Fehlersperre der Server-KI auf. */
+    recheck: useMutation({
+      mutationFn: () => get<AiStatusDto>('/ai/status?refresh=1'),
+      onSuccess: (status) => {
+        qc.setQueryData(keys.aiStatus, status);
+        refresh();
+      },
+    }),
+    removeLegacyKey: useMutation({ mutationFn: () => del<AiStatusDto>('/ai/key'), onSuccess: refresh }),
+    test: useMutation({ mutationFn: (target: 'local' | 'server') => post<AiTestResult>('/ai/test', { target }), onSuccess: refresh }),
   };
 }
 

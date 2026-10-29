@@ -44,6 +44,8 @@ if not exist ".env" (
   echo   Konfigurationsdatei .env wurde aus .env.example angelegt.
 )
 
+node scripts\ai-check.mjs --short
+
 set APP_PORT=3001
 for /f "usebackq eol=# tokens=1,* delims==" %%a in (".env") do (
   if /i "%%a"=="PORT" if not "%%b"=="" set APP_PORT=%%b

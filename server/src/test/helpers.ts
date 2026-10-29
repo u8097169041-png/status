@@ -1,5 +1,5 @@
 import { AiService } from '../ai/aiService';
-import type { FetchFn } from '../ai/openrouter';
+import type { FetchFn } from '../ai/types';
 import { createApp } from '../app';
 import type { AppConfig } from '../config';
 import type { AppContext } from '../context';
@@ -21,8 +21,28 @@ export const TEST_CONFIG: AppConfig = {
   host: '127.0.0.1',
   dataDir: ':memory:',
   dbFile: ':memory:',
-  openRouterApiKey: null,
-  openRouterBaseUrl: 'https://openrouter.test/api/v1',
+  localAi: {
+    enabled: true,
+    baseUrl: 'http://ollama.test:11434',
+    model: '',
+    timeoutMs: 5_000,
+    maxTokens: 350,
+  },
+  serverAi: {
+    enabled: false,
+    baseUrl: 'https://openrouter.test/api/v1',
+    apiKey: null,
+    model: '',
+    worldModel: '',
+    timeoutMs: 5_000,
+    maxTokens: 400,
+    maxRequestsPerDay: 200,
+    maxRequestsPerMinute: 6,
+    dailyBudgetUsd: 0.2,
+    monthlyBudgetUsd: 2,
+    priceInputPerMTok: null,
+    priceOutputPerMTok: null,
+  },
   production: false,
   version: 'test',
 };
@@ -45,6 +65,8 @@ export function createTestContext(
       signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
     });
     const result = await Promise.race([Promise.resolve(handler(url, body)), aborted]);
+    // Status 0 simuliert einen Verbindungsfehler (z. B. kein Internet oder Dienst nicht gestartet).
+    if (result.status === 0) throw new TypeError('fetch failed');
     return new Response(JSON.stringify(result.json), { status: result.status, headers: { 'Content-Type': 'application/json' } });
   }) as FetchFn;
   const config = { ...TEST_CONFIG, ...opts.config };
@@ -100,6 +122,54 @@ export function openRouterMock(options: {
         usage: { prompt_tokens: 120, completion_tokens: 30, ...(options.cost === null ? {} : { cost: options.cost ?? 0.0001 }) },
       },
     };
+  };
+}
+
+/** Simulierte lokale KI-Laufzeit (Ollama-API). */
+export function ollamaMock(
+  options: {
+    models?: string[];
+    reply?: string | ((body: { model: string; messages: { content: string }[]; format?: string }) => string);
+    chatStatus?: number;
+    delayMs?: number;
+    down?: boolean;
+  } = {},
+): MockHandler {
+  const models = options.models ?? ['gemma3:4b', 'nomic-embed-text:latest'];
+  return async (url, body) => {
+    if (options.down) return { status: 0, json: null };
+    if (url.endsWith('/api/version')) return { status: 200, json: { version: '0.9.0' } };
+    if (url.endsWith('/api/tags')) {
+      return {
+        status: 200,
+        json: {
+          models: models.map((name) => ({
+            name,
+            size: 3_300_000_000,
+            details: { family: name.includes('embed') ? 'nomic-bert' : 'gemma3', families: name.includes('embed') ? ['nomic-bert'] : ['gemma3'], parameter_size: '4.3B' },
+          })),
+        },
+      };
+    }
+    if (url.endsWith('/api/chat')) {
+      if (options.delayMs) await new Promise((r) => setTimeout(r, options.delayMs));
+      if (options.chatStatus) return { status: options.chatStatus, json: { error: `model not found, try pulling it first` } };
+      const req = body as { model: string; messages: { content: string }[]; format?: string };
+      const reply =
+        typeof options.reply === 'function'
+          ? options.reply(req)
+          : (options.reply ?? JSON.stringify({ reply: 'Lokale Antwort der Figur.', tone: 'warm' }));
+      return { status: 200, json: { model: req.model, message: { role: 'assistant', content: reply }, done: true, prompt_eval_count: 300, eval_count: 25 } };
+    }
+    return { status: 404, json: { error: 'not found' } };
+  };
+}
+
+/** Leitet Anfragen je nach Adresse an die lokale bzw. die Server-Simulation weiter. */
+export function routeMocks(local: MockHandler | null, server: MockHandler | null): MockHandler {
+  return (url, body) => {
+    const handler = url.includes('ollama.test') ? local : server;
+    return handler ? handler(url, body) : { status: 0, json: null };
   };
 }
 

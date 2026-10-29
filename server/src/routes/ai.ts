@@ -1,50 +1,33 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { LIMITS } from '../../../shared/constants';
-import { API_KEY_SECRET } from '../ai/aiService';
 import type { AppContext } from '../context';
-import { AppError, badRequest } from '../lib/errors';
-import { deleteSecret, setSecret } from '../services/settings';
-import { q } from './helpers';
+import { badRequest } from '../lib/errors';
 
-const keySchema = z.object({
-  key: z
-    .string()
-    .trim()
-    .min(10)
-    .max(LIMITS.apiKeyLength)
-    .regex(/^[\x21-\x7E]+$/, 'Ungültige Zeichen im Schlüssel'),
-});
+const testSchema = z.object({ target: z.enum(['local', 'server']) }).strict();
 
+/**
+ * KI-Status, Diagnose und Verbindungstest. Spieler geben hier keine Schlüssel ein:
+ * Zugangsdaten der Server-KI stehen ausschließlich in der Server-Konfiguration (.env bzw. Secret Store).
+ */
 export function aiRoutes(ctx: AppContext): Router {
   const r = Router();
 
-  r.get('/ai/status', (_req, res) => {
+  r.get('/ai/status', async (req, res) => {
+    // „refresh=1“ prüft die lokale KI sofort neu und hebt eine Fehlersperre der Server-KI auf (ohne Server-Anfrage).
+    await ctx.ai.refreshHealth(req.query.refresh === '1');
     res.json(ctx.ai.status());
   });
 
-  // Der Schlüssel wird nur entgegengenommen und lokal gespeichert – er wird nie zurückgegeben.
-  r.put('/ai/key', (req, res) => {
-    const parsed = keySchema.safeParse(req.body);
-    if (!parsed.success) throw badRequest('invalid_key', 'Der API-Schlüssel hat kein gültiges Format.');
-    setSecret(ctx.db, API_KEY_SECRET, parsed.data.key, ctx.now());
-    res.json(ctx.ai.status());
+  r.post('/ai/test', async (req, res) => {
+    const parsed = testSchema.safeParse(req.body ?? {});
+    if (!parsed.success) throw badRequest('invalid_target', 'Ungültiges Testziel.');
+    res.json(await ctx.ai.testConnection(parsed.data.target));
   });
+
+  // Entfernt einen in Version 1 in der App gespeicherten Schlüssel (wird nicht mehr verwendet).
   r.delete('/ai/key', (_req, res) => {
-    deleteSecret(ctx.db, API_KEY_SECRET);
+    ctx.ai.deleteLegacyKey();
     res.json(ctx.ai.status());
-  });
-
-  r.get('/ai/models', async (req, res) => {
-    try {
-      res.json(await ctx.ai.listModels(q(req, 'refresh') === '1'));
-    } catch (error) {
-      throw new AppError(502, 'models_unavailable', `Modellliste konnte nicht geladen werden: ${(error as Error).message}`);
-    }
-  });
-
-  r.post('/ai/test', async (_req, res) => {
-    res.json(await ctx.ai.testConnection());
   });
 
   r.get('/ai/usage', (_req, res) => {

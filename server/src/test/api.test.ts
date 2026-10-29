@@ -1,6 +1,8 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createTestApp, createTestContext, joinAsCustom } from './helpers';
+import { LEGACY_API_KEY_SECRET } from '../ai/aiService';
+import { setSecret } from '../services/settings';
+import { createTestApp, createTestContext, joinAsCustom, TEST_CONFIG } from './helpers';
 
 const W = { 'X-SocialVerse': '1' };
 
@@ -15,7 +17,8 @@ describe('API – Grundfunktionen und Schutz', () => {
     await request(app).get('/api/health').expect(200, { ok: true, version: 'test' });
     const boot = await request(app).get('/api/bootstrap').expect(200);
     expect(boot.body.profile.displayName).toBe('Gast');
-    expect(boot.body.ai.mode).toBe('demo');
+    expect(boot.body.ai.mode).toBe('auto');
+    expect(boot.body.ai.active).toBe('fallback');
     expect(boot.headers['content-security-policy']).toContain("default-src 'self'");
   });
 
@@ -37,18 +40,32 @@ describe('API – Grundfunktionen und Schutz', () => {
     expect(res.body.error.code).toBe('invalid_json');
   });
 
-  it('gibt den API-Schlüssel niemals zurück', async () => {
-    const { app } = setup();
+  it('gibt den Server-Schlüssel niemals zurück und nimmt keine Schlüssel von Spielern an', async () => {
     const key = 'sk-or-v1-supersecretvalue123456';
-    const saved = await request(app).put('/api/ai/key').set(W).send({ key }).expect(200);
-    expect(saved.body.keyConfigured).toBe(true);
+    const ctx = createTestContext({
+      config: { serverAi: { ...TEST_CONFIG.serverAi, enabled: true, apiKey: key, model: 'test/free-model' } },
+    });
+    const app = createTestApp(ctx);
+    const status = await request(app).get('/api/ai/status').expect(200);
+    expect(status.body.server.configured).toBe(true);
     for (const path of ['/api/bootstrap', '/api/ai/status', '/api/settings', '/api/data/export', '/api/ai/usage']) {
       const res = await request(app).get(path).expect(200);
       expect(JSON.stringify(res.body)).not.toContain('supersecretvalue');
     }
-    await request(app).put('/api/ai/key').set(W).send({ key: 'kurz' }).expect(400);
+    // Es gibt keinen Endpunkt mehr, über den Spieler einen Schlüssel hinterlegen könnten.
+    await request(app).put('/api/ai/key').set(W).send({ key: 'sk-or-v1-spielerschluessel123' }).expect(404);
+    expect(JSON.stringify((await request(app).get('/api/ai/status')).body)).not.toContain('spielerschluessel');
+  });
+
+  it('entfernt einen alten, in der App gespeicherten Schlüssel, ohne ihn zu verwenden', async () => {
+    const { app, ctx } = setup();
+    setSecret(ctx.db, LEGACY_API_KEY_SECRET, 'sk-or-v1-alterschluessel12345', ctx.now());
+    const before = await request(app).get('/api/ai/status').expect(200);
+    expect(before.body.legacyKeyStored).toBe(true);
+    expect(before.body.server.configured).toBe(false);
+    expect(JSON.stringify(before.body)).not.toContain('alterschluessel');
     const removed = await request(app).delete('/api/ai/key').set(W).expect(200);
-    expect(removed.body.keyConfigured).toBe(false);
+    expect(removed.body.legacyKeyStored).toBe(false);
   });
 
   it('validiert Einstellungen', async () => {
@@ -176,7 +193,7 @@ describe('API – Charaktere, Welten, Daten', () => {
   it('exportiert Daten ohne Schlüssel und löscht auf Wunsch alles', async () => {
     const { app, ctx } = setup();
     joinAsCustom(ctx, 'w-neon');
-    await request(app).put('/api/ai/key').set(W).send({ key: 'sk-or-v1-secretsecret12345' }).expect(200);
+    setSecret(ctx.db, LEGACY_API_KEY_SECRET, 'sk-or-v1-secretsecret12345', ctx.now());
     await request(app).post('/api/posts').set(W).send({ content: 'Wird gelöscht' }).expect(201);
     const exp = await request(app).get('/api/data/export').expect(200);
     expect(exp.body.tables.secrets).toBeUndefined();
@@ -186,7 +203,7 @@ describe('API – Charaktere, Welten, Daten', () => {
     const after = await request(app).get('/api/posts?author=user').expect(200);
     expect(after.body.items).toHaveLength(0);
     const boot = await request(app).get('/api/bootstrap').expect(200);
-    expect(boot.body.ai.keyConfigured).toBe(false);
+    expect(boot.body.ai.legacyKeyStored).toBe(false);
     expect(boot.body.contentLanguage).toBe('en');
     expect(boot.body.profile.displayName).toBe('Guest');
     expect(boot.body.activePlayer).toBeNull();

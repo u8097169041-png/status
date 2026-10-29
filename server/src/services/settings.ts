@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LIMITS, LANGUAGES, type Lang } from '../../../shared/constants';
-import type { AppSettings } from '../../../shared/types';
+import type { AiSettings, AppSettings } from '../../../shared/types';
 import { get, run, type DB } from '../db/database';
 import { badRequest } from '../lib/errors';
 
@@ -8,13 +8,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   language: 'de',
   onboardingDone: false,
   ai: {
-    enabled: true,
-    chatModel: '',
-    worldModel: '',
-    fallbackModels: [],
+    mode: 'auto',
+    localModel: '',
+    serverConsent: false,
     maxTokens: 400,
     temperature: 0.8,
-    timeoutSeconds: 30,
     dailyRequestLimit: 100,
     dailyBudgetUsd: 0.5,
     monthlyBudgetUsd: 5,
@@ -51,13 +49,11 @@ export const settingsPatchSchema = z
     onboardingDone: z.boolean(),
     ai: z
       .object({
-        enabled: z.boolean(),
-        chatModel: modelId,
-        worldModel: modelId,
-        fallbackModels: z.array(modelId.min(1)).max(LIMITS.fallbackModels),
+        mode: z.enum(['auto', 'server', 'fallback']),
+        localModel: modelId,
+        serverConsent: z.boolean(),
         maxTokens: z.number().int().min(50).max(4000),
         temperature: z.number().min(0).max(2),
-        timeoutSeconds: z.number().int().min(5).max(120),
         dailyRequestLimit: z.number().int().min(0).max(10_000),
         dailyBudgetUsd: z.number().min(0).max(1000),
         monthlyBudgetUsd: z.number().min(0).max(10_000),
@@ -92,6 +88,19 @@ export const settingsPatchSchema = z
 
 export type SettingsPatch = z.infer<typeof settingsPatchSchema>;
 
+const AI_MODES: AiSettings['mode'][] = ['auto', 'server', 'fallback'];
+
+/** Übernimmt nur bekannte Felder. Aus Version 1: „KI aus“ (enabled = false) wird zum Modus „nur simulierte KI“. */
+function normalizeAi(stored: unknown): AiSettings {
+  const raw = (stored && typeof stored === 'object' ? stored : {}) as Record<string, unknown>;
+  const out: AiSettings = { ...DEFAULT_SETTINGS.ai };
+  for (const key of Object.keys(out) as (keyof AiSettings)[]) {
+    if (typeof raw[key] === typeof out[key]) (out as unknown as Record<string, unknown>)[key] = raw[key];
+  }
+  if (!AI_MODES.includes(raw.mode as AiSettings['mode'])) out.mode = raw.enabled === false ? 'fallback' : DEFAULT_SETTINGS.ai.mode;
+  return out;
+}
+
 export function getSettings(db: DB): AppSettings {
   const row = get<{ value: string }>(db, `SELECT value FROM settings WHERE key = 'app'`);
   let stored: Partial<AppSettings> = {};
@@ -105,7 +114,7 @@ export function getSettings(db: DB): AppSettings {
   return {
     language: LANGUAGES.includes(stored.language as Lang) ? (stored.language as Lang) : DEFAULT_SETTINGS.language,
     onboardingDone: typeof stored.onboardingDone === 'boolean' ? stored.onboardingDone : DEFAULT_SETTINGS.onboardingDone,
-    ai: { ...DEFAULT_SETTINGS.ai, ...stored.ai },
+    ai: normalizeAi(stored.ai),
     simulation: { ...DEFAULT_SETTINGS.simulation, ...stored.simulation },
     memory: { ...DEFAULT_SETTINGS.memory, ...stored.memory },
     privacy: { ...DEFAULT_SETTINGS.privacy, ...stored.privacy },
@@ -133,7 +142,6 @@ export function updateSettings(db: DB, input: unknown): AppSettings {
     memory: { ...current.memory, ...patch.memory },
     privacy: { ...current.privacy, ...patch.privacy },
   };
-  next.ai.fallbackModels = [...new Set(next.ai.fallbackModels.filter(Boolean))];
   saveSettings(db, next);
   return next;
 }

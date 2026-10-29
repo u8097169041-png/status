@@ -2,14 +2,16 @@ import { z } from 'zod';
 import { LIMITS } from '../../../shared/constants';
 import type {
   AiNotice,
+  AiProviderId,
   ChatDetail,
   ChatMessageDto,
   ChatSummary,
   MemoryEntryDto,
   SendMessageResult,
 } from '../../../shared/types';
-import type { ChatMessage } from '../ai/openrouter';
-import { characterSystemPrompt, type PlayerPersona } from '../ai/prompts';
+import type { ChatMessage } from '../ai/types';
+import { characterSystemPrompt, type GameContext, type PlayerPersona } from '../ai/prompts';
+import { CHAT_FORMAT_INSTRUCTION, parseChatTurn, TONE_AFFINITY, type ChatTone } from '../ai/structured';
 import type { AppContext } from '../context';
 import { all, get, parseJson, run, tx } from '../db/database';
 import { AppError, badRequest, notFound } from '../lib/errors';
@@ -46,6 +48,7 @@ interface MessageRow {
   role: 'user' | 'assistant';
   content: string;
   source: ChatMessageDto['source'];
+  provider: ChatMessageDto['provider'];
   model: string | null;
   created_at: string;
 }
@@ -55,7 +58,15 @@ const SUMMARY_BATCH = 8;
 const busyChats = new Set<string>();
 
 function toMessage(r: MessageRow): ChatMessageDto {
-  return { id: r.id, role: r.role, content: r.content, source: r.source, model: r.model, createdAt: r.created_at };
+  return {
+    id: r.id,
+    role: r.role,
+    content: r.content,
+    source: r.source,
+    provider: r.provider ?? null,
+    model: r.model,
+    createdAt: r.created_at,
+  };
 }
 
 export interface ChatTarget {
@@ -238,6 +249,28 @@ function personaOf(ctx: AppContext, player: PlayerRow | null, allowName: boolean
   };
 }
 
+/** Nur lesbarer Spielkontext: Beziehung zur Spielfigur, aktuelle Hauptquest und laufende Geschichten der Welt. */
+function gameContextOf(ctx: AppContext, target: ChatTarget): GameContext | null {
+  const player = target.player;
+  if (!player) return null;
+  const [a, b] = player.character_id < target.characterId ? [player.character_id, target.characterId] : [target.characterId, player.character_id];
+  const rel = get<{ affinity: number; kind: string }>(ctx.db, 'SELECT affinity, kind FROM relationships WHERE a_id = ? AND b_id = ?', a, b);
+  const quest = get<{ title: string }>(
+    ctx.db,
+    `SELECT title FROM quests WHERE player_id = ? AND kind = 'main' AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
+    player.id,
+  );
+  const storylines = all<{ title: string; stages: string; stage: number }>(
+    ctx.db,
+    `SELECT title, stages, stage FROM storylines WHERE world_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 3`,
+    player.world_id,
+  ).map((sl) => {
+    const stage = parseJson<string[]>(sl.stages, [])[sl.stage];
+    return stage ? `${sl.title}: ${stage}` : sl.title;
+  });
+  return { affinity: rel?.affinity ?? 0, relationKind: rel?.kind ?? null, mainQuest: quest?.title ?? null, storylines };
+}
+
 /** Baut die an das Modell gesendeten Nachrichten: Systemprompt + die letzten N Nachrichten. */
 export function buildChatMessages(ctx: AppContext, characterId: string, pendingUserMessage?: string): ChatMessage[] {
   const settings = getSettings(ctx.db);
@@ -258,6 +291,8 @@ export function buildChatMessages(ctx: AppContext, characterId: string, pendingU
     summary: memoryEnabled ? summaryOf(ctx, conv?.id) : null,
     userName: persona ? persona.name : settings.privacy.sendDisplayName ? getProfileRow(ctx).display_name : null,
     player: persona,
+    game: gameContextOf(ctx, target),
+    format: CHAT_FORMAT_INSTRUCTION,
   });
   const history = conv
     ? all<MessageRow>(
@@ -347,15 +382,17 @@ function insertMessage(
   content: string,
   source: ChatMessageDto['source'],
   model: string | null,
+  provider: ChatMessageDto['provider'] = null,
 ): ChatMessageDto {
   const now = ctx.now().toISOString();
   const { lastInsertRowid } = run(
     ctx.db,
-    `INSERT INTO conversation_messages (conversation_id, role, content, source, model, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO conversation_messages (conversation_id, role, content, source, provider, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     conversationId,
     role,
     content,
     source,
+    provider,
     model,
     now,
   );
@@ -452,23 +489,50 @@ export async function sendMessage(ctx: AppContext, characterId: string, input: u
       return { conv, userMessage: msg, progress: delta };
     });
 
-    let replyText: string | null = null;
-    let replySource: ChatMessageDto['source'] = 'demo';
+    // Lokale KI bzw. (mit Freigabe) Server-KI; sonst oder bei Fehlern die simulierte Antwort der Figur.
+    const simulated = () => localReply(ctx, characterId, conv, target.player, content);
+    const result = await ctx.ai.complete({
+      purpose: 'chat',
+      kind: 'chat',
+      json: true,
+      messages: buildChatMessages(ctx, characterId),
+      fallback: simulated,
+    });
+    let replyText: string;
+    let provider: ChatMessageDto['provider'] = 'fallback';
     let model: string | null = null;
     let notice: AiNotice | undefined;
-    if (ctx.ai.isActive('chat')) {
-      const messages = buildChatMessages(ctx, characterId);
-      const result = await ctx.ai.complete({ purpose: 'chat', kind: 'chat', messages });
-      if (result.ok) {
-        replyText = truncate(cleanText(result.text), LIMITS.chatMessage);
-        replySource = 'ai';
-        model = result.model;
-      } else {
-        notice = { code: result.code, message: result.message };
-      }
+    let tone: ChatTone = 'neutral';
+    const turn = result.ok && result.provider !== 'fallback' ? parseChatTurn(result.text) : null;
+    if (result.ok && turn) {
+      replyText = turn.reply;
+      provider = result.provider;
+      model = result.model;
+      if (turn.structured) tone = turn.tone;
+    } else {
+      replyText = result.ok && result.provider === 'fallback' ? result.text : simulated();
+      if (result.ok && result.notice) notice = { code: result.notice.code, message: result.notice.message };
+      else if (!result.ok && result.code !== 'unavailable') notice = { code: result.code, message: result.message };
+      else if (result.ok && !turn && result.provider !== 'fallback') notice = { code: 'invalid_response', message: 'Antwort der KI war unbrauchbar.' };
     }
-    if (!replyText) replyText = localReply(ctx, characterId, conv, target.player, content);
-    const reply = insertMessage(ctx, conv.id, 'assistant', replyText, replySource, model);
+    const reply = tx(ctx.db, () => {
+      const saved = insertMessage(ctx, conv.id, 'assistant', replyText, provider === 'fallback' ? 'demo' : 'ai', model, provider);
+      // Spielregel statt KI-Willkür: Die Stimmung einer echten KI-Antwort ändert die Zuneigung um höchstens 1,
+      // und das höchstens einmal pro Tag und Figur. XP, Quests und Fähigkeiten bleiben unberührt.
+      const delta = TONE_AFFINITY[tone];
+      if (delta !== 0 && target.player) {
+        const first = run(
+          ctx.db,
+          `INSERT OR IGNORE INTO action_uses (player_id, action, ref, day, created_at) VALUES (?, 'ai-tone', ?, ?, ?)`,
+          target.player.id,
+          characterId,
+          dayKey(ctx.now()),
+          ctx.now().toISOString(),
+        );
+        if (first.changes > 0) adjustAffinity(ctx, target.player.world_id, target.player.character_id, characterId, delta);
+      }
+      return saved;
+    });
     try {
       await updateSummary(ctx, conv.id);
     } catch (error) {
@@ -534,11 +598,13 @@ export function promptPreview(ctx: AppContext, characterId: string, placeholder:
   messages: ChatMessage[];
   model: string | null;
   mode: 'ai' | 'demo';
+  provider: AiProviderId;
 } {
   getCharacterSummary(ctx, characterId);
   return {
     messages: buildChatMessages(ctx, characterId, placeholder),
     model: ctx.ai.modelFor('chat') || null,
     mode: ctx.ai.isActive('chat') ? 'ai' : 'demo',
+    provider: ctx.ai.activeProvider('chat'),
   };
 }

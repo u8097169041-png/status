@@ -4,7 +4,8 @@
 Du trittst einer Welt bei – Promis, Politik, Internet, Fantasy, Wirtschaft, Sport, Unterhaltung, alternative Szenarien oder Fiktion –
 und spielst dort eine **eigene Figur** oder übernimmst eine **bekannte Figur** dieser Welt. Du postest, chattest,
 triffst Entscheidungen und beeinflusst damit Beziehungen, Ansehen und den Verlauf der Geschichten. Die Figuren
-handeln auch selbstständig weiter – im kostenlosen Demo-Modus komplett ohne KI-Anbieter.
+handeln auch selbstständig weiter. Gespräche führt eine **lokale KI** (Ollama, kostenlos) – ohne sie antwortet die
+**simulierte KI**, ebenfalls kostenlos und offline. Spieler brauchen nie einen eigenen API-Schlüssel.
 
 ![Startseite: Weltauswahl mit Kategorien, beliebten Welten und Handlungsbögen](docs/screenshots/discover.jpg)
 
@@ -21,7 +22,7 @@ handeln auch selbstständig weiter – im kostenlosen Demo-Modus komplett ohne K
 3. [Schnellstart unter Windows 11](#schnellstart-unter-windows-11)
 4. [Entwicklungsmodus mit Hot Reload](#entwicklungsmodus-mit-hot-reload)
 5. [Start unter macOS/Linux und alle Befehle](#start-unter-macoslinux-und-alle-befehle)
-6. [KI einrichten (optional, OpenRouter)](#ki-einrichten-optional-openrouter)
+6. [KI einrichten (lokal, kostenlos)](#ki-einrichten-lokal-kostenlos)
 7. [Konfiguration (.env)](#konfiguration-env)
 8. [Daten, Export, Backup und Löschen](#daten-export-backup-und-löschen)
 9. [Sicherheit und Datenschutz](#sicherheit-und-datenschutz)
@@ -49,7 +50,7 @@ Technische Details zu Aufbau, Datenmodell, Simulation und Erinnerungsstrategie s
 | **Profil** | Deine aktive Figur mit Zielen und Werten, alle Spielfiguren mit Spielverlauf („Wieder spielen“), lokales Profil, Beiträge, Lesezeichen, Erfolge |
 | **Weitere Bereiche** | Charaktere, Suche, Shop (Rahmen, Banner, Premium-Ereigniskarten gegen Spielwährung – kein Echtgeld), Weltanpassung, Welten (Generator, Beziehungen, Gruppen, Storylines, Ereigniskarten), Fortschritt, Einstellungen, Datenschutz |
 | **Welten & Figuren** | 12 vorgefertigte, frei erfundene Welten (u. a. Regierungsviertel, Spotlight Boulevard, Trendwelle, Unicorn Valley, FC Hafenstadt, Late Night Live, Analog 2026) mit 44 Figuren, Zielen, Beziehungen und Geschichten mit je drei möglichen Enden; eigene Welten und Figuren |
-| **Einstellungen** | Sprache (Deutsch/Englisch), OpenRouter-Schlüssel, Modellwahl mit Fallbacks, Token-/Anfrage-/Kostenlimits, Verbindungstest, Verbrauchsprotokoll, Simulationssteuerung, Erinnerungsoptionen, Datenexport und vollständiges Löschen |
+| **Einstellungen** | Sprache (Deutsch/Englisch), KI-Modus (automatisch/lokal, Server-KI mit Freigabe, nur simulierte KI), Diagnose mit Verbindungsstatus und Test, Wahl des lokalen Modells, Limits, Verbrauchsprotokoll, Simulationssteuerung, Erinnerungsoptionen, Datenexport und vollständiges Löschen |
 
 **Lebendige Welten:** Solange SocialVerse läuft, vergeht in regelmäßigen Abständen in einer Welt nach der anderen
 ein Tag (abschaltbar, begrenzt); die Welt, in der du gerade spielst, ist dabei jeden zweiten Schritt an der Reihe.
@@ -118,9 +119,10 @@ standardmäßig ausgeschaltet.
 | --- | --- |
 | **Betriebssystem** | Windows 11 (getestet wurde unter Linux; siehe [Einschränkungen](#bekannte-einschränkungen)), macOS oder Linux |
 | **Node.js** | **Version 22.13 oder neuer**, empfohlen: aktuelle **LTS-Version** (z. B. 24.x) von <https://nodejs.org>. SocialVerse nutzt die in Node.js eingebaute SQLite-Datenbank – es muss **nichts kompiliert** werden (kein Python, keine Visual-Studio-Build-Tools). |
-| **Internet** | Nur für die einmalige Installation der Abhängigkeiten (`npm install`) und – optional – für die KI-Anbindung. |
+| **Internet** | Nur für die einmalige Installation der Abhängigkeiten (`npm install`) und – optional – für den Download von Ollama und eines Modells. Danach läuft alles offline. |
 | **Speicher** | ca. 400 MB für Abhängigkeiten, die Datenbank bleibt klein (wenige MB). |
-| **Kosten** | Keine. Die KI-Anbindung ist optional; OpenRouter bietet auch kostenlose Modelle an. |
+| **Kosten** | Keine. Die lokale KI ist kostenlos; eine Server-KI ist optional und standardmäßig aus. |
+| **Lokale KI (optional)** | 8 GB RAM (16 GB empfohlen) und 3–6 GB Speicher für Ollama und ein Modell – siehe [KI einrichten](#ki-einrichten-lokal-kostenlos). |
 
 Prüfen, ob Node.js installiert ist: Eingabeaufforderung öffnen (Windows-Taste, `cmd` eingeben) und `node -v` ausführen.
 
@@ -137,6 +139,7 @@ Prüfen, ob Node.js installiert ist: Eingabeaufforderung öffnen (Windows-Taste,
 - prüft, ob Node.js installiert ist und die Version passt,
 - installiert beim ersten Start (oder nach einem Update) die Abhängigkeiten mit `npm install` (dauert einige Minuten),
 - legt eine `.env` aus `.env.example` an – **eine vorhandene `.env` wird nie überschrieben**,
+- zeigt in einer Zeile, ob eine lokale KI gefunden wurde (ohne etwas herunterzuladen),
 - baut die Anwendung und startet sie,
 - öffnet den Browser unter **<http://127.0.0.1:3001>**.
 
@@ -147,7 +150,10 @@ oder das Fenster schließen. Deine Daten bleiben in `data/socialverse.db` erhalt
 > durch Windows geschützt“). Über „Weitere Informationen“ → „Trotzdem ausführen“ startest du die Datei. Du kannst
 > `start.bat` vorher mit einem Texteditor öffnen und prüfen – sie enthält nur die oben beschriebenen Schritte.
 
-Beim ersten Öffnen führt ein kurzes **Onboarding** durch Sprache, Namen und die Erklärung des Demo-Modus.
+Beim ersten Öffnen führt ein kurzes **Onboarding** durch Sprache, Namen und die Erklärung der KI-Modi.
+
+**Optional – echte KI kostenlos:** `ki-einrichten.bat` doppelklicken und den Fragen folgen (siehe
+[KI einrichten](#ki-einrichten-lokal-kostenlos)). Ohne diesen Schritt antwortet die simulierte KI.
 
 ---
 
@@ -186,54 +192,129 @@ Für die Ende-zu-Ende-Tests wird einmalig ein Browser benötigt: `npx playwright
 
 ---
 
-## KI einrichten (optional, OpenRouter)
+## KI einrichten (lokal, kostenlos)
 
-Ohne Einrichtung läuft SocialVerse im **Demo-Modus**: Chat-Antworten, Reaktionen und Weltereignisse werden lokal
-erzeugt und sind als „Demo“ bzw. „Simulation“ gekennzeichnet. Für echte KI-Gespräche:
+SocialVerse hat drei austauschbare KI-Provider. Spieler brauchen **nie** einen eigenen API-Schlüssel.
 
-1. Konto auf <https://openrouter.ai> anlegen und unter **Keys** einen API-Schlüssel erstellen.
-2. In SocialVerse **Einstellungen → KI & Modelle** öffnen und den Schlüssel eintragen
-   – oder in der Datei `.env` setzen: `OPENROUTER_API_KEY=sk-or-...` (hat Vorrang; danach neu starten).
-3. **Modell wählen:** „Modell wählen“ lädt die aktuelle Modellliste live von OpenRouter (mit Preisen und
-   Kontextlänge). Mit dem Filter „Nur kostenlose“ findest du Modelle ohne Kosten. Modell-IDs lassen sich auch
-   manuell eingeben. Optional: separates Modell für Weltaktivität/Generator und bis zu 3 Fallback-Modelle.
-4. **Verbindung testen.** Ohne gewähltes Modell wird nur der Schlüssel geprüft (kostenlos).
+| Provider | Kosten | Wann aktiv | Kennzeichnung im Chat |
+| --- | --- | --- | --- |
+| **Lokale KI** (Ollama) | keine – läuft auf deinem Computer | automatisch, sobald Ollama mit einem Modell erreichbar ist | „Lokale KI · Modell“ |
+| **Server-KI** (zentraler Dienst) | je nach Anbieter | nur wenn der Betreiber sie in `.env` einrichtet **und** du sie in den Einstellungen freigibst | „Server-KI · Modell“ |
+| **Simulierte KI** | keine | immer verfügbar; wenn keine echte KI läuft oder sie scheitert | „Simulierte Antwort · regelbasiert, keine KI“ |
 
-### Kosten und Limits
+Ohne jede Einrichtung startet SocialVerse sofort mit der simulierten KI: Figuren antworten regelbasiert im
+eigenen Stil, mit Erinnerung an gemerkte Fakten und Bezug auf die Welt.
+
+### Lokale KI unter Windows einrichten
+
+**Voraussetzungen:** Windows 10/11 (64 Bit), mindestens 8 GB RAM (16 GB empfohlen), 3–6 GB freier Speicher.
+Eine Grafikkarte ist nicht nötig, beschleunigt aber deutlich; auf dem Prozessor dauert eine Antwort einige Sekunden,
+die erste nach dem Start länger (das Modell wird geladen).
+
+**Variante A – geführt:** Doppelklick auf **`ki-einrichten.bat`** im Projektordner. Das Skript
+
+1. prüft Arbeitsspeicher, freien Speicher und ob Ollama bereits installiert ist bzw. läuft,
+2. bietet – nur nach deiner Bestätigung mit `J` – die Installation von Ollama über den Windows-Paketmanager an
+   (offizielles Paket `Ollama.Ollama`, Download ca. 1–2 GB),
+3. empfiehlt ein Modell passend zum Arbeitsspeicher und lädt es – wieder nur nach Bestätigung – herunter:
+
+   | RAM | Empfehlung | Download ca. |
+   | --- | --- | --- |
+   | ab 16 GB | `gemma3:4b` | 3,3 GB |
+   | 8 GB | `qwen2.5:3b` | 1,9 GB |
+   | unter 8 GB | `qwen2.5:1.5b` (einfachere Antworten) | 1,0 GB |
+
+**Variante B – von Hand** (Eingabeaufforderung oder PowerShell):
+
+```powershell
+winget install --id Ollama.Ollama -e     # oder Installer von https://ollama.com/download/windows
+ollama pull gemma3:4b                    # Modell laden (ca. 3,3 GB)
+npm run ai:check                         # im Projektordner: Prüfung ohne Downloads
+```
+
+Danach SocialVerse neu starten oder unter **Einstellungen → KI & Modelle** auf **„Erneut prüfen“** klicken. Das
+bestinstallierte Modell wird automatisch gewählt; ein anderes installiertes Modell kannst du dort auswählen oder in
+`.env` mit `LOCAL_AI_MODEL` festlegen. SocialVerse selbst lädt **nie** Modelle herunter. Ollama läuft im Hintergrund
+(Symbol im Infobereich) und belegt Arbeitsspeicher, solange ein Modell geladen ist (wird nach 15 Minuten ohne Anfrage
+entladen). Deinstallation: Windows-Einstellungen → Apps → Ollama; Modelle entfernen mit `ollama rm <modell>`.
+
+`start.bat` zeigt beim Start eine Zeile zum KI-Status; `npm run ai:check` gibt eine ausführliche Diagnose.
+
+### Server-KI (optional, für einen späteren zentralen Betrieb)
+
+Die Server-KI ist für ein späteres Hosting gedacht, bei dem der **Betreiber** einen KI-Dienst bereitstellt
+(OpenAI-kompatibel, z. B. OpenRouter oder ein eigener Server). Sie ist standardmäßig aus und wird nur verwendet, wenn
+
+1. in `.env` (bzw. im Secret Store des Hostings) `SERVER_AI_ENABLED=true`, `SERVER_AI_API_KEY` und `SERVER_AI_MODEL`
+   gesetzt sind **und**
+2. der Nutzer unter **Einstellungen → KI & Modelle** „Server-KI erlauben“ einschaltet. Im Modus „Automatisch“ wird
+   sie dann nur genutzt, wenn die lokale KI nicht verfügbar ist; im Modus „Server-KI“ bevorzugt.
+
+**Schutzmechanismen:**
+
+- Genau ein Aufruf pro Anfrage, keine automatischen Wiederholungen und keine Ersatzmodelle.
+- Harte Obergrenzen aus `.env`: Anfragen pro Tag und Minute, Tokens, Zeitlimit sowie Tages- und Monatsbudget. Die
+  App-Einstellungen können diese Werte nur senken.
+- Kosten werden vor jeder Anfrage geschätzt. Sind die Preise unbekannt, wird **nichts** gesendet; Budget 0 erlaubt nur
+  kostenlose Modelle.
+- Nach Zugangs- oder Zahlungsfehlern wird die Server-KI gesperrt, nach Netzwerkfehlern 2 Minuten pausiert. In beiden
+  Fällen antwortet die lokale bzw. simulierte KI.
+- Der Schlüssel existiert nur im Backend-Prozess. Er erscheint nie im Browser, in Antworten der API, im Export oder
+  in Protokollen.
+
+### Was die KI darf – und was nicht
+
+Die KI formuliert ausschließlich Text. Für Gespräche liefert sie ein validiertes JSON-Ergebnis
+(`{"reply": …, "tone": "warm" | "neutral" | "tense"}`). Spielwerte ändern nur die Regeln des Servers: Die Stimmung
+einer echten KI-Antwort verschiebt die Zuneigung um höchstens 1 Punkt, einmal pro Tag und Figur. XP, Level,
+Fähigkeiten und Quests ändert die KI nie, auch wenn sie im Text etwas „verspricht“. Der Prompt enthält einen nur
+lesbaren Spielkontext (Beziehung, aktuelle Hauptquest, laufende Geschichten), damit Dialoge dazu passen.
+Simulationen realer öffentlicher Personen sind als solche gekennzeichnet; der Prompt verbietet erfundene Zitate, und
+im Chat steht „Simulation – keine echte Aussage“.
+
+### Weitere Einstellungen
 
 | Einstellung | Standard | Wirkung |
 | --- | --- | --- |
-| Max. Tokens pro Antwort | 400 | Begrenzt Länge und Kosten jeder Antwort (Weltgenerator: max. 1500) |
-| KI-Anfragen pro Tag | 100 | Danach wird automatisch der Demo-Modus verwendet |
-| Tagesbudget / Monatsbudget | 0,50 $ / 5 $ | Anfragen werden vorab geschätzt und blockiert, wenn das Budget überschritten würde. **Budget 0 = nur Modelle mit nachweislich Preis 0** |
-| KI für Weltaktivität | aus | Wenn an: max. 2 KI-Aufrufe pro Simulationsschritt |
-| KI für Reaktionen | aus | Wenn an: ein KI-Kommentar pro Beitrag/Antwort |
-| KI-Aufrufe Welt & Reaktionen pro Tag | 20 | Gemeinsames Tageslimit für automatische KI-Aktivität |
-| KI-Zusammenfassungen | an | Nur wenn ein Modell aktiv ist; sonst lokale Stichwort-Zusammenfassung |
+| Modus | Automatisch | Automatisch (lokal bevorzugt) · Server-KI · Nur simulierte KI |
+| Max. Tokens pro Antwort | 400 | Zusätzlich begrenzt durch `LOCAL_AI_MAX_TOKENS` bzw. `SERVER_AI_MAX_TOKENS` |
+| KI für Weltaktivität / Reaktionen | aus | Wenn an: max. 2 KI-Aufrufe pro Simulationsschritt bzw. ein Kommentar pro Beitrag |
+| KI-Aufrufe Welt & Reaktionen pro Tag | 20 | Gemeinsames Tageslimit (begrenzt auch die Rechenlast der lokalen KI) |
+| KI-Zusammenfassungen | an | Nur mit echter KI; sonst regelbasierte Stichwort-Zusammenfassung |
+| Server-KI-Anfragen pro Tag, Tages-/Monatsbudget | 100 · 0,50 $ · 5 $ | Es gilt jeweils der niedrigere Wert aus Einstellung und `.env` |
 
-Kosten werden aus den Angaben von OpenRouter übernommen. Fehlen sie, werden sie anhand der Preisliste
-geschätzt und als „geschätzt“ markiert. Das **Verbrauchsprotokoll** in den Einstellungen zeigt jede Anfrage
-mit Zweck, Modell, Tokens, Kosten und Status. Preise und Verfügbarkeit von Modellen ändern sich – SocialVerse
-verlässt sich nicht auf fest eingebaute Modelle oder Preise.
-
-**Fehlerbehandlung:** Zeitüberschreitungen, Ratenlimits, nicht verfügbare Modelle und ungültige Antworten werden
-abgefangen; Fallback-Modelle werden der Reihe nach versucht. Schlägt alles fehl, antwortet der Charakter im
-Demo-Modus und die App zeigt den Grund an (z. B. „Schlüssel ungültig“, „Guthaben aufgebraucht“).
+Das **Verbrauchsprotokoll** zeigt jede Anfrage mit KI, Zweck, Modell, Tokens, Kosten und Status.
 
 ---
 
 ## Konfiguration (.env)
+
+Alle Variablen mit Erklärung stehen in [`.env.example`](.env.example). Ungültige Werte werden durch sichere
+Standardwerte ersetzt.
 
 | Variable | Standard | Bedeutung |
 | --- | --- | --- |
 | `PORT` | `3001` | Port des Servers (im Produktionsstart auch die Adresse der App) |
 | `HOST` | `127.0.0.1` | Netzwerkadresse. `127.0.0.1` = nur auf diesem Computer erreichbar (empfohlen) |
 | `DATA_DIR` | `./data` | Ordner der SQLite-Datenbank |
-| `OPENROUTER_API_KEY` | leer | Optionaler API-Schlüssel (Vorrang vor dem in der App gespeicherten) |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Nur für Tests/Sonderfälle ändern |
 | `ALLOWED_HOSTS` | leer | Zusätzliche erlaubte Hostnamen (kommagetrennt), z. B. für Zugriff im Heimnetz zusammen mit `HOST=0.0.0.0` – **nicht empfohlen**, da es keine Anmeldung gibt |
+| `LOCAL_AI_ENABLED` | `true` | Lokale KI suchen und verwenden |
+| `LOCAL_AI_BASE_URL` | `http://127.0.0.1:11434` | Adresse von Ollama |
+| `LOCAL_AI_MODEL` | leer | Festes Modell; leer = Auswahl in der App bzw. automatisch |
+| `LOCAL_AI_TIMEOUT_MS` / `LOCAL_AI_MAX_TOKENS` | `60000` / `350` | Zeitlimit und Antwortlänge der lokalen KI |
+| `SERVER_AI_ENABLED` | `false` | Server-KI grundsätzlich erlauben (Betreiber) |
+| `SERVER_AI_BASE_URL` | `https://openrouter.ai/api/v1` | OpenAI-kompatible Adresse |
+| `SERVER_AI_API_KEY` | leer | Zugangsschlüssel – nur serverseitig, nie im Frontend |
+| `SERVER_AI_MODEL` / `SERVER_AI_WORLD_MODEL` | leer | Modell-IDs (Weltaktivität optional separat) |
+| `SERVER_AI_TIMEOUT_MS` / `SERVER_AI_MAX_TOKENS` | `20000` / `400` | Harte Obergrenzen pro Anfrage |
+| `SERVER_AI_MAX_REQUESTS_PER_DAY` / `_PER_MINUTE` | `200` / `6` | Harte Anfragelimits |
+| `SERVER_AI_DAILY_BUDGET_USD` / `SERVER_AI_MONTHLY_BUDGET_USD` | `0.20` / `2` | Harte Kostenobergrenzen |
+| `SERVER_AI_PRICE_INPUT_PER_MTOK` / `_OUTPUT_PER_MTOK` | leer | Preise pro 1 Mio. Tokens; leer = Preisliste des Dienstes |
 
-Die Datei `.env` ist in `.gitignore` eingetragen und wird nie in Git gespeichert.
+`OPENROUTER_API_KEY` und `OPENROUTER_BASE_URL` aus Version 1 werden als Server-Zugang übernommen, aktivieren die
+Server-KI aber nicht ohne `SERVER_AI_ENABLED=true`. Ein früher **in der App** gespeicherter Schlüssel wird nicht mehr
+verwendet; die Einstellungen bieten an, ihn zu löschen. Die Datei `.env` ist in `.gitignore` eingetragen und wird nie
+in Git gespeichert.
 
 ---
 
@@ -247,12 +328,12 @@ Die Datei `.env` ist in `.gitignore` eingetragen und wird nie in Git gespeichert
   Chats übernimmt die erste Spielfigur, mit der du der jeweiligen Welt beitrittst. Vorsichtshalber vorher `data/`
   sichern.
 - **Export:** Einstellungen → Datenschutz & Daten → **Daten exportieren** lädt alle lokalen Daten als JSON herunter
-  (ohne API-Schlüssel).
+  (ohne Schlüssel).
 - **Backup:** SocialVerse beenden und den Ordner `data/` kopieren.
 - **Alles löschen:** Einstellungen → Datenschutz & Daten → `RESET` eingeben → **Endgültig löschen**. Gelöscht
   werden Beiträge, Kommentare, Chats, Erinnerungen, Fortschritt, eigene Welten und Charaktere, Nutzungsprotokoll,
-  Einstellungen und der lokal gespeicherte Schlüssel; die Datenbankdatei wird anschließend verdichtet (`VACUUM`).
-  Danach werden die Demo-Inhalte neu angelegt. Ein Schlüssel in `.env` bleibt bestehen (Datei selbst bearbeiten).
+  Einstellungen und ein eventuell aus Version 1 gespeicherter Schlüssel; die Datenbankdatei wird anschließend
+  verdichtet (`VACUUM`). Danach werden die Demo-Inhalte neu angelegt. `.env` bleibt unverändert.
 - **Komplett zurücksetzen:** SocialVerse beenden und den Ordner `data/` löschen.
 
 ---
@@ -265,13 +346,17 @@ Die Datei `.env` ist in `.gitignore` eingetragen und wird nie in Git gespeichert
 - **Eingaben:** Alle Eingaben werden serverseitig mit Schemas (zod) geprüft und in der Länge begrenzt.
 - **Ausgabe:** Nutzer- und KI-Texte werden ausschließlich als Text dargestellt, nie als HTML (Schutz vor XSS).
   Zusätzlich gilt eine strenge Content-Security-Policy.
-- **API-Schlüssel:** Wird nur im Backend verwendet, nie an den Browser zurückgegeben (nur maskiert angezeigt) und nie
-  protokolliert. Ein in der App eingegebener Schlüssel liegt **unverschlüsselt** in der lokalen Datenbank – wer
-  Zugriff auf deinen Computer hat, kann ihn lesen. Alternativ `.env` verwenden.
-- **Was wird an OpenRouter gesendet?** Nur bei aktivierter KI: Charakterprofil, Weltbeschreibung, gemerkte Fakten,
-  Zusammenfassung, die letzten *N* Chatnachrichten sowie Rolle, Hintergrund und Ziele deiner Spielfigur (ihr Name nur,
-  wenn „Namen an die KI senden“ eingeschaltet ist). Im Chat zeigt
-  **„Was wird gesendet?“** die exakte nächste Anfrage. Details: Seite **Datenschutz** in der App.
+- **Schlüssel:** Es gibt keine Schlüsseleingabe für Spieler. Zugangsdaten der Server-KI kommen ausschließlich aus
+  Umgebungsvariablen bzw. dem Secret Store des Hostings, werden nur im Backend verwendet und nie an den Browser
+  gegeben, exportiert oder protokolliert (Fehlermeldungen werden zusätzlich bereinigt).
+- **Lokale KI:** Gesprächsinhalte gehen nur an die Ollama-Adresse aus `.env` (Standard: dieser Computer). Liegt sie
+  auf einem anderen Rechner, weist die Diagnose darauf hin.
+- **Was wird an die KI gesendet?** Charakterprofil, Weltbeschreibung, Spielkontext (Beziehung, Hauptquest, laufende
+  Geschichten), gemerkte Fakten, Zusammenfassung, die letzten *N* Chatnachrichten sowie Rolle, Hintergrund und Ziele
+  deiner Spielfigur (ihr Name nur, wenn „Namen an die KI senden“ eingeschaltet ist). An eine Server-KI nur mit deiner
+  Freigabe. Im Chat zeigt **„Was wird gesendet?“** die exakte nächste Anfrage. Details: Seite **Datenschutz** in der App.
+- **KI ohne Durchgriff:** Die KI liefert nur Text und eine validierte Stimmung; Spielwerte ändern ausschließlich die
+  Spielregeln des Servers.
 - **Keine Tracking-Dienste**, keine externen Schriften oder Bilder – alles wird lokal ausgeliefert.
 - **Fiktion:** Alle vorgefertigten Welten und Figuren sind frei erfunden (auch in den realitätsnahen Kategorien wie
   Politik oder Promis) und als KI-Charaktere gekennzeichnet. Reale Persönlichkeiten können nur als eigene Figur mit
@@ -292,8 +377,10 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   weltgebundene Stories/Beiträge/Chats, Entscheidungen (einmalig, dauerhaft, Storyverlauf), Weltaufgaben, Shop und
   Funken, Schutz von Real-Person-Simulationen, Migration bestehender Datenbanken (Chats → Gespräche) und das
   Ergänzen neuer Welten, Suche; außerdem XP/Level/Quests (inkl. Schutz vor Mehrfachbelohnung), Simulation und
-  Ereigniskarten (inkl. Determinismus), Chats und Erinnerung, Demo-Antworten, KI-Anbindung mit simuliertem
-  OpenRouter (Fallbacks, Limits, Budget, Kostenschätzung, Zeitüberschreitung), API-Endpunkte (CSRF/Host-Schutz,
+  Ereigniskarten (inkl. Determinismus), Chats und Erinnerung, simulierte Antworten, Hybrid-KI mit simulierter
+  lokaler KI und simuliertem Server (Provider-Auswahl, Freigabe, Offline-Betrieb ohne lokale KI und ohne Server,
+  Zeitüberschreitungen, Fehlersperren, keine Wiederholungen, Limits, Budget, unbekannte Preise, Konfiguration,
+  Geheimnisschutz in Status, Protokoll und Logs, strukturierte Ergebnisse, KI ohne Einfluss auf XP), API-Endpunkte (CSRF/Host-Schutz,
   Schlüssel nie im Frontend, Beitrags-Lebenszyklus, Export/Löschen), Übersetzungsvollständigkeit, XSS-sichere Darstellung;
   außerdem Quests passend zu Rolle und Hauptziel, Neben- und Ereignis-Quests (inkl. Ablauf), einmalige
   Quest- und Bogenbelohnungen, Charakterlevel und Fähigkeitspunkte, Wirkung jeder Fähigkeit (Reichweite,
@@ -306,8 +393,9 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   weltgebundene Stories/Feed/Chats, Entscheidung mit Neuladen, Welt- und Figurenwechsel, Navigation (Desktop und
   mobil, ohne horizontales Scrollen), Onboarding, Beiträge (erstellen, liken, merken, bearbeiten, kommentieren),
   Filter, Demo-Chat mit Erinnerung, Weltsimulation, Ereigniskarten, Beziehungen, Storylines, Charakter- und
-  Weltgenerator, Quests, Sprachwechsel, Schlüsselschutz, mobile Ansicht, vollständiges Löschen sowie der KI-Pfad
-  gegen einen lokalen OpenRouter-Nachbau (`e2e/mock-openrouter.mjs`).
+  Weltgenerator, Quests, Sprachwechsel, KI-Einstellungen ohne Schlüsseleingabe, mobile Ansicht, vollständiges
+  Löschen sowie die Hybrid-KI gegen lokale Nachbauten von Ollama (`e2e/mock-ollama.mjs`) und einem
+  OpenAI-kompatiblen Server (`e2e/mock-openrouter.mjs`) in einer zweiten App-Instanz.
 - **Barrierefreiheit:** Während der Entwicklung wurden alle Seiten (Desktop und Mobil) mit axe-core auf WCAG 2 A/AA
   geprüft; gefundene Probleme wurden behoben. Diese Prüfung ist nicht Teil der automatischen Testsuite.
 
@@ -323,7 +411,8 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
 | „Port 3001 ist bereits belegt“ | Läuft SocialVerse schon (anderes Fenster)? Sonst in `.env` z. B. `PORT=3005` setzen. |
 | Browser zeigt „Server nicht erreichbar“ | Das schwarze Fenster wurde geschlossen oder der Start ist fehlgeschlagen – Meldungen im Fenster lesen. |
 | Browser öffnet sich nicht automatisch | Manuell <http://127.0.0.1:3001> aufrufen. |
-| KI antwortet nicht, Hinweis „KI nicht verfügbar“ | In Einstellungen → KI & Modelle „Verbindung testen“; Grund und Protokoll beachten (Schlüssel, Guthaben, Limit, Modell). |
+| Es antwortet nur die simulierte KI | Einstellungen → KI & Modelle → Diagnose lesen und „Erneut prüfen“. Läuft Ollama (Symbol im Infobereich)? Ist ein Modell installiert (`ollama list`)? `npm run ai:check` zeigt die nächsten Schritte. |
+| Lokale KI antwortet sehr langsam oder mit Zeitüberschreitung | Kleineres Modell wählen (z. B. `qwen2.5:3b`), andere Programme schließen oder `LOCAL_AI_TIMEOUT_MS` erhöhen. Die erste Antwort nach dem Start dauert länger. |
 | Inhalte in falscher Sprache | Demo-Inhalte entstehen in der Sprache des ersten Starts. Einstellungen → Allgemein → „Demo-Inhalte … neu laden“ (löscht alle Daten). |
 
 ---
@@ -332,9 +421,13 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
 
 - **Windows-Start nicht auf Windows getestet:** `start.bat` und `dev.bat` wurden sorgfältig geschrieben, die
   Entwicklung und alle Tests liefen jedoch unter Linux. Die übrige Anwendung ist plattformunabhängig.
-- **Keine echte KI-Anfrage verifiziert:** In der Entwicklungsumgebung war OpenRouter nicht erreichbar. Der komplette
-  KI-Pfad ist gegen einen originalgetreuen lokalen Nachbau der API getestet; die Anbindung an den echten Dienst sollte
-  einmal mit „Verbindung testen“ geprüft werden.
+- **Keine echte KI-Anfrage verifiziert:** In der Entwicklungsumgebung waren weder Ollama noch Modelle oder ein
+  KI-Dienst erreichbar (Downloads gesperrt). Lokale KI und Server-KI sind gegen protokollgetreue Nachbauten der
+  Ollama- bzw. OpenAI-kompatiblen API getestet. Die echte Anbindung bitte einmal mit „Lokale KI testen“ prüfen.
+- **`ki-einrichten.bat` nicht auf Windows getestet:** Das Skript fragt vor jedem Download nach und nutzt nur
+  `winget` und `ollama`; es wurde jedoch unter Linux geschrieben.
+- **Antwortqualität lokaler Modelle:** Kleine Modelle (3–4 Mrd. Parameter) antworten schlichter als große Cloud-Modelle
+  und halten das JSON-Format nicht immer ein; dann wird der Text übernommen bzw. auf die simulierte KI ausgewichen.
 - **Einzelplatz:** Ein lokales Profil, keine Benutzerkonten, keine Synchronisation zwischen Geräten.
 - **Layout nach Beschreibung:** Die Oberfläche (Startseite, Navigation, Feed, Chats, Statusanzeigen) wurde nach der
   textlichen Vorgabe gestaltet; die Referenz-Screenshots (Status AI) lagen nicht vor. Abweichungen im Detail sind daher möglich.
@@ -343,7 +436,7 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
 - **Keine vorgefertigten realen Personen:** Aktuelle Ämter und Aussagen realer Personen lassen sich lokal nicht
   zuverlässig prüfen. Deshalb sind alle mitgelieferten Figuren erfunden; Simulationen realer Personen legst du selbst
   an (gekennzeichnet, mit Bestätigung).
-- **Demo-Modus:** Lokale Antworten folgen Regeln und Vorlagen – sie sind bewusst einfach und ersetzen keine KI.
+- **Simulierte KI:** Regelbasierte Antworten folgen Vorlagen – sie sind bewusst einfach und ersetzen keine echte KI.
 - **Inhaltssprache:** Bereits vorhandene Inhalte werden beim Sprachwechsel nicht übersetzt.
 - **Import:** Ein Datenexport ist möglich, ein Import (Wiederherstellen aus JSON) noch nicht – Backups über den Ordner `data/`.
 - **`node:sqlite`** ist in Node.js als „experimentell“ markiert (stabil nutzbar; die Warnung wird unterdrückt).

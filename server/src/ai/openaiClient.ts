@@ -1,39 +1,9 @@
 /**
- * Minimaler OpenRouter-Client (OpenAI-kompatible Chat-Completions-API).
+ * Minimaler Client für OpenAI-kompatible Chat-Completions-APIs (z. B. OpenRouter oder ein eigener KI-Server).
  * Der API-Schlüssel wird ausschließlich im Authorization-Header übertragen und nie protokolliert.
+ * Der Client wiederholt Anfragen nie selbst – jede Anfrage ist genau ein Aufruf.
  */
-
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-export type AiErrorCode =
-  | 'no_key'
-  | 'no_model'
-  | 'timeout'
-  | 'network'
-  | 'unauthorized'
-  | 'payment_required'
-  | 'moderation'
-  | 'rate_limited'
-  | 'model_unavailable'
-  | 'bad_request'
-  | 'server_error'
-  | 'invalid_response'
-  | 'empty_response'
-  | 'limit_reached'
-  | 'disabled';
-
-export interface CompletionUsage {
-  promptTokens: number;
-  completionTokens: number;
-  costUsd: number | null;
-}
-
-export type CompletionOutcome =
-  | { ok: true; text: string; model: string; usage: CompletionUsage }
-  | { ok: false; code: AiErrorCode; message: string; status?: number; retriable: boolean };
+import { parseNumber, safeMessage, type AiErrorCode, type ChatMessage, type CompletionOutcome, type FetchFn } from './types';
 
 export interface CompletionRequest {
   apiKey: string;
@@ -44,7 +14,7 @@ export interface CompletionRequest {
   timeoutMs: number;
 }
 
-export interface OpenRouterModel {
+export interface RemoteModel {
   id: string;
   name: string;
   contextLength: number | null;
@@ -52,12 +22,7 @@ export interface OpenRouterModel {
   completionPrice: number | null;
 }
 
-export type FetchFn = typeof fetch;
-
-const APP_HEADERS = {
-  'HTTP-Referer': 'http://localhost/socialverse',
-  'X-Title': 'SocialVerse (local)',
-};
+const APP_HEADERS = { 'X-Title': 'SocialVerse' };
 
 function classifyStatus(status: number, message: string): { code: AiErrorCode; retriable: boolean } {
   if (status === 401) return { code: 'unauthorized', retriable: false };
@@ -76,22 +41,7 @@ function classifyStatus(status: number, message: string): { code: AiErrorCode; r
   return { code: 'bad_request', retriable: false };
 }
 
-function safeMessage(value: unknown): string {
-  const text = typeof value === 'string' ? value : '';
-  // Sicherheitshalber alles entfernen, was wie ein Schlüssel aussieht.
-  return text.replace(/sk-[A-Za-z0-9_-]{8,}/g, '[redacted]').slice(0, 300);
-}
-
-function parseNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-
-export class OpenRouterClient {
+export class OpenAiCompatibleClient {
   constructor(
     private readonly baseUrl: string,
     private readonly fetchFn: FetchFn = globalThis.fetch.bind(globalThis),
@@ -157,13 +107,13 @@ export class OpenRouterClient {
       if ((error as Error).name === 'AbortError') {
         return { ok: false, code: 'timeout', message: 'Zeitüberschreitung bei der KI-Anfrage.', retriable: true };
       }
-      return { ok: false, code: 'network', message: 'Keine Verbindung zu OpenRouter möglich.', retriable: true };
+      return { ok: false, code: 'network', message: 'Keine Verbindung zum KI-Server möglich.', retriable: true };
     } finally {
       clearTimeout(timer);
     }
   }
 
-  async listModels(timeoutMs = 15_000): Promise<OpenRouterModel[]> {
+  async listModels(timeoutMs = 15_000): Promise<RemoteModel[]> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -186,26 +136,6 @@ export class OpenRouterClient {
             completionPrice: parseNumber(pricing.completion),
           };
         });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  /** Prüft den Schlüssel ohne Modellaufruf (kostenlos). */
-  async checkKey(apiKey: string, timeoutMs = 15_000): Promise<{ ok: true } | { ok: false; code: AiErrorCode; message: string }> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await this.fetchFn(`${this.baseUrl}/key`, {
-        signal: controller.signal,
-        headers: { Authorization: `Bearer ${apiKey}`, ...APP_HEADERS },
-      });
-      if (response.ok) return { ok: true };
-      const message = `HTTP ${response.status}`;
-      return { ok: false, message, code: classifyStatus(response.status, message).code };
-    } catch (error) {
-      if ((error as Error).name === 'AbortError') return { ok: false, code: 'timeout', message: 'Zeitüberschreitung.' };
-      return { ok: false, code: 'network', message: 'Keine Verbindung zu OpenRouter möglich.' };
     } finally {
       clearTimeout(timer);
     }
