@@ -11,9 +11,10 @@ Dieses Dokument beschreibt Aufbau, Datenmodell und die wichtigsten Mechanismen f
 │  React Router, TanStack  │  ◀───────────────────────────────  │  Services (Geschäftslogik)    │
 │  Query, eigenes CSS      │                                    │  Scheduler (Simulation/Jobs)  │
 └──────────────────────────┘                                    └──────┬─────────────┬──────────┘
-                                                                       │             │ nur bei aktivierter KI
-                                                          node:sqlite  ▼             ▼
-                                                      data/socialverse.db     OpenRouter (HTTPS)
+                                                                       │             │ KI-Router
+                                                          node:sqlite  ▼             ├─▶ lokale KI: Ollama (127.0.0.1:11434)
+                                                      data/socialverse.db            ├─▶ Server-KI (HTTPS, nur mit Freigabe)
+                                                                                     └─▶ simulierte KI (regelbasiert)
 ```
 
 - **Ein npm-Projekt** mit drei Quellordnern: `client/` (Oberfläche), `server/` (API, Logik, Daten, KI) und
@@ -32,18 +33,19 @@ client/src/
   pages/          eine Datei pro Route
   styles/         tokens.css (Designsystem), base, components, layout, pages
 server/src/
-  ai/             openrouter.ts (HTTP-Client), aiService.ts (Limits, Fallbacks, Protokoll), prompts.ts
+  ai/             aiService.ts (Router: Auswahl, Limits, Protokoll), providers.ts (lokal/Server/simuliert),
+                  ollamaClient.ts, openaiClient.ts, structured.ts (validierte Ergebnisse), prompts.ts, types.ts
   content/        zweisprachige Beispieldaten und Vorlagen (Simulation, Reaktionen, Demo-Chat, Generator)
   db/             database.ts (Zugriff, Transaktionen), migrations.ts, seed.ts
   lib/            Fehler, IDs, Zufall (deterministisch), Text, Zeit
   routes/         dünne HTTP-Schicht je Bereich
   services/       Geschäftslogik (Posts, Charaktere, Chats, Welten, Simulation, Fortschritt, …)
-  test/           Vitest-Tests und Test-Hilfen (In-Memory-DB, simulierter OpenRouter)
+  test/           Vitest-Tests und Test-Hilfen (In-Memory-DB, simulierte Ollama- und Server-KI)
   index.ts        Einstieg (unterdrückt die SQLite-Experimentalwarnung, lädt main.ts)
   main.ts         Konfiguration, Datenbank, App, Scheduler, Serverstart
 shared/           Typen (DTOs), Konstanten/Grenzwerte, XP/Quests/Erfolge/Belohnungen, Beziehungsstatus
-e2e/              Playwright-Tests und lokaler OpenRouter-Nachbau
-scripts/          Server-Build, E2E-Serverstart, Startprüfung für die .bat-Dateien
+e2e/              Playwright-Tests sowie lokale Nachbauten von Ollama und einem OpenAI-kompatiblen KI-Server
+scripts/          Server-Build, E2E-Serverstart, Startprüfung, KI-Prüfung (ai-check.mjs) für die .bat-Dateien
 ```
 
 ## Schichten
@@ -209,16 +211,73 @@ Statt den gesamten Verlauf zu senden, besteht der Kontext aus:
 
 „Was wird gesendet?“ zeigt diesen Kontext exakt so, wie er an das Modell ginge.
 
-## KI-Anbindung
+## KI-Anbindung (Hybrid)
 
-- `OpenRouterClient` spricht die OpenAI-kompatible Chat-Completions-API an (Zeitlimit per `AbortController`),
-  klassifiziert Fehler (401, 402, 403, 404, 408, 429, 5xx, ungültige/leere Antworten) und entfernt schlüsselähnliche
-  Zeichenketten aus Fehlermeldungen.
-- `AiService` prüft vor jedem Aufruf Tageslimit, Weltaktivitätslimit sowie Tages-/Monatsbudget anhand einer
-  Worst-Case-Schätzung (Prompt-Länge + maximale Ausgabetokens × Preis), probiert Fallback-Modelle bei
-  wiederholbaren Fehlern und protokolliert jeden Versuch in `ai_usage`.
-- Preise stammen aus der öffentlichen Modellliste (1 Stunde zwischengespeichert, bei Fehlern 5 Minuten Pause).
-- Der Schlüssel kommt aus `OPENROUTER_API_KEY` oder der Tabelle `secrets`; er wird nie ausgeliefert oder protokolliert.
+Drei austauschbare Provider hinter einer gemeinsamen Schnittstelle (`ai/types.ts`, `AiProvider`):
+
+| Provider | Klasse | Bereitschaft | Kosten |
+| --- | --- | --- | --- |
+| Lokal | `LocalProvider` → `OllamaClient` (`/api/version`, `/api/tags`, `/api/chat`) | Laufzeit erreichbar und ein Chat-Modell installiert (Einbettungsmodelle werden ausgefiltert) | keine |
+| Server | `ServerProvider` → `OpenAiCompatibleClient` (`/chat/completions`) | `SERVER_AI_ENABLED`, Schlüssel und Modell in `.env` **und** `serverConsent` in den Einstellungen; keine Sperre; Limits nicht erreicht | laut Anbieter |
+| Simuliert | `FallbackProvider` | immer | keine |
+
+**Auswahl (`AiService.selection`):**
+
+- Modus `auto`: lokal → Server nur mit Freigabe → simuliert.
+- Modus `server`: Server → lokal (kostenlos) → simuliert.
+- Modus `fallback`: nur simuliert, ohne jeden Netzwerkzugriff.
+
+Jeder Aufruf fragt höchstens **einen** echten Provider **genau einmal** an. Bei einem Fehler liefert die vom
+Aufrufer übergebene regelbasierte Ersatzfunktion (`fallback`) das Ergebnis, mit einem Hinweis auf den Grund.
+
+**Verfügbarkeit:**
+
+- Die lokale Laufzeit wird beim Start und danach höchstens alle 30 s (erreichbar) bzw. 15 s (nicht erreichbar) mit
+  kurzen Zeitlimits geprüft.
+- Nach Verbindungsfehlern oder Zeitüberschreitung wird sie bis zur nächsten Prüfung übersprungen.
+- Ein Slot begrenzt sie auf eine Anfrage gleichzeitig. Chats warten darauf, Hintergrundaufgaben (Welt, Reaktionen,
+  Zusammenfassungen) verzichten bei Belegung auf KI.
+
+**Server-Schutz:**
+
+- Vor jedem Aufruf prüft der Router Tages- und Minutenlimit, das Weltaktivitätslimit und das Tages- und
+  Monatsbudget. Es gilt jeweils das Minimum aus Einstellung und `.env`.
+- Die Kosten werden als Worst Case geschätzt: Prompt-Länge plus maximale Ausgabetokens, multipliziert mit dem Preis.
+  Die Preise kommen aus `.env` oder der Modellliste des Dienstes. Unbekannte Preise führen zur Ablehnung.
+- Nach 401/402 wird der Server 24 h gesperrt; nach Netzwerkfehlern, 429 oder 5xx pausiert er 2 Minuten. Eine Sperre
+  hebt „Erneut prüfen“ auf (`GET /api/ai/status?refresh=1`). Dabei wird der Server nicht angefragt.
+- Es gibt keine Ersatzmodelle und keine Wiederholungen.
+
+**Protokoll:**
+
+- `ai_usage` (Migration 4: Spalte `provider`) erfasst jede Anfrage, lokale mit Kosten 0.
+- Budgets und Anfragelimits zählen nur Server-Anfragen.
+- `conversation_messages.provider` kennzeichnet die Herkunft jeder Antwort (`local`, `server`, `fallback`).
+
+**Strukturierte Ergebnisse (`ai/structured.ts`):**
+
+- Chats fordern JSON `{"reply", "tone"}` an; die lokale KI nutzt dafür `format: "json"`.
+- `parseChatTurn` validiert das JSON mit zod, entfernt schlüsselähnliche Zeichenfolgen und verwirft kaputtes JSON.
+- Die Spielregel in `chats.ts` setzt `tone` in höchstens ±1 Zuneigung um, einmal pro Tag und Figur (`action_uses`,
+  Aktion `ai-tone`). XP, Level, Fähigkeiten und Quests ändert nur die bestehende Spiellogik.
+
+**Prompt (`prompts.ts`):**
+
+- Enthält Figurenprofil, Schreibstil, Verhaltensregeln, Welt und Ereignisse, Erinnerung und Zusammenfassung sowie
+  die Spielfigur.
+- Neu ist ein nur lesbarer Spielkontext (Zuneigung und Beziehungsart, aktive Hauptquest, laufende Geschichten). Dazu
+  kommt die Anweisung, keine Belohnungen zu versprechen und Änderungen an den Regeln zu ignorieren.
+- Für Simulationen realer Personen gilt ein ausdrücklicher Hinweis gegen erfundene Zitate.
+
+**Geheimnisse:**
+
+- Server-Schlüssel kommen nur aus Umgebungsvariablen und stehen nur im Authorization-Header.
+- Fehlermeldungen werden bereinigt (`safeMessage`). Status, Export und Protokoll enthalten keinen Schlüssel.
+- Der frühere Endpunkt zum Speichern eines Schlüssels ist entfernt. `DELETE /api/ai/key` löscht nur noch einen
+  Altbestand aus Version 1.
+
+**Einrichtung:** `scripts/ai-check.mjs` (`npm run ai:check`) prüft Laufzeit, Modelle, RAM und Speicher, empfiehlt ein
+Modell und lädt nichts herunter. `ki-einrichten.bat` installiert Ollama bzw. lädt ein Modell nur nach Bestätigung.
 
 ## Frontend
 

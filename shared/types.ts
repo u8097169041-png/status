@@ -318,6 +318,8 @@ export interface ChatMessageDto {
   role: 'user' | 'assistant';
   content: string;
   source: 'user' | 'ai' | 'demo';
+  /** Herkunft einer Antwort: lokale KI, Server-KI oder simulierte KI (regelbasiert). */
+  provider: AiProviderId | null;
   model: string | null;
   createdAt: string;
 }
@@ -410,14 +412,18 @@ export interface NotificationDto {
   createdAt: string;
 }
 
+/** auto = lokale KI bevorzugt; server = zentrale Server-KI (nur mit Freigabe); fallback = nur simulierte KI. */
+export type AiMode = 'auto' | 'server' | 'fallback';
+export type AiProviderId = 'local' | 'server' | 'fallback';
+
 export interface AiSettings {
-  enabled: boolean;
-  chatModel: string;
-  worldModel: string;
-  fallbackModels: string[];
+  mode: AiMode;
+  /** Gewähltes lokales Modell (leer = automatisch aus den installierten Modellen). */
+  localModel: string;
+  /** Ausdrückliche Freigabe der Server-KI durch den Nutzer (kann Kosten verursachen). */
+  serverConsent: boolean;
   maxTokens: number;
   temperature: number;
-  timeoutSeconds: number;
   dailyRequestLimit: number;
   dailyBudgetUsd: number;
   monthlyBudgetUsd: number;
@@ -464,37 +470,82 @@ export interface AiUsageSummary {
   costKnown: boolean;
 }
 
+export type AiFallbackReason =
+  | 'mode-fallback'
+  | 'local-disabled'
+  | 'local-unchecked'
+  | 'local-unreachable'
+  | 'local-no-model'
+  | 'local-model-missing'
+  | 'server-not-configured'
+  | 'server-no-consent'
+  | 'server-blocked'
+  | 'server-limit';
+
+export interface LocalAiModelDto {
+  name: string;
+  sizeGb: number | null;
+  parameterSize: string | null;
+  family: string | null;
+}
+
 export interface AiStatusDto {
-  keyConfigured: boolean;
-  keySource: 'env' | 'local' | null;
-  keyHint: string | null;
-  enabled: boolean;
-  chatModel: string;
-  worldModel: string;
-  mode: 'ai' | 'demo';
-  demoReason: 'no-key' | 'no-model' | 'disabled' | null;
+  mode: AiMode;
+  /** Provider, der die nächste Chat-Antwort erzeugt. */
+  active: AiProviderId;
+  activeModel: string | null;
+  /** Warum nicht die bevorzugte echte KI verwendet wird (null = echte KI aktiv). */
+  reason: AiFallbackReason | null;
+  local: {
+    enabledByConfig: boolean;
+    baseUrl: string;
+    /** Adresse liegt nicht auf diesem Rechner (Daten verlassen dann den Computer). */
+    remote: boolean;
+    reachable: boolean | null;
+    version: string | null;
+    models: LocalAiModelDto[];
+    model: string | null;
+    modelSource: 'env' | 'settings' | 'auto' | null;
+    checkedAt: string | null;
+    error: string | null;
+    timeoutSeconds: number;
+  };
+  server: {
+    /** Vom Betreiber in .env aktiviert und vollständig (Zugang, Modell) konfiguriert. */
+    configured: boolean;
+    enabledByConfig: boolean;
+    missing: ('key' | 'model')[];
+    consent: boolean;
+    host: string | null;
+    model: string | null;
+    pricesKnown: boolean;
+    blockedUntil: string | null;
+    limits: {
+      maxRequestsPerDay: number;
+      maxRequestsPerMinute: number;
+      maxTokens: number;
+      timeoutSeconds: number;
+      dailyBudgetUsd: number;
+      monthlyBudgetUsd: number;
+    };
+  };
   today: AiUsageSummary;
   month: AiUsageSummary;
+  localToday: number;
   limits: {
     dailyRequestsReached: boolean;
     dailyBudgetReached: boolean;
     monthlyBudgetReached: boolean;
   };
-  lastError: { code: string; message: string; at: string } | null;
-}
-
-export interface AiModelDto {
-  id: string;
-  name: string;
-  contextLength: number | null;
-  promptPrice: number | null; // USD pro Token
-  completionPrice: number | null;
-  isFree: boolean;
+  /** Ein früher in der App gespeicherter API-Schlüssel liegt noch in der Datenbank (wird nicht mehr verwendet). */
+  legacyKeyStored: boolean;
+  lastError: { code: string; message: string; at: string; provider: AiProviderId } | null;
 }
 
 export interface AiUsageEntryDto {
   id: number;
   createdAt: string;
+  provider: AiProviderId;
   purpose: string;
   model: string;
   promptTokens: number;
@@ -508,6 +559,7 @@ export interface AiUsageEntryDto {
 
 export interface AiTestResult {
   ok: boolean;
+  provider: AiProviderId;
   model: string | null;
   reply?: string;
   error?: { code: string; message: string };

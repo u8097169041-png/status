@@ -157,7 +157,11 @@ function PromptPreviewModal({ characterId, onClose }: { characterId: string; onC
       {preview.data && (
         <>
           <p className="small muted">
-            {preview.data.mode === 'ai' ? t('chats.previewAi', { model: preview.data.model ?? '?' }) : t('chats.previewDemo')}
+            {preview.data.provider === 'local'
+              ? t('chats.previewLocal', { model: preview.data.model ?? '?' })
+              : preview.data.provider === 'server'
+                ? t('chats.previewServer', { model: preview.data.model ?? '?' })
+                : t('chats.previewDemo')}
           </p>
           {preview.data.messages.map((m, i) => (
             <div key={i} className="stack-sm">
@@ -269,7 +273,15 @@ function Conversation({ characterId }: { characterId: string }) {
               <div className="bubble">{m.content}</div>
               <span className="message-meta">
                 {formatTime(m.createdAt, locale)}
-                {m.role === 'assistant' && (m.source === 'ai' ? ` · ${t('chats.aiReply', { model: m.model ?? '?' })}` : ` · ${t('chats.demoReply')}`)}
+                {m.role === 'assistant' &&
+                  ` · ${
+                    m.provider === 'local'
+                      ? t('chats.localReply', { model: m.model ?? '?' })
+                      : m.provider === 'server' || (m.source === 'ai' && !m.provider)
+                        ? t('chats.aiReply', { model: m.model ?? '?' })
+                        : t('chats.demoReply')
+                  }`}
+                {m.role === 'assistant' && c.isRealPersonSim && ` · ${t('chats.simNotice')}`}
               </span>
             </div>
           </div>

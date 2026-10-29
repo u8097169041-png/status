@@ -29,3 +29,8 @@ coverage/
 Thumbs.db
 *.log
 npm-debug.log*
+
+# Schlüssel- und Zertifikatsdateien
+*.pem
+*.key
+secrets/

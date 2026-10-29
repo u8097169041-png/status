@@ -1,31 +1,38 @@
-import { Bot, Cpu } from 'lucide-react';
+import { Cloud, Cpu, Sparkles } from 'lucide-react';
 import { Link } from 'react-router';
-import type { AiStatusDto } from '../../../shared/types';
-import { useI18n } from '../i18n';
+import type { AiProviderId, AiStatusDto } from '../../../shared/types';
+import { useI18n, type TKey } from '../i18n';
 
+const ICONS: Record<AiProviderId, typeof Cpu> = { local: Cpu, server: Cloud, fallback: Sparkles };
+
+/** Zeigt, welche KI gerade antwortet: lokale KI, Server-KI oder simulierte KI. */
 export function AiModeBadge({ status, compact }: { status: AiStatusDto | undefined; compact?: boolean }) {
-  const { t } = useI18n();
+  const { t, td } = useI18n();
   if (!status) return null;
-  const isAi = status.mode === 'ai';
-  const reason =
-    status.demoReason === 'no-key' ? t('mode.noKey') : status.demoReason === 'no-model' ? t('mode.noModel') : status.demoReason === 'disabled' ? t('mode.disabled') : '';
-  const hint = isAi ? t('mode.aiHint', { model: status.chatModel }) : `${t('mode.demoHint')} ${reason}`;
+  const active = status.active;
+  const Icon = ICONS[active];
+  const title = t(`aiProviders.${active}` as TKey);
+  const hint =
+    active === 'fallback'
+      ? `${t('mode.fallbackHint')} ${status.reason ? td(`aiReasons.${status.reason}`, '') : ''}`.trim()
+      : t(active === 'local' ? 'mode.localHint' : 'mode.serverHint', { model: status.activeModel ?? '' });
+  const kind = active === 'fallback' ? 'badge-demo' : 'badge-ai';
   if (compact) {
     return (
-      <Link to="/settings#ai" className={`badge ${isAi ? 'badge-ai' : 'badge-demo'}`} title={hint}>
-        {isAi ? <Bot aria-hidden /> : <Cpu aria-hidden />}
-        <span className="mode-label">{isAi ? t('mode.ai') : t('mode.demo')}</span>
+      <Link to="/settings#ai" className={`badge ${kind}`} title={hint}>
+        <Icon aria-hidden />
+        <span className="mode-label">{title}</span>
       </Link>
     );
   }
   return (
-    <div className={`mode-card ${isAi ? 'is-ai' : 'is-demo'}`}>
+    <div className={`mode-card ${active === 'fallback' ? 'is-demo' : 'is-ai'}`}>
       <div className="row">
-        {isAi ? <Bot aria-hidden /> : <Cpu aria-hidden />}
-        <strong>{isAi ? t('mode.ai') : t('mode.demo')}</strong>
+        <Icon aria-hidden />
+        <strong>{title}</strong>
       </div>
       <p>{hint}</p>
-      {!isAi && (
+      {active === 'fallback' && (
         <Link to="/settings#ai" className="small">
           {t('mode.configure')} →
         </Link>

@@ -1,28 +1,10 @@
-import {
-  Activity,
-  Bot,
-  Brain,
-  CheckCircle2,
-  Download,
-  ExternalLink,
-  Globe,
-  Info,
-  KeyRound,
-  Plus,
-  RefreshCw,
-  Search,
-  Shield,
-  Trash2,
-  X,
-  XCircle,
-} from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Activity, Bot, Brain, CheckCircle2, Cloud, Cpu, Download, Globe, Info, RefreshCw, Shield, Trash2, XCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { LIMITS, type Lang } from '../../../shared/constants';
-import type { AiModelDto, AppSettings, DeepPartial } from '../../../shared/types';
+import type { AiMode, AppSettings, DeepPartial } from '../../../shared/types';
 import {
   useAiActions,
-  useAiModels,
   useAiStatus,
   useAiUsage,
   useBootstrap,
@@ -33,122 +15,29 @@ import {
 import { AiModeBadge } from '../components/AiModeBadge';
 import { useErrorToast } from '../components/progress/useProgressFeedback';
 import { NumberField, SelectField, Toggle } from '../components/ui/Form';
-import { ConfirmDialog, Modal } from '../components/ui/Modal';
+import { ConfirmDialog } from '../components/ui/Modal';
 import { Loading } from '../components/ui/States';
 import { useToast } from '../components/ui/Toast';
-import { useI18n } from '../i18n';
-import { formatDateTime, formatNumber, formatUsd, perMillion } from '../lib/format';
+import { useI18n, type TKey } from '../i18n';
+import { formatDateTime, formatNumber, formatUsd } from '../lib/format';
 
 const LANGUAGE_NAMES: Record<Lang, string> = { de: 'Deutsch', en: 'English' };
 
-function ModelPicker({ title, onSelect, onClose }: { title: string; onSelect: (id: string) => void; onClose: () => void }) {
-  const { t, locale } = useI18n();
-  const models = useAiModels(true);
-  const [search, setSearch] = useState('');
-  const [freeOnly, setFreeOnly] = useState(true);
-  const [manual, setManual] = useState('');
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return (models.data ?? [])
-      .filter((m) => (!freeOnly || m.isFree) && (!q || `${m.id} ${m.name}`.toLowerCase().includes(q)))
-      .slice(0, 150);
-  }, [models.data, search, freeOnly]);
-  const price = (m: AiModelDto) =>
-    m.isFree
-      ? t('aiSettings.free')
-      : m.promptPrice === null || m.completionPrice === null
-        ? t('aiSettings.priceUnknown')
-        : t('aiSettings.price', { prompt: perMillion(m.promptPrice, locale), completion: perMillion(m.completionPrice, locale) });
+const MODES: AiMode[] = ['auto', 'server', 'fallback'];
 
+/** Zeile der Diagnose mit Ampelsymbol. */
+function DiagRow({ ok, label, value, hint }: { ok: boolean | null; label: string; value: string; hint?: string | null }) {
+  const Icon = ok === null ? Info : ok ? CheckCircle2 : XCircle;
   return (
-    <Modal title={title} onClose={onClose} wide>
-      <p className="xsmall muted">{t('aiSettings.modelsHint')}</p>
-      <div className="row wrap">
-        <div className="search-wrap grow">
-          <Search aria-hidden />
-          <input
-            type="search"
-            className="input"
-            placeholder={t('aiSettings.modelSearch')}
-            aria-label={t('aiSettings.modelSearch')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            data-autofocus
-          />
-        </div>
-        <button type="button" className="chip" aria-pressed={freeOnly} onClick={() => setFreeOnly((v) => !v)}>
-          {t('aiSettings.freeOnly')}
-        </button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void models.refetch()} disabled={models.isFetching}>
-          <RefreshCw aria-hidden /> {t('aiSettings.reloadModels')}
-        </button>
+    <li className={`diag-row ${ok === null ? 'neutral' : ok ? 'ok' : 'bad'}`}>
+      <Icon aria-hidden className="icon-sm" />
+      <div className="grow min-w-0">
+        <span className="small">
+          <strong>{label}:</strong> {value}
+        </span>
+        {hint && <span className="xsmall muted block">{hint}</span>}
       </div>
-      {models.isPending && <Loading label={t('aiSettings.modelsLoading')} />}
-      {models.isError && (
-        <div className="notice notice-danger">
-          <XCircle aria-hidden />
-          <span>{t('aiSettings.modelsError', { message: (models.error as Error).message })}</span>
-        </div>
-      )}
-      {models.data && (
-        <ul className="model-list">
-          {filtered.map((m) => (
-            <li key={m.id}>
-              <button type="button" className="model-row" onClick={() => onSelect(m.id)}>
-                <span className="grow min-w-0">
-                  <strong className="small block truncate">{m.name}</strong>
-                  <span className="xsmall faint block truncate">{m.id}</span>
-                </span>
-                <span className="xsmall muted model-price">
-                  <span className={m.isFree ? 'success-text' : ''}>{price(m)}</span>
-                  {m.contextLength && <span className="block faint">{t('aiSettings.contextLength', { count: formatNumber(m.contextLength, locale) })}</span>}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (manual.trim()) onSelect(manual.trim());
-        }}
-      >
-        <input
-          className="input"
-          value={manual}
-          maxLength={LIMITS.modelId}
-          placeholder="provider/model-name"
-          aria-label={t('aiSettings.manualModel')}
-          onChange={(e) => setManual(e.target.value)}
-        />
-        <button type="submit" className="btn btn-secondary" disabled={!manual.trim()}>
-          {t('common.confirm')}
-        </button>
-      </form>
-      <span className="xsmall faint">{t('aiSettings.manualModel')}</span>
-    </Modal>
-  );
-}
-
-function ModelRow({ label, value, placeholder, onPick, onClear }: { label: string; value: string; placeholder: string; onPick: () => void; onClear?: () => void }) {
-  const { t } = useI18n();
-  return (
-    <div className="model-setting">
-      <span className="field-label">{label}</span>
-      <div className="row">
-        <code className="model-id grow truncate">{value || placeholder}</code>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={onPick} aria-label={`${t('aiSettings.chooseModel')}: ${label}`}>
-          {t('aiSettings.chooseModel')}
-        </button>
-        {onClear && value && (
-          <button type="button" className="icon-btn" onClick={onClear} aria-label={`${t('common.remove')}: ${label}`}>
-            <X />
-          </button>
-        )}
-      </div>
-    </div>
+    </li>
   );
 }
 
@@ -159,19 +48,30 @@ function AiSection({ settings, save }: { settings: AppSettings; save: (patch: De
   const ai = useAiActions();
   const showError = useErrorToast();
   const { push } = useToast();
-  const [key, setKey] = useState('');
-  const [picker, setPicker] = useState<null | 'chat' | 'world' | 'fallback'>(null);
   const [showLog, setShowLog] = useState(false);
   const s = settings.ai;
-
-  const pick = (id: string) => {
-    if (picker === 'chat') save({ ai: { chatModel: id } });
-    if (picker === 'world') save({ ai: { worldModel: id } });
-    if (picker === 'fallback') save({ ai: { fallbackModels: [...s.fallbackModels.filter((m) => m !== id), id].slice(0, LIMITS.fallbackModels) } });
-    setPicker(null);
-  };
-
   const test = ai.test.data;
+  const local = status?.local;
+  const server = status?.server;
+
+  const localValue = !local
+    ? '…'
+    : !local.enabledByConfig
+      ? t('aiSettings.localDisabled')
+      : local.reachable === null
+        ? t('aiSettings.localUnchecked')
+        : local.reachable
+          ? t('aiSettings.localReachable', { version: local.version ?? '?' })
+          : t('aiSettings.localUnreachable', { url: local.baseUrl });
+  const modelValue = !local?.model
+    ? t('aiSettings.localNoModel')
+    : `${local.model} · ${t(`aiSettings.modelSource_${local.modelSource ?? 'auto'}` as TKey)}`;
+  const serverValue = !server
+    ? '…'
+    : !server.configured
+      ? t('aiSettings.serverNotConfigured')
+      : `${server.model} @ ${server.host}${server.consent ? '' : ` · ${t('aiSettings.serverNoConsent')}`}`;
+
   return (
     <section id="ai" className="settings-section card stack">
       <h2 className="row">
@@ -179,135 +79,188 @@ function AiSection({ settings, save }: { settings: AppSettings; save: (patch: De
       </h2>
       <AiModeBadge status={status} />
 
+      <fieldset className="goal-picker">
+        <legend className="card-heading">{t('aiSettings.modeTitle')}</legend>
+        <div className="ai-mode-grid" role="radiogroup" aria-label={t('aiSettings.modeTitle')}>
+          {MODES.map((m) => {
+            const disabled = m === 'server' && !server?.configured;
+            return (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={s.mode === m}
+                disabled={disabled}
+                className={`goal-option ${s.mode === m ? 'selected' : ''}`}
+                onClick={() => save({ ai: { mode: m } })}
+              >
+                <strong className="small">{t(`aiSettings.mode_${m}` as TKey)}</strong>
+                <span className="xsmall muted">{disabled ? t('aiSettings.serverNotConfiguredShort') : t(`aiSettings.mode_${m}Hint` as TKey)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
       <div className="stack-sm">
         <h3 className="card-heading row">
-          <KeyRound aria-hidden className="icon-xs" /> {t('aiSettings.key')}
+          <Activity aria-hidden className="icon-xs" /> {t('aiSettings.diagnosis')}
         </h3>
-        {status?.keySource === 'env' && <p className="small">{t('aiSettings.keyFromEnv', { hint: status.keyHint ?? '' })}</p>}
-        {status?.keySource === 'local' && (
-          <div className="row-between">
-            <p className="small">{t('aiSettings.keyStored', { hint: status.keyHint ?? '' })}</p>
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => ai.removeKey.mutate(undefined, { onSuccess: () => push('success', t('aiSettings.keyRemoved')), onError: showError })}
-            >
-              <Trash2 aria-hidden /> {t('aiSettings.keyRemove')}
-            </button>
-          </div>
-        )}
-        {!status?.keyConfigured && <p className="small muted">{t('aiSettings.keyNone')}</p>}
-        {status?.keySource !== 'env' && (
-          <form
-            className="row"
-            onSubmit={(e) => {
-              e.preventDefault();
-              ai.saveKey.mutate(key.trim(), {
-                onSuccess: () => {
-                  setKey('');
-                  push('success', t('aiSettings.keySaved'));
-                },
-                onError: showError,
-              });
-            }}
-          >
-            <input
-              type="password"
-              className="input"
-              autoComplete="off"
-              value={key}
-              maxLength={LIMITS.apiKeyLength}
-              placeholder={t('aiSettings.keyPlaceholder')}
-              aria-label={t('aiSettings.key')}
-              onChange={(e) => setKey(e.target.value)}
+        {status && local && server && (
+          <ul className="diag-list">
+            <DiagRow
+              ok={status.active !== 'fallback'}
+              label={t('aiSettings.activeNow')}
+              value={`${t(`aiProviders.${status.active}` as TKey)}${status.activeModel ? ` · ${status.activeModel}` : ''}`}
+              hint={status.reason ? td(`aiReasons.${status.reason}`, status.reason) : null}
             />
-            <button type="submit" className="btn btn-primary" disabled={key.trim().length < 10 || ai.saveKey.isPending}>
-              {t('aiSettings.keySave')}
-            </button>
-          </form>
+            <DiagRow
+              ok={local.enabledByConfig ? local.reachable : null}
+              label={t('aiSettings.localRuntime')}
+              value={localValue}
+              hint={local.remote ? t('aiSettings.localRemote') : null}
+            />
+            {local.reachable && (
+              <DiagRow
+                ok={Boolean(local.model) && status.reason !== 'local-model-missing'}
+                label={t('aiSettings.localModel')}
+                value={modelValue}
+                hint={local.models.length === 0 ? t('aiSettings.localPullHint') : null}
+              />
+            )}
+            <DiagRow
+              ok={server.configured ? server.consent && !server.blockedUntil : null}
+              label={t('aiSettings.serverAi')}
+              value={serverValue}
+              hint={
+                server.blockedUntil
+                  ? t('aiSettings.serverBlocked', { time: formatDateTime(server.blockedUntil, locale) })
+                  : server.configured
+                    ? null
+                    : t('aiSettings.serverSetupHint')
+              }
+            />
+          </ul>
         )}
-        <p className="xsmall faint">{t('aiSettings.keyNotice')}</p>
-        <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="small row">
-          {t('aiSettings.getKey')} <ExternalLink aria-hidden className="icon-xs" />
-        </a>
-      </div>
-
-      <Toggle label={t('aiSettings.enabled')} hint={t('aiSettings.enabledHint')} checked={s.enabled} onChange={(v) => save({ ai: { enabled: v } })} />
-
-      <div className="stack-sm">
-        <h3 className="card-heading">{t('aiSettings.models')}</h3>
-        <ModelRow label={t('aiSettings.chatModel')} value={s.chatModel} placeholder={t('aiSettings.noModel')} onPick={() => setPicker('chat')} onClear={() => save({ ai: { chatModel: '' } })} />
-        <ModelRow label={t('aiSettings.worldModel')} value={s.worldModel} placeholder={t('aiSettings.sameAsChat')} onPick={() => setPicker('world')} onClear={() => save({ ai: { worldModel: '' } })} />
-        <div className="model-setting">
-          <span className="field-label">{t('aiSettings.fallbacks')}</span>
-          <span className="field-hint">{t('aiSettings.fallbacksHint')}</span>
-          {s.fallbackModels.map((m) => (
-            <div key={m} className="row">
-              <code className="model-id grow truncate">{m}</code>
-              <button type="button" className="icon-btn" aria-label={`${t('common.remove')}: ${m}`} onClick={() => save({ ai: { fallbackModels: s.fallbackModels.filter((x) => x !== m) } })}>
-                <X />
-              </button>
-            </div>
-          ))}
-          {s.fallbackModels.length < LIMITS.fallbackModels && (
-            <button type="button" className="btn btn-ghost btn-sm align-start" onClick={() => setPicker('fallback')}>
-              <Plus aria-hidden /> {t('aiSettings.addFallback')}
+        <div className="row wrap">
+          <button type="button" className="btn btn-secondary btn-sm" disabled={ai.recheck.isPending} onClick={() => ai.recheck.mutate(undefined, { onError: showError })}>
+            {ai.recheck.isPending ? <span className="spinner" aria-hidden /> : <RefreshCw aria-hidden />} {t('aiSettings.recheck')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={ai.test.isPending || !local?.reachable || !local.model}
+            onClick={() => ai.test.mutate('local', { onError: showError })}
+          >
+            <Cpu aria-hidden /> {t('aiSettings.testLocal')}
+          </button>
+          {server?.configured && (
+            <button type="button" className="btn btn-ghost btn-sm" disabled={ai.test.isPending} onClick={() => ai.test.mutate('server', { onError: showError })}>
+              <Cloud aria-hidden /> {t('aiSettings.testServer')}
             </button>
           )}
         </div>
-      </div>
-
-      <div className="row wrap">
-        <button type="button" className="btn btn-secondary" onClick={() => ai.test.mutate(undefined, { onError: showError })} disabled={ai.test.isPending || !status?.keyConfigured}>
-          {ai.test.isPending ? <span className="spinner" aria-hidden /> : <Activity aria-hidden />}
-          {ai.test.isPending ? t('aiSettings.testing') : t('aiSettings.test')}
-        </button>
+        {ai.test.isPending && <p className="small muted">{t('aiSettings.testing')}</p>}
         {test &&
+          !ai.test.isPending &&
           (test.ok ? (
-            <span className="notice notice-success small">
+            <p className="notice notice-success small" role="status">
               <CheckCircle2 aria-hidden />
-              <span>{test.model ? t('aiSettings.testOk', { model: test.model, ms: test.durationMs }) : t('aiSettings.testKeyOk')}</span>
-            </span>
+              <span>{t('aiSettings.testOk', { provider: t(`aiProviders.${test.provider}` as TKey), model: test.model ?? '', ms: test.durationMs })}</span>
+            </p>
           ) : (
-            <span className="notice notice-danger small">
+            <p className="notice notice-danger small" role="status">
               <XCircle aria-hidden />
               <span>
                 {t('aiSettings.testFailed', {
-                  message: `${td(`aiErrors.${test.error?.code ?? ''}`, test.error?.code ?? '')} – ${test.error?.message ?? ''}`,
+                  provider: t(`aiProviders.${test.provider}` as TKey),
+                  message: td(`aiReasons.${test.error?.code ?? ''}`, td(`aiErrors.${test.error?.code ?? ''}`, test.error?.code ?? '')),
                 })}
               </span>
-            </span>
+            </p>
           ))}
+        {status?.lastError && !test && (
+          <p className="xsmall faint">
+            {t('aiSettings.lastError', {
+              provider: t(`aiProviders.${status.lastError.provider}` as TKey),
+              message: `${td(`aiErrors.${status.lastError.code}`, status.lastError.code)} (${formatDateTime(status.lastError.at, locale)})`,
+            })}
+          </p>
+        )}
       </div>
-      {status?.lastError && !test && (
-        <p className="xsmall danger-text">
-          {t('aiSettings.lastError', { message: `${td(`aiErrors.${status.lastError.code}`, status.lastError.code)} (${formatDateTime(status.lastError.at, locale)})` })}
-        </p>
+
+      {local && local.models.length > 0 && (
+        <div className="stack-sm">
+          <SelectField
+            label={t('aiSettings.localModelSelect')}
+            value={local.modelSource === 'env' ? (local.model ?? '') : s.localModel}
+            onChange={(v) => save({ ai: { localModel: v } })}
+            options={[
+              { value: '', label: t('aiSettings.localModelAuto') },
+              ...local.models.map((m) => ({
+                value: m.name,
+                label: `${m.name}${m.parameterSize ? ` · ${m.parameterSize}` : ''}${m.sizeGb ? ` · ${formatNumber(m.sizeGb, locale)} GB` : ''}`,
+              })),
+            ]}
+            hint={local.modelSource === 'env' ? t('aiSettings.localModelEnv') : t('aiSettings.localModelHint')}
+          />
+        </div>
+      )}
+
+      {server?.configured && (
+        <div className="stack-sm server-consent">
+          <Toggle
+            label={t('aiSettings.serverConsent')}
+            hint={t('aiSettings.serverConsentHint', {
+              requests: server.limits.maxRequestsPerDay,
+              daily: formatUsd(server.limits.dailyBudgetUsd, locale),
+              monthly: formatUsd(server.limits.monthlyBudgetUsd, locale),
+            })}
+            checked={s.serverConsent}
+            onChange={(v) => save({ ai: { serverConsent: v } })}
+          />
+        </div>
+      )}
+
+      {status?.legacyKeyStored && (
+        <div className="notice notice-warning small row-between wrap">
+          <span>{t('aiSettings.legacyKey')}</span>
+          <button
+            type="button"
+            className="btn btn-danger btn-sm"
+            onClick={() => ai.removeLegacyKey.mutate(undefined, { onSuccess: () => push('success', t('aiSettings.legacyKeyRemoved')), onError: showError })}
+          >
+            <Trash2 aria-hidden /> {t('aiSettings.legacyKeyRemove')}
+          </button>
+        </div>
       )}
 
       <div className="stack-sm">
         <h3 className="card-heading">{t('aiSettings.generation')}</h3>
         <div className="form-grid two">
           <NumberField label={t('aiSettings.maxTokens')} value={s.maxTokens} min={50} max={4000} onChange={(v) => save({ ai: { maxTokens: v } })} hint={t('aiSettings.maxTokensHint')} />
-          <NumberField label={t('aiSettings.timeout')} value={s.timeoutSeconds} min={5} max={120} onChange={(v) => save({ ai: { timeoutSeconds: v } })} />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="temperature">
-            {t('aiSettings.temperature')}: {s.temperature.toFixed(1)}
-          </label>
-          <input id="temperature" type="range" min={0} max={1.5} step={0.1} value={s.temperature} onChange={(e) => save({ ai: { temperature: Number(e.target.value) } })} />
+          <div className="field">
+            <label className="field-label" htmlFor="temperature">
+              {t('aiSettings.temperature')}: {s.temperature.toFixed(1)}
+            </label>
+            <input id="temperature" type="range" min={0} max={1.5} step={0.1} value={s.temperature} onChange={(e) => save({ ai: { temperature: Number(e.target.value) } })} />
+          </div>
         </div>
       </div>
 
       <div className="stack-sm">
         <h3 className="card-heading">{t('aiSettings.limits')}</h3>
         <div className="form-grid two">
-          <NumberField label={t('aiSettings.dailyRequests')} value={s.dailyRequestLimit} min={0} max={10000} onChange={(v) => save({ ai: { dailyRequestLimit: v } })} />
           <NumberField label={t('aiSettings.worldDailyLimit')} value={s.worldDailyLimit} min={0} max={1000} onChange={(v) => save({ ai: { worldDailyLimit: v } })} />
-          <NumberField label={t('aiSettings.dailyBudget')} value={s.dailyBudgetUsd} min={0} max={1000} step={0.01} onChange={(v) => save({ ai: { dailyBudgetUsd: v } })} />
-          <NumberField label={t('aiSettings.monthlyBudget')} value={s.monthlyBudgetUsd} min={0} max={10000} step={0.01} onChange={(v) => save({ ai: { monthlyBudgetUsd: v } })} />
+          {server?.configured && (
+            <>
+              <NumberField label={t('aiSettings.dailyRequests')} value={s.dailyRequestLimit} min={0} max={10000} onChange={(v) => save({ ai: { dailyRequestLimit: v } })} />
+              <NumberField label={t('aiSettings.dailyBudget')} value={s.dailyBudgetUsd} min={0} max={1000} step={0.01} onChange={(v) => save({ ai: { dailyBudgetUsd: v } })} />
+              <NumberField label={t('aiSettings.monthlyBudget')} value={s.monthlyBudgetUsd} min={0} max={10000} step={0.01} onChange={(v) => save({ ai: { monthlyBudgetUsd: v } })} />
+            </>
+          )}
         </div>
-        <p className="xsmall faint">{t('aiSettings.budgetHint')}</p>
+        <p className="xsmall faint">{server?.configured ? t('aiSettings.budgetHint') : t('aiSettings.limitsLocalHint')}</p>
       </div>
 
       <div className="stack-sm">
@@ -321,6 +274,19 @@ function AiSection({ settings, save }: { settings: AppSettings; save: (patch: De
         <h3 className="card-heading">{t('aiSettings.usage')}</h3>
         {status && (
           <div className="usage-grid">
+            <div className="usage-card">
+              <strong className="small">{t('aiSettings.usageLocal')}</strong>
+              <dl>
+                <div>
+                  <dt>{t('aiSettings.requests')}</dt>
+                  <dd>{status.localToday}</dd>
+                </div>
+                <div>
+                  <dt>{t('aiSettings.cost')}</dt>
+                  <dd>{formatUsd(0, locale)}</dd>
+                </div>
+              </dl>
+            </div>
             {(
               [
                 ['usageToday', status.today],
@@ -369,6 +335,7 @@ function AiSection({ settings, save }: { settings: AppSettings; save: (patch: De
                 <thead>
                   <tr>
                     <th>{t('aiSettings.colTime')}</th>
+                    <th>{t('aiSettings.colProvider')}</th>
                     <th>{t('aiSettings.purposes')}</th>
                     <th>{t('aiSettings.colModel')}</th>
                     <th>{t('aiSettings.tokens')}</th>
@@ -380,6 +347,7 @@ function AiSection({ settings, save }: { settings: AppSettings; save: (patch: De
                   {usage.data.entries.map((e) => (
                     <tr key={e.id}>
                       <td>{formatDateTime(e.createdAt, locale)}</td>
+                      <td>{t(`aiProviders.${e.provider}` as TKey)}</td>
                       <td>{td(`aiPurposes.${e.purpose}`, e.purpose)}</td>
                       <td className="truncate max-w">{e.model}</td>
                       <td>{e.promptTokens + e.completionTokens}</td>
@@ -397,14 +365,6 @@ function AiSection({ settings, save }: { settings: AppSettings; save: (patch: De
             <p className="xsmall muted">{t('aiSettings.logEmpty')}</p>
           ))}
       </div>
-
-      {picker && (
-        <ModelPicker
-          title={picker === 'chat' ? t('aiSettings.chatModel') : picker === 'world' ? t('aiSettings.worldModel') : t('aiSettings.addFallback')}
-          onSelect={pick}
-          onClose={() => setPicker(null)}
-        />
-      )}
     </section>
   );
 }

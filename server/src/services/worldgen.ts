@@ -126,6 +126,7 @@ async function generateAiDraft(
   const result = await ctx.ai.complete({
     purpose: 'generator',
     kind: 'world',
+    json: true,
     maxTokens: 1500,
     messages: [
       {

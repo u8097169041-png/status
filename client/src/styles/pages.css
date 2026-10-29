@@ -444,3 +444,15 @@ a.notification-row:hover { border-color: var(--border-strong); }
 
 .discover { gap: var(--space-6); }
 .world-page .with-rail { margin-top: 0; }
+
+/* KI-Einstellungen: Modus und Diagnose */
+.ai-mode-grid { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+.ai-mode-grid .goal-option:disabled { cursor: not-allowed; opacity: 0.75; }
+.diag-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.diag-row { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--surface-2); }
+.diag-row > svg { flex: none; margin-top: 2px; }
+.diag-row.ok > svg { color: var(--success); }
+.diag-row.bad > svg { color: var(--warning); }
+.diag-row.neutral > svg { color: var(--text-faint); }
+.diag-row strong { font-weight: 600; }
+.server-consent { padding: var(--space-3); border-radius: var(--radius); background: var(--warning-soft); }

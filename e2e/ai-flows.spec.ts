@@ -1,14 +1,16 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * KI-Pfad über die Oberfläche: Schlüssel, Modellwahl, Verbindungstest, KI-Chat und Verbrauch.
- * Die App spricht dabei mit einem lokalen OpenRouter-Nachbau (e2e/mock-openrouter.mjs).
+ * Hybrid-KI über die Oberfläche: lokale KI (Ollama-Nachbau), Server-KI nur nach Freigabe (OpenRouter-Nachbau)
+ * und simulierte KI. Läuft gegen eine eigene App-Instanz (Port 3197), damit die übrigen Tests ohne KI bleiben.
  */
-test.describe.serial('SocialVerse – KI-Anbindung (simulierter Anbieter)', () => {
+test.use({ baseURL: 'http://127.0.0.1:3197' });
+
+test.describe.serial('SocialVerse – Hybrid-KI (simulierte Anbieter)', () => {
   test.beforeAll(async ({ request }) => {
     const headers = { 'X-SocialVerse': '1' };
     await request.patch('/api/settings', { headers, data: { onboardingDone: true } });
-    // Chats gibt es nur innerhalb einer Welt: Pip und Ines Valdés (beide Aurelia) brauchen eine Spielfigur dort.
+    // Chats gibt es nur innerhalb einer Welt: Pip (Aurelia) braucht eine Spielfigur dort.
     const pip = await (await request.get('/api/characters/c-pip')).json();
     await request.post(`/api/worlds/${pip.character.worldId}/join`, {
       headers,
@@ -16,65 +18,63 @@ test.describe.serial('SocialVerse – KI-Anbindung (simulierter Anbieter)', () =
     });
   });
 
-  test.afterAll(async ({ request }) => {
-    // Ausgangszustand für die übrigen Tests wiederherstellen.
-    await request.post('/api/data/reset', { headers: { 'X-SocialVerse': '1' }, data: { confirm: 'RESET', language: 'de' } });
-  });
-
-  test('Schlüssel speichern, Modell wählen, Verbindung testen und mit KI chatten', async ({ page }) => {
+  test('Lokale KI wird automatisch erkannt und beantwortet Chats kostenlos', async ({ page }) => {
     await page.goto('/settings#ai');
-    await page.getByLabel('OpenRouter-API-Schlüssel').fill('sk-or-v1-falscher-schluessel-000');
-    await page.getByRole('button', { name: 'Schlüssel speichern' }).click();
-    await page.getByRole('button', { name: 'Verbindung testen' }).click();
-    await expect(page.getByText(/Test fehlgeschlagen: Schlüssel ungültig/)).toBeVisible();
-
-    await page.getByRole('button', { name: 'Schlüssel entfernen' }).click();
-    await page.getByLabel('OpenRouter-API-Schlüssel').fill('sk-or-v1-e2e-mock-key-0123456789');
-    await page.getByRole('button', { name: 'Schlüssel speichern' }).click();
-    await page.getByRole('button', { name: 'Verbindung testen' }).click();
-    await expect(page.getByText('Schlüssel ist gültig. Wähle noch ein Chat-Modell.')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Modell wählen: Chat-Modell' }).click();
-    const picker = page.getByRole('dialog', { name: 'Chat-Modell' });
-    await expect(picker.getByText('Mock Free Chat')).toBeVisible();
-    await expect(picker.getByText('Mock Paid Chat')).toBeHidden();
-    await picker.getByRole('button', { name: 'Nur kostenlose' }).click();
-    await expect(picker.getByText('Mock Paid Chat')).toBeVisible();
-    await picker.getByRole('button', { name: /Mock Free Chat/ }).click();
-    await expect(page.locator('.model-id').first()).toHaveText('mock/free-chat');
-
-    await page.getByRole('button', { name: 'Verbindung testen' }).click();
-    await expect(page.getByText(/Verbindung erfolgreich: mock\/free-chat/)).toBeVisible();
-    await expect(page.locator('.sidebar-mode')).toContainText('KI aktiv');
+    const section = page.locator('section#ai');
+    await expect(section.locator('.diag-row').filter({ hasText: 'Lokale KI (Ollama)' })).toContainText('erreichbar (Version 0.9.0-mock)');
+    await expect(section.locator('.diag-row').filter({ hasText: 'Aktuell antwortet' })).toContainText('Lokale KI · gemma3:4b');
+    // Einbettungsmodelle werden nicht zur Auswahl angeboten.
+    const select = section.getByLabel('Lokales Modell');
+    await expect(select.locator('option')).toHaveCount(2);
+    await section.getByRole('button', { name: 'Lokale KI testen' }).click();
+    await expect(section.getByText(/Lokale KI: gemma3:4b antwortete in \d+ ms/)).toBeVisible();
+    await expect(page.getByLabel(/Schlüssel|API key/i)).toHaveCount(0);
 
     await page.goto('/chats/c-pip');
     const input = page.getByLabel('Nachricht an Pip Navarro …');
     await input.fill('Wie geht es der Station?');
     await input.press('Enter');
-    await expect(page.locator('.message.assistant .bubble')).toContainText('KI-Antwort (mock/free-chat)');
-    await expect(page.getByText('KI · mock/free-chat')).toBeVisible();
-
+    await expect(page.locator('.message.assistant .bubble')).toContainText('Lokale KI-Antwort: Du schreibst');
+    await expect(page.getByText('Lokale KI · gemma3:4b')).toBeVisible();
     await page.getByRole('button', { name: 'Was wird gesendet?' }).click();
     const preview = page.getByRole('dialog', { name: 'Inhalt der nächsten KI-Anfrage' });
-    await expect(preview.getByText(/gehen bei deiner nächsten Nachricht an OpenRouter/)).toBeVisible();
-    await expect(preview.locator('pre').first()).toContainText('Pip Navarro');
+    await expect(preview.getByText(/lokale KI \(gemma3:4b\) – sie verlassen diesen Computer nicht/)).toBeVisible();
+    await expect(preview.locator('pre').first()).toContainText('Game context (read-only)');
     await preview.getByRole('button', { name: 'Schließen' }).click();
+  });
+
+  test('Server-KI wird erst nach ausdrücklicher Freigabe genutzt', async ({ page }) => {
+    await page.goto('/settings#ai');
+    const section = page.locator('section#ai');
+    await section.getByRole('radio', { name: /Server-KI/ }).click();
+    // Ohne Freigabe springt die kostenlose lokale KI ein.
+    await expect(section.locator('.diag-row').filter({ hasText: 'Aktuell antwortet' })).toContainText('Lokale KI');
+    await expect(section.locator('.diag-row').filter({ hasText: 'Aktuell antwortet' })).toContainText('nicht freigegeben');
+    await section.getByRole('switch', { name: 'Server-KI erlauben' }).click();
+    await expect(section.locator('.diag-row').filter({ hasText: 'Aktuell antwortet' })).toContainText('Server-KI · mock/free-chat');
+
+    await page.goto('/chats/c-pip');
+    const input = page.getByLabel('Nachricht an Pip Navarro …');
+    await input.fill('Und jetzt über den Server?');
+    await input.press('Enter');
+    await expect(page.getByText('Server-KI · mock/free-chat')).toBeVisible();
 
     await page.goto('/settings#ai');
     await page.getByRole('button', { name: 'Protokoll der letzten Anfragen' }).click();
-    await expect(page.locator('.usage-table tbody tr').filter({ hasText: 'chat' }).first()).toBeVisible();
+    const rows = page.locator('.usage-table tbody tr');
+    await expect(rows.filter({ hasText: 'Server-KI' }).first()).toBeVisible();
+    await expect(rows.filter({ hasText: 'Lokale KI' }).first()).toBeVisible();
   });
 
-  test('Budget 0 blockiert kostenpflichtige Modelle mit verständlichem Hinweis', async ({ page, request }) => {
-    await request.patch('/api/settings', {
-      headers: { 'X-SocialVerse': '1' },
-      data: { ai: { chatModel: 'mock/paid-chat', dailyBudgetUsd: 0 } },
-    });
-    await page.goto('/chats/c-valdes');
-    const input = page.getByLabel('Nachricht an Ines Valdés …');
-    await input.fill('Statusbericht?');
+  test('Modus „Nur simulierte KI“ antwortet regelbasiert', async ({ page }) => {
+    await page.goto('/settings#ai');
+    const section = page.locator('section#ai');
+    await section.getByRole('radio', { name: /Nur simulierte KI/ }).click();
+    await expect(section.locator('.diag-row').filter({ hasText: 'Aktuell antwortet' })).toContainText('Simulierte KI');
+    await page.goto('/chats/c-pip');
+    const input = page.getByLabel('Nachricht an Pip Navarro …');
+    await input.fill('Bist du noch da?');
     await input.press('Enter');
-    await expect(page.getByText(/KI nicht verfügbar \(eigenes Limit erreicht\)/)).toBeVisible();
-    await expect(page.getByText('Demo-Antwort · lokal erzeugt, keine KI')).toBeVisible();
+    await expect(page.getByText('Simulierte Antwort · regelbasiert, keine KI').last()).toBeVisible();
   });
 });
