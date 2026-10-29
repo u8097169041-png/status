@@ -207,6 +207,21 @@ export interface WorldDraft extends WorldInput {
   notice?: string;
 }
 
+/** Weltentwurf als Hintergrundauftrag (lange lokale KI-Generierungen). */
+export interface GenerationJobDto {
+  id: string;
+  status: 'running' | 'done' | 'failed' | 'cancelled';
+  provider: AiProviderId;
+  model: string | null;
+  elapsedMs: number;
+  /** Bisher erzeugte Tokens und erwartete Gesamtzahl (für die Fortschrittsanzeige). */
+  tokens: number;
+  expectedTokens: number;
+  /** Ergebnis, sobald fertig: KI-Entwurf oder regelbasierter Entwurf mit Grund in `notice`. */
+  draft: WorldDraft | null;
+  notice: string | null;
+}
+
 export interface CharacterRef {
   id: string;
   name: string;
@@ -509,6 +524,11 @@ export interface AiStatusDto {
     checkedAt: string | null;
     error: string | null;
     timeoutSeconds: number;
+    longTimeoutSeconds: number;
+    loadTimeoutSeconds: number;
+    /** Zuletzt gemessene Geschwindigkeit (Tokens pro Sekunde). */
+    tokensPerSecond: number | null;
+    lastTimeout: { at: string; message: string } | null;
   };
   server: {
     /** Vom Betreiber in .env aktiviert und vollständig (Zugang, Modell) konfiguriert. */

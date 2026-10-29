@@ -1,16 +1,16 @@
-import { ArrowLeft, Dices, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { ArrowLeft, Dices, Info, Sparkles, Trash2, Wand2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ART_STYLES, GENRES, LIMITS, type Genre } from '../../../shared/constants';
-import type { CharacterInput, WorldDraft, WorldInput } from '../../../shared/types';
-import { useAiStatus, useWorld, useWorldActions, useWorldGenerator } from '../api/hooks';
+import type { CharacterInput, GenerationJobDto, WorldDraft, WorldInput } from '../../../shared/types';
+import { useAiStatus, useGenerationJob, useWorld, useWorldActions, useWorldGenerator } from '../api/hooks';
 import { useErrorToast, useProgressFeedback } from '../components/progress/useProgressFeedback';
 import { Avatar } from '../components/ui/Avatar';
 import { HuePicker, ListEditor, SelectField, TextArea, TextField, Toggle } from '../components/ui/Form';
 import { ErrorState, Loading } from '../components/ui/States';
 import { useToast } from '../components/ui/Toast';
 import { WorldArt } from '../components/ui/WorldArt';
-import { useI18n } from '../i18n';
+import { useI18n, type TKey } from '../i18n';
 
 type DraftCharacter = Omit<CharacterInput, 'worldId'>;
 
@@ -58,6 +58,80 @@ function WorldFields({ world, onChange }: { world: WorldInput; onChange: (w: Wor
   );
 }
 
+/** Fortschritt einer laufenden KI-Generierung mit Abbruchmöglichkeit. */
+function GenerationProgress({ job, onCancel, cancelling }: { job: GenerationJobDto | undefined; onCancel: () => void; cancelling: boolean }) {
+  const { t } = useI18n();
+  const seconds = Math.round((job?.elapsedMs ?? 0) / 1000);
+  const pct = job ? Math.min(95, Math.round((job.tokens / Math.max(1, job.expectedTokens)) * 100)) : 0;
+  return (
+    <div className="generation-progress card stack-sm" role="status" aria-live="polite">
+      <div className="row-between wrap">
+        <strong className="row">
+          <span className="spinner" aria-hidden />
+          {t('generator.progressTitle', { provider: t(`aiProviders.${job?.provider ?? 'local'}` as TKey) })}
+        </strong>
+        <span className="xsmall muted">
+          {job?.model ? `${job.model} · ` : ''}
+          {t('generator.progressElapsed', { seconds })}
+        </span>
+      </div>
+      <div className="progress" role="progressbar" aria-label={t('generator.generating')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+        <span style={{ width: `${pct}%` }} />
+      </div>
+      <span className="xsmall muted">
+        {job && job.tokens > 0 ? t('generator.progressTokens', { tokens: job.tokens, expected: job.expectedTokens }) : t('generator.progressLoading')}
+      </span>
+      <p className="xsmall faint">{t('generator.progressHint')}</p>
+      <button type="button" className="btn btn-secondary btn-sm align-start" onClick={onCancel} disabled={cancelling}>
+        <XCircle aria-hidden /> {t('generator.cancel')}
+      </button>
+    </div>
+  );
+}
+
+const STEPS_FOR: Record<string, TKey[]> = {
+  'local-unreachable': ['generator.stepStartOllama', 'generator.stepCheck', 'generator.stepRecheck'],
+  'local-no-model': ['generator.stepPull', 'generator.stepRecheck'],
+  'local-model-missing': ['generator.stepPull', 'generator.stepChooseModel'],
+  timeout: ['generator.stepSmallerModel', 'generator.stepFewerCharacters', 'generator.stepLongTimeout'],
+  busy: ['generator.stepRetry'],
+  truncated: ['generator.stepRetry', 'generator.stepFewerCharacters'],
+  invalid_response: ['generator.stepRetry', 'generator.stepSmallerModel'],
+};
+
+/** Warum ein regelbasierter Entwurf verwendet wurde – mit konkreten Lösungsschritten. */
+function GeneratorNotice({ notice }: { notice: string }) {
+  const { t, td } = useI18n();
+  if (notice === 'cancelled') {
+    return (
+      <p className="notice small">
+        <Info aria-hidden />
+        <span>{t('generator.cancelled')}</span>
+      </p>
+    );
+  }
+  const reason = notice.includes('-') ? td(`aiReasons.${notice}`, notice) : td(`aiErrors.${notice}`, notice);
+  const steps = STEPS_FOR[notice] ?? [];
+  return (
+    <div className="notice notice-warning stack-sm generator-notice">
+      <span>{t('generator.aiFailed', { reason })}</span>
+      {steps.length > 0 && (
+        <>
+          <strong className="small">{t('generator.fixSteps')}</strong>
+          <ol className="small">
+            {steps.map((k) => (
+              <li key={k}>{t(k)}</li>
+            ))}
+          </ol>
+        </>
+      )}
+      <Link to="/settings#ai" className="small">
+        {t('generator.openDiagnosis')} →
+      </Link>
+    </div>
+  );
+}
+
 function worldValid(w: WorldInput): boolean {
   return (
     w.name.trim().length > 0 &&
@@ -73,7 +147,7 @@ export function WorldCreatePage() {
   const { t, td } = useI18n();
   const navigate = useNavigate();
   const { data: ai } = useAiStatus();
-  const { generate, create } = useWorldGenerator();
+  const { start, cancel, create } = useWorldGenerator();
   const feedback = useProgressFeedback();
   const showError = useErrorToast();
   const { push } = useToast();
@@ -82,13 +156,43 @@ export function WorldCreatePage() {
   const [count, setCount] = useState(3);
   const [useAi, setUseAi] = useState(true);
   const [draft, setDraft] = useState<WorldDraft | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const job = useGenerationJob(jobId);
   const aiAvailable = Boolean(ai && ai.active !== 'fallback');
+  const generating = start.isPending || jobId !== null;
+
+  // Fertiger Auftrag: KI-Entwurf oder regelbasierter Entwurf mit Begründung übernehmen.
+  useEffect(() => {
+    const j = job.data;
+    if (j && j.status !== 'running' && j.draft) {
+      setDraft(j.draft);
+      setJobId(null);
+    }
+  }, [job.data]);
 
   const runGenerate = () =>
-    generate.mutate(
-      { genre, prompt, characterCount: count, useAi: aiAvailable && useAi },
-      { onSuccess: (d) => setDraft(d), onError: showError },
+    start.mutate(
+      // Auch ohne erkannte KI fragen: Der Server prüft erneut und nennt den Grund, falls sie fehlt.
+      { genre, prompt, characterCount: count, useAi },
+      {
+        onSuccess: (j) => {
+          if (j.status === 'running') setJobId(j.id);
+          else if (j.draft) setDraft(j.draft);
+        },
+        onError: showError,
+      },
     );
+
+  const cancelJob = () => {
+    if (!jobId) return;
+    cancel.mutate(jobId, {
+      onSuccess: (j) => {
+        if (j.draft) setDraft(j.draft);
+        setJobId(null);
+      },
+      onError: showError,
+    });
+  };
 
   const { characters = [], source, notice, ...world } = draft ?? ({} as WorldDraft);
   const setWorld = (w: WorldInput) => setDraft((d) => (d ? { ...d, ...w } : d));
@@ -135,11 +239,12 @@ export function WorldCreatePage() {
           )}
         </div>
         <div className="row wrap">
-          <button type="button" className="btn btn-primary" onClick={runGenerate} disabled={generate.isPending}>
-            {generate.isPending ? <span className="spinner" aria-hidden /> : draft ? <Dices aria-hidden /> : <Wand2 aria-hidden />}
-            {generate.isPending ? t('generator.generating') : draft ? t('generator.regenerate') : t('generator.generate')}
+          <button type="button" className="btn btn-primary" onClick={runGenerate} disabled={generating}>
+            {generating ? <span className="spinner" aria-hidden /> : draft ? <Dices aria-hidden /> : <Wand2 aria-hidden />}
+            {generating ? t('generator.generating') : draft ? t('generator.regenerate') : t('generator.generate')}
           </button>
         </div>
+        {jobId && <GenerationProgress job={job.data} onCancel={cancelJob} cancelling={cancel.isPending} />}
       </section>
 
       {draft && (
@@ -148,7 +253,7 @@ export function WorldCreatePage() {
             <h2>{t('generator.draft')}</h2>
             <span className={`badge ${source === 'ai' ? 'badge-ai' : 'badge-demo'}`}>{source === 'ai' ? t('generator.sourceAi') : t('generator.sourceDemo')}</span>
           </div>
-          {notice && <div className="notice notice-warning">{t('generator.aiFailed', { reason: td(`aiErrors.${notice}`, notice) })}</div>}
+          {notice && <GeneratorNotice notice={notice} />}
           <WorldFields world={world as WorldInput} onChange={setWorld} />
           <section className="card stack">
             <h3>{t('generator.characters')}</h3>

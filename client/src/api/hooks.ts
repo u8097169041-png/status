@@ -9,6 +9,7 @@ import {
 import type {
   AiProviderId,
   AiStatusDto,
+  GenerationJobDto,
   AiTestResult,
   AiUsageEntryDto,
   AppSettings,
@@ -53,7 +54,6 @@ import type {
   TriggerEventInput,
   UserProfileDto,
   WorldDetail,
-  WorldDraft,
   WorldEventDto,
   WalletDto,
   WorldInput,
@@ -561,14 +561,26 @@ export function useWorldActions(id: string) {
   };
 }
 
+/** Fragt den Fortschritt eines Entwurfs-Auftrags ab, solange er läuft. */
+export function useGenerationJob(jobId: string | null) {
+  return useQuery({
+    queryKey: ['generation-job', jobId],
+    queryFn: ({ signal }) => get<GenerationJobDto>(`/worlds/generate-jobs/${jobId}`, signal),
+    enabled: Boolean(jobId),
+    refetchInterval: (query) => (query.state.data && query.state.data.status !== 'running' ? false : 1_000),
+    staleTime: 0,
+  });
+}
+
 export function useWorldGenerator() {
   const qc = useQueryClient();
   return {
-    generate: useMutation({
+    /** Startet einen Entwurf als Hintergrundauftrag (lange lokale KI-Generierungen). */
+    start: useMutation({
       mutationFn: (input: { genre: string; prompt: string; characterCount: number; useAi: boolean }) =>
-        post<WorldDraft>('/worlds/generate', input),
-      onSuccess: () => void qc.invalidateQueries({ queryKey: keys.aiStatus }),
+        post<GenerationJobDto>('/worlds/generate-jobs', input),
     }),
+    cancel: useMutation({ mutationFn: (jobId: string) => del<GenerationJobDto>(`/worlds/generate-jobs/${jobId}`) }),
     create: useMutation({
       mutationFn: (input: { world: WorldInput; characters: Omit<CharacterInput, 'worldId'>[] }) =>
         post<WithProgress<{ world: WorldDetail }>>('/worlds', input),

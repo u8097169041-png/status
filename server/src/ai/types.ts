@@ -21,6 +21,8 @@ export type AiErrorCode =
   | 'empty_response'
   | 'limit_reached'
   | 'busy'
+  | 'cancelled'
+  | 'truncated'
   | 'unavailable'
   | 'disabled';
 
@@ -31,12 +33,24 @@ export interface CompletionUsage {
 }
 
 export type CompletionOutcome =
-  | { ok: true; text: string; model: string; usage: CompletionUsage }
+  | {
+      ok: true;
+      text: string;
+      model: string;
+      usage: CompletionUsage;
+      /** Ausgabe wurde am Token-Limit abgeschnitten (JSON kann unvollständig sein). */
+      truncated?: boolean;
+      /** Erzeugte Tokens pro Sekunde (nur lokale KI), für Diagnose und Zeitschätzung. */
+      tokensPerSecond?: number | null;
+    }
   | { ok: false; code: AiErrorCode; message: string; status?: number; retriable: boolean };
 
 export type FetchFn = typeof fetch;
 
 export type ProviderId = 'local' | 'server' | 'fallback';
+
+/** JSON-Schema für strukturierte Ausgaben (Teilmenge, die Ollama in eine Grammatik übersetzt). */
+export type JsonSchema = Record<string, unknown>;
 
 /** Anfrage an einen Provider. Limits und Freigaben prüft der Router vorher. */
 export interface ProviderRequest {
@@ -44,8 +58,14 @@ export interface ProviderRequest {
   messages: ChatMessage[];
   maxTokens: number;
   temperature: number;
-  /** Antwort als JSON-Objekt anfordern (strukturierte Ergebnisse). */
-  json: boolean;
+  /** Antwort als JSON-Objekt anfordern; mit Schema erzwingt die lokale KI Aufbau und Längen. */
+  json: boolean | JsonSchema;
+  /** Lange Generierung (z. B. Weltentwurf): längeres Gesamtzeitlimit. */
+  long?: boolean;
+  /** Abbruch durch den Nutzer. */
+  signal?: AbortSignal;
+  /** Fortschritt: bisher erzeugte Tokens. */
+  onProgress?: (tokens: number) => void;
 }
 
 /** Bereitschaft nach letztem Kenntnisstand – ohne Netzwerkzugriff abfragbar. */

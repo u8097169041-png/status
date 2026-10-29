@@ -57,7 +57,7 @@ describe('Konfiguration', () => {
     expect(cfg.serverAi.baseUrl).toBe('https://openrouter.ai/api/v1');
     expect(cfg.localAi.baseUrl).toBe('http://127.0.0.1:11434');
     expect(cfg.localAi.model).toBe('');
-    expect(cfg.localAi.timeoutMs).toBe(60_000);
+    expect(cfg.localAi.timeoutMs).toBe(180_000);
   });
 
   it('übernimmt „KI aus“ aus Version 1 als Modus „nur simulierte KI“', () => {
@@ -145,19 +145,94 @@ describe('Provider-Auswahl', () => {
 });
 
 describe('Ausfälle und Zeitüberschreitungen', () => {
-  it('fällt bei Zeitüberschreitung der lokalen KI zurück und pausiert sie kurz', async () => {
+  // Regression „KI-Generierung fehlgeschlagen (Zeitüberschreitung)“: Ein Weltentwurf braucht auf einem Prozessor
+  // Minuten, das alte feste Gesamtlimit (60 s, ohne Streaming) brach jede längere Generierung ab.
+  it('lässt eine langsame, aber fortschreitende lokale Generierung zu Ende laufen', async () => {
+    const reply = JSON.stringify({ name: 'Nebelhafen', note: 'x'.repeat(200) });
+    const ctx = createTestContext({
+      handler: routeMocks(ollamaMock({ reply, delayMs: 150, tokenDelayMs: 25, chunks: 40 }), null),
+      // Gesamtlimit für Chats (400 ms) ist kürzer als die Generierung (≈ 1,2 s) – das lange Limit gilt.
+      config: { localAi: { ...TEST_CONFIG.localAi, timeoutMs: 400, longTimeoutMs: 5_000, loadTimeoutMs: 1_000, idleTimeoutMs: 300 } },
+    });
+    const progress: number[] = [];
+    const result = await ctx.ai.complete({ purpose: 'generator', kind: 'world', messages, json: true, long: true, onProgress: (n) => progress.push(n) });
+    expect(result).toMatchObject({ ok: true, provider: 'local', text: reply });
+    expect(progress.length).toBeGreaterThanOrEqual(30);
+    expect(progress).toEqual([...progress].sort((a, b) => a - b));
+    expect(ctx.ai.status().local.tokensPerSecond).toBeGreaterThan(0);
+  });
+
+  it('bricht ab, wenn die Ausgabe stockt – ohne auf das Gesamtlimit zu warten', async () => {
+    const ctx = createTestContext({
+      handler: routeMocks(ollamaMock({ tokenDelayMs: 600, chunks: 5 }), null),
+      config: { localAi: { ...TEST_CONFIG.localAi, longTimeoutMs: 10_000, idleTimeoutMs: 150 } },
+    });
+    const started = Date.now();
+    const result = await ctx.ai.complete({ purpose: 'generator', kind: 'world', messages, long: true, fallback: () => 'Ersatz' });
+    expect(result).toMatchObject({ ok: true, provider: 'fallback', notice: { code: 'timeout' } });
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it('meldet ein zu langsames Laden des Modells verständlich', async () => {
+    const ctx = createTestContext({
+      handler: routeMocks(ollamaMock({ delayMs: 400 }), null),
+      config: { localAi: { ...TEST_CONFIG.localAi, loadTimeoutMs: 100 } },
+    });
+    const result = await ctx.ai.complete({ purpose: 'chat', kind: 'chat', messages, fallback: () => 'Ersatz' });
+    expect(result.ok && result.notice?.code).toBe('timeout');
+    expect(result.ok && result.notice?.message).toContain('nicht rechtzeitig mit der Antwort begonnen');
+  });
+
+  it('meldet eine langsame lokale KI nach einer Zeitüberschreitung nicht als „nicht erreichbar“', async () => {
     const ctx = createTestContext({
       handler: routeMocks(ollamaMock({ delayMs: 300 }), null),
-      config: { localAi: { ...TEST_CONFIG.localAi, timeoutMs: 50 } },
+      config: { localAi: { ...TEST_CONFIG.localAi, loadTimeoutMs: 50 } },
     });
-    const first = await ctx.ai.complete({ purpose: 'chat', kind: 'chat', messages, fallback: () => 'Ersatz' });
-    expect(first).toMatchObject({ ok: true, provider: 'fallback', notice: { code: 'timeout' } });
-    expect(localChats(ctx)).toHaveLength(1);
-    // Direkt danach wird die lokale KI übersprungen statt erneut zu warten.
-    const second = await ctx.ai.complete({ purpose: 'chat', kind: 'chat', messages, fallback: () => 'Ersatz' });
-    expect(second).toMatchObject({ ok: true, provider: 'fallback' });
-    expect(localChats(ctx)).toHaveLength(1);
-    expect(ctx.ai.status().reason).toBe('local-unreachable');
+    await ctx.ai.complete({ purpose: 'chat', kind: 'chat', messages, fallback: () => 'Ersatz' });
+    const status = ctx.ai.status();
+    expect(status.local.reachable).toBe(true);
+    expect(status.active).toBe('local');
+    expect(status.local.lastTimeout?.message).toContain('nicht rechtzeitig');
+    // Die nächste Anfrage versucht es erneut statt sofort auszuweichen.
+    await ctx.ai.complete({ purpose: 'chat', kind: 'chat', messages, fallback: () => 'Ersatz' });
+    expect(localChats(ctx)).toHaveLength(2);
+  });
+
+  it('weicht bei nicht erreichbarer lokaler KI sofort aus, ohne zu warten', async () => {
+    const ctx = ctxWith(ollamaMock({ down: true }), null);
+    const started = Date.now();
+    const result = await ctx.ai.complete({ purpose: 'generator', kind: 'world', messages, long: true, fallback: () => 'Ersatz' });
+    expect(result).toMatchObject({ ok: true, provider: 'fallback' });
+    expect(localChats(ctx)).toHaveLength(0);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it('bricht eine Generierung auf Wunsch ab', async () => {
+    const ctx = ctxWith(ollamaMock({ tokenDelayMs: 200, chunks: 20 }), null);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 100);
+    const result = await ctx.ai.complete({ purpose: 'generator', kind: 'world', messages, long: true, signal: controller.signal });
+    expect(result).toMatchObject({ ok: false, code: 'cancelled' });
+    expect(ctx.ai.status().lastError).toBeNull();
+  });
+
+  it('sendet ein JSON-Schema ab Ollama 0.5, älteren Versionen nur den JSON-Modus', async () => {
+    const schema = { type: 'object', properties: { reply: { type: 'string', maxLength: 50 } } };
+    const modern = ctxWith(ollamaMock({ version: '0.6.2' }), null);
+    await modern.ai.complete({ purpose: 'chat', kind: 'chat', messages, json: schema });
+    expect((localChats(modern)[0].body as { format: unknown }).format).toEqual(schema);
+    const old = ctxWith(ollamaMock({ version: '0.4.7' }), null);
+    await old.ai.complete({ purpose: 'chat', kind: 'chat', messages, json: schema });
+    expect((localChats(old)[0].body as { format: unknown }).format).toBe('json');
+    const body = localChats(old)[0].body as { stream: boolean; options: { num_ctx: number } };
+    expect(body.stream).toBe(true);
+    expect(body.options.num_ctx).toBe(4096);
+  });
+
+  it('kennzeichnet am Token-Limit abgeschnittene Ausgaben', async () => {
+    const ctx = ctxWith(ollamaMock({ doneReason: 'length', reply: '{"name": "Abgeschn' }), null);
+    const result = await ctx.ai.complete({ purpose: 'generator', kind: 'world', messages, long: true });
+    expect(result).toMatchObject({ ok: true, truncated: true });
   });
 
   it('meldet ein nicht installiertes Modell verständlich', async () => {

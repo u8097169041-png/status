@@ -12,6 +12,7 @@ import {
   setGroupMember,
   updateRelationship,
 } from '../services/society';
+import { cancelGenerationJob, getGenerationJob, startGenerationJob } from '../services/generationJobs';
 import { createWorldWithCharacters, generateDraft } from '../services/worldgen';
 import { deleteWorld, getWorld, listEvents, listWorlds, updateWorld } from '../services/worlds';
 import { param, q } from './helpers';
@@ -22,6 +23,17 @@ export function worldRoutes(ctx: AppContext): Router {
   r.get('/worlds', (_req, res) => {
     res.json(listWorlds(ctx));
   });
+  // Asynchron: Start, Fortschritt, Abbruch (lange lokale Generierungen ohne offene HTTP-Anfrage).
+  r.post('/worlds/generate-jobs', async (req, res) => {
+    res.status(202).json(await startGenerationJob(ctx, req.body));
+  });
+  r.get('/worlds/generate-jobs/:jobId', (req, res) => {
+    res.json(getGenerationJob(param(req, 'jobId')));
+  });
+  r.delete('/worlds/generate-jobs/:jobId', (req, res) => {
+    res.json(cancelGenerationJob(param(req, 'jobId')));
+  });
+
   r.post('/worlds/generate', async (req, res) => {
     res.json(await generateDraft(ctx, req.body));
   });

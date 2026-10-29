@@ -2,6 +2,8 @@
 // Lädt nichts herunter und ändert nichts am System. Aufruf: npm run ai:check
 //   --recommend  gibt nur „<modell> <größe-in-GB>“ der Empfehlung aus (für ki-einrichten.bat)
 //   --short      eine Zeile Status (für start.bat)
+//   --test       zusätzlich eine kurze echte Test-Generierung (lokal, kostenlos): misst Ladezeit, Geschwindigkeit
+//                und prüft strukturierte JSON-Ausgabe – wie SocialVerse sie für Chats und Weltentwürfe nutzt
 import { spawnSync } from 'node:child_process';
 import { existsSync, statfsSync } from 'node:fs';
 import { cpus, freemem, homedir, platform, totalmem } from 'node:os';
@@ -114,9 +116,108 @@ if (reachable) {
 }
 console.log('');
 
+/** Kurze, gestreamte Test-Generierung mit JSON-Schema – derselbe Weg wie in SocialVerse. */
+async function generationTest(model) {
+  const supportsSchema = (() => {
+    const m = /^(\d+)\.(\d+)/.exec(version ?? '');
+    return m ? Number(m[1]) > 0 || Number(m[2]) >= 5 : false;
+  })();
+  const schema = { type: 'object', properties: { reply: { type: 'string', maxLength: 200 } }, required: ['reply'] };
+  const started = Date.now();
+  let firstAt = null;
+  let content = '';
+  let final = null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 300_000);
+  try {
+    const res = await fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        stream: true,
+        format: supportsSchema ? schema : 'json',
+        keep_alive: '15m',
+        options: { temperature: 0.3, num_predict: 120, num_ctx: 4096 },
+        messages: [
+          { role: 'system', content: 'Respond ONLY with JSON: {"reply": "<one friendly German sentence>"}' },
+          { role: 'user', content: 'Begrüße mich kurz.' },
+        ],
+      }),
+    });
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => '');
+      return { ok: false, message: `HTTP ${res.status} ${text.slice(0, 200)}` };
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        const chunk = JSON.parse(line);
+        if (chunk.error) return { ok: false, message: String(chunk.error) };
+        if (chunk.message?.content) {
+          firstAt ??= Date.now();
+          content += chunk.message.content;
+        }
+        if (chunk.done) final = chunk;
+      }
+    }
+  } catch (error) {
+    return { ok: false, message: error.name === 'AbortError' ? 'keine Antwort nach 5 Minuten' : error.message };
+  } finally {
+    clearTimeout(timer);
+  }
+  let json = null;
+  try {
+    json = JSON.parse(content.replace(/<think>[\s\S]*?<\/think>/g, '').trim());
+  } catch {
+    json = null;
+  }
+  const tps = final?.eval_duration ? final.eval_count / (final.eval_duration / 1e9) : null;
+  return {
+    ok: true,
+    firstTokenS: firstAt ? (firstAt - started) / 1000 : null,
+    totalS: (Date.now() - started) / 1000,
+    tps,
+    loadS: final?.load_duration ? final.load_duration / 1e9 : null,
+    validJson: Boolean(json && typeof json.reply === 'string'),
+    schema: supportsSchema,
+    sample: (json?.reply ?? content).slice(0, 120),
+  };
+}
+
 if (ready) {
+  const model = fixedModel || models[0];
   console.log('  Alles bereit: SocialVerse verwendet die lokale KI automatisch (Einstellungen > KI & Modelle).');
   console.log('  Kosten: keine – das Modell läuft auf diesem Computer.');
+  if (args.has('--test')) {
+    console.log('');
+    console.log(`  Test-Generierung mit ${model} (beim ersten Mal wird das Modell geladen) …`);
+    const t = await generationTest(model);
+    if (!t.ok) {
+      line(false, `Test fehlgeschlagen: ${t.message}`);
+    } else {
+      line(true, `Erstes Token nach ${t.firstTokenS?.toFixed(1) ?? '?'} s (davon Laden des Modells: ${t.loadS?.toFixed(1) ?? '?'} s), gesamt ${t.totalS.toFixed(1)} s`);
+      if (t.tps) {
+        const minutes = 950 / t.tps / 60;
+        line(t.tps >= 5, `Geschwindigkeit: ${t.tps.toFixed(1)} Tokens/s → ein Weltentwurf mit 3 Figuren dauert ca. ${minutes < 1 ? '< 1' : minutes.toFixed(1)} Min.`);
+        if (t.tps < 5) console.log('    Tipp: kleineres Modell verwenden, z. B. ollama pull qwen2.5:3b und LOCAL_AI_MODEL=qwen2.5:3b');
+      }
+      line(t.validJson, `Strukturierte JSON-Ausgabe ${t.validJson ? 'funktioniert' : 'NICHT gültig'} (${t.schema ? 'JSON-Schema' : 'JSON-Modus, Ollama älter als 0.5'})`);
+      console.log(`    Antwort: ${t.sample}`);
+    }
+  } else {
+    console.log('  Tipp: „npm run ai:check -- --test“ führt eine kurze Test-Generierung durch und misst die Geschwindigkeit.');
+  }
   console.log('');
   process.exit(0);
 }

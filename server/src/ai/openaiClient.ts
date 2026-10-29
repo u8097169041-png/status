@@ -12,6 +12,7 @@ export interface CompletionRequest {
   maxTokens: number;
   temperature: number;
   timeoutMs: number;
+  signal?: AbortSignal;
 }
 
 export interface RemoteModel {
@@ -50,6 +51,12 @@ export class OpenAiCompatibleClient {
   async complete(req: CompletionRequest): Promise<CompletionOutcome> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), req.timeoutMs);
+    let cancelled = false;
+    const onCancel = () => {
+      cancelled = true;
+      controller.abort();
+    };
+    req.signal?.addEventListener('abort', onCancel);
     try {
       const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -82,7 +89,7 @@ export class OpenAiCompatibleClient {
       }
       const data = body as {
         model?: unknown;
-        choices?: { message?: { content?: unknown } }[];
+        choices?: { message?: { content?: unknown }; finish_reason?: unknown }[];
         usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown };
       } | null;
       if (!data || !Array.isArray(data.choices)) {
@@ -97,6 +104,7 @@ export class OpenAiCompatibleClient {
         ok: true,
         text,
         model: typeof data.model === 'string' ? data.model : req.model,
+        truncated: data.choices[0]?.finish_reason === 'length',
         usage: {
           promptTokens: Math.max(0, Math.round(parseNumber(data.usage?.prompt_tokens) ?? 0)),
           completionTokens: Math.max(0, Math.round(parseNumber(data.usage?.completion_tokens) ?? 0)),
@@ -104,12 +112,14 @@ export class OpenAiCompatibleClient {
         },
       };
     } catch (error) {
+      if (cancelled) return { ok: false, code: 'cancelled', message: 'Abgebrochen.', retriable: false };
       if ((error as Error).name === 'AbortError') {
         return { ok: false, code: 'timeout', message: 'Zeitüberschreitung bei der KI-Anfrage.', retriable: true };
       }
       return { ok: false, code: 'network', message: 'Keine Verbindung zum KI-Server möglich.', retriable: true };
     } finally {
       clearTimeout(timer);
+      req.signal?.removeEventListener('abort', onCancel);
     }
   }
 

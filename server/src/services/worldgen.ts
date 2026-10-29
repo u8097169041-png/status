@@ -6,6 +6,7 @@ import { tx } from '../db/database';
 import { GENERIC_PERSONALITY, GENRE_POOLS, WORLDGEN_TEXT } from '../content/worldgenPools';
 import { badRequest } from '../lib/errors';
 import { createRng, type Rng } from '../lib/rng';
+import type { JsonSchema } from '../ai/types';
 import { cleanText, fill, truncate } from '../lib/text';
 import { insertCharacter, parseCharacterInput } from './characters';
 import { recordAction } from './progress';
@@ -114,6 +115,64 @@ export function extractJson(text: string): unknown {
   }
 }
 
+/** Feldlängen für KI-Entwürfe: Sie begrenzen die Ausgabe (und damit die Dauer) einer lokalen Generierung. */
+const DRAFT_LIMITS = { name: 40, tagline: 150, description: 400, lore: 300, atmosphere: 120, rule: 120, charRole: 60, charTagline: 120, charText: 220, trait: 30 };
+
+/** JSON-Schema des Entwurfs. Die lokale KI (Ollama ≥ 0.5) erzeugt damit garantiert gültiges, begrenztes JSON. */
+export function draftJsonSchema(characterCount: number): JsonSchema {
+  const str = (maxLength: number) => ({ type: 'string', maxLength });
+  const list = (maxLength: number, minItems: number, maxItems: number) => ({ type: 'array', items: str(maxLength), minItems, maxItems });
+  const L = DRAFT_LIMITS;
+  return {
+    type: 'object',
+    properties: {
+      name: str(L.name),
+      tagline: str(L.tagline),
+      description: str(L.description),
+      lore: str(L.lore),
+      atmosphere: str(L.atmosphere),
+      rules: list(L.rule, 3, 5),
+      characters: {
+        type: 'array',
+        minItems: characterCount,
+        maxItems: characterCount,
+        items: {
+          type: 'object',
+          properties: {
+            name: str(L.name),
+            role: str(L.charRole),
+            tagline: str(L.charTagline),
+            description: str(L.charText),
+            personality: list(L.trait, 3, 3),
+            interests: list(L.trait, 2, 3),
+            background: str(L.charText),
+            writingStyle: { type: 'string', enum: [...WRITING_STYLES] },
+          },
+          required: ['name', 'role', 'tagline', 'description', 'personality', 'interests', 'background', 'writingStyle'],
+        },
+      },
+    },
+    required: ['name', 'tagline', 'description', 'lore', 'atmosphere', 'rules', 'characters'],
+  };
+}
+
+/** Zusätzliche Vorgaben je Genre für KI-Entwürfe. */
+const GENRE_HINTS: Partial<Record<string, string>> = {
+  dating:
+    'stories about meeting people, first dates, friendship, falling in love, misunderstandings, jealousy, love triangles, ' +
+    'breakups and second chances; every character is clearly an adult aged 25-45; warm and emotional, never explicit',
+};
+
+/** Grobe Erwartung an die Länge eines Entwurfs in Tokens (für Fortschrittsanzeige und Token-Limit). */
+export function expectedDraftTokens(characterCount: number): number {
+  return 260 + characterCount * 230;
+}
+
+export interface DraftOptions {
+  signal?: AbortSignal;
+  onProgress?: (tokens: number) => void;
+}
+
 async function generateAiDraft(
   ctx: AppContext,
   genre: Genre,
@@ -121,35 +180,44 @@ async function generateAiDraft(
   characterCount: number,
   lang: Lang,
   fallback: WorldDraft,
+  opts: DraftOptions = {},
 ): Promise<WorldDraft | { error: string }> {
   const language = lang === 'de' ? 'German' : 'English';
+  const L = DRAFT_LIMITS;
   const result = await ctx.ai.complete({
     purpose: 'generator',
     kind: 'world',
-    json: true,
-    maxTokens: 1500,
+    json: draftJsonSchema(characterCount),
+    long: true,
+    signal: opts.signal,
+    onProgress: opts.onProgress,
+    // Großzügig über der Erwartung, damit gültiges JSON nicht abgeschnitten wird; das Schema begrenzt die Länge zusätzlich.
+    maxTokens: Math.round(expectedDraftTokens(characterCount) * 1.8),
     messages: [
       {
         role: 'system',
         content:
-          'You design fictional worlds for a social media role-play simulation. All characters are fictional; never use real people. ' +
-          'Answer with ONLY one JSON object, no markdown, no commentary.',
+          'You design fictional worlds for a social media role-play simulation. All characters are fictional adults; never use real people. ' +
+          'Keep all content suitable for a general audience: romance may be warm and emotional but never explicit. ' +
+          'Answer with ONLY one JSON object, no markdown, no commentary. Keep every text short and vivid.',
       },
       {
         role: 'user',
         content:
-          `Genre: ${genre}. Language for all text: ${language}. ` +
+          `Genre: ${genre}${GENRE_HINTS[genre] ? ` (${GENRE_HINTS[genre]})` : ''}. ` +
+          `Language for all text: ${language}. ` +
           (prompt ? `User idea: """${truncate(prompt, 400)}""". ` : '') +
-          `Create ${characterCount} characters. JSON schema: {"name": string (max 40 chars), "tagline": string (max 150), ` +
-          `"description": string (max 600), "lore": string (max 600), "atmosphere": string (max 150), "rules": string[3-5], ` +
-          `"characters": [{"name": string, "role": string, "tagline": string, "description": string, "personality": string[3], ` +
-          `"interests": string[2-3], "background": string, "writingStyle": one of ${WRITING_STYLES.join('|')}}]}`,
+          `Create ${characterCount} characters. JSON schema: {"name": string (max ${L.name} chars), "tagline": string (max ${L.tagline}), ` +
+          `"description": string (max ${L.description}), "lore": string (max ${L.lore}), "atmosphere": string (max ${L.atmosphere}), ` +
+          `"rules": string[3-5] (max ${L.rule} each), "characters": [{"name": string, "role": string (max ${L.charRole}), ` +
+          `"tagline": string (max ${L.charTagline}), "description": string (max ${L.charText}), "personality": string[3], ` +
+          `"interests": string[2-3], "background": string (max ${L.charText}), "writingStyle": one of ${WRITING_STYLES.join('|')}}]}`,
       },
     ],
   });
   if (!result.ok) return { error: result.code };
   const parsed = aiDraftSchema.safeParse(extractJson(result.text));
-  if (!parsed.success) return { error: 'invalid_response' };
+  if (!parsed.success) return { error: result.truncated ? 'truncated' : 'invalid_response' };
   const d = parsed.data;
   const cut = (s: string, n: number) => truncate(cleanText(s), n);
   return {
@@ -179,15 +247,35 @@ async function generateAiDraft(
   };
 }
 
-export async function generateDraft(ctx: AppContext, input: unknown): Promise<WorldDraft> {
+export type GenerateInput = z.infer<typeof generateSchema>;
+
+export function parseGenerateInput(input: unknown): GenerateInput {
   const parsed = generateSchema.safeParse(input);
   if (!parsed.success) throw badRequest('invalid_generator_input', 'Ungültige Generator-Eingabe.', parsed.error.issues);
-  const { genre, prompt, characterCount, useAi } = parsed.data;
-  const lang = getLanguage(ctx.db);
-  const seed = parsed.data.seed ?? `${genre}:${prompt}:${ctx.now().getTime()}`;
-  const local = generateLocalDraft(genre, prompt, characterCount, lang, seed);
-  if (!useAi || !ctx.ai.isActive('world')) return local;
-  const ai = await generateAiDraft(ctx, genre, prompt, characterCount, lang, local);
+  return parsed.data;
+}
+
+/** Regelbasierter Entwurf – immer verfügbar und Grundlage, falls die KI nicht antwortet. */
+export function localDraftFor(ctx: AppContext, input: GenerateInput): WorldDraft {
+  const seed = input.seed ?? `${input.genre}:${input.prompt}:${ctx.now().getTime()}`;
+  return generateLocalDraft(input.genre, input.prompt, input.characterCount, getLanguage(ctx.db), seed);
+}
+
+/**
+ * Erzeugt einen Weltentwurf: mit KI, wenn gewünscht und verfügbar, sonst regelbasiert.
+ * Scheitert die KI, wird der regelbasierte Entwurf mit dem Grund (`notice`) zurückgegeben.
+ */
+export async function generateDraft(ctx: AppContext, input: unknown, opts: DraftOptions = {}): Promise<WorldDraft> {
+  const data = parseGenerateInput(input);
+  const local = localDraftFor(ctx, data);
+  if (!data.useAi) return local;
+  await ctx.ai.refreshHealth();
+  if (!ctx.ai.isActive('world')) {
+    const reason = ctx.ai.status().reason;
+    // Bewusst abgeschaltete KI ist kein Fehler – dann ohne Hinweis.
+    return reason && reason !== 'mode-fallback' && reason !== 'local-disabled' ? { ...local, notice: reason } : local;
+  }
+  const ai = await generateAiDraft(ctx, data.genre, data.prompt, data.characterCount, getLanguage(ctx.db), local, opts);
   if ('error' in ai) return { ...local, notice: ai.error };
   return ai;
 }
