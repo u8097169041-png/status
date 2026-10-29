@@ -16,7 +16,7 @@ export function WorldCard({ world }: { world: WorldSummary }) {
   return (
     <article className="world-card" style={{ '--world-hue': world.hue } as React.CSSProperties} aria-labelledby={`world-${world.id}`}>
       <Link to={`/worlds/${world.id}`} className="world-card-art" tabIndex={-1} aria-hidden>
-        <WorldArt seed={world.id} style={world.artStyle} hue={world.hue} />
+        <WorldArt seed={world.id} style={world.artStyle} hue={world.hue} imageUrl={world.coverUrl} />
         <span className="world-card-genre badge">{td(`categories.${world.category}`, world.category)}</span>
         {world.joined ? (
           <span className="world-card-custom badge badge-player">{t('discover.joined')}</span>

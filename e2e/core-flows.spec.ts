@@ -1,4 +1,8 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
+
+const FIXTURES = fileURLToPath(new URL('./fixtures', import.meta.url));
 
 /**
  * Zentrale Benutzerabläufe gegen den Produktionsbuild (frische Datenbank, ohne lokale KI und ohne Server-KI: simulierte KI).
@@ -400,6 +404,54 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await expect(page.getByRole('heading', { name: 'Testbucht', level: 1 })).toBeVisible();
     await page.getByRole('tab', { name: /Bewohner/ }).click();
     await expect(page.locator('.character-card')).toHaveCount(3);
+  });
+
+  test('7 · Eigenes Titelbild: Prüfung, Vorschau, Speichern, Neustart-fest, Ersetzen und Entfernen', async () => {
+    await page.goto('/worlds');
+    await page.locator('.world-card').filter({ hasText: 'Testbucht' }).getByRole('link', { name: 'Testbucht', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Testbucht', level: 1 })).toBeVisible();
+    await expect(page.locator('img.world-hero-art')).toHaveCount(0);
+    await page.getByRole('link', { name: 'Welt bearbeiten' }).click();
+    const input = page.getByTestId('cover-input');
+
+    // Ungültige Dateien werden mit verständlicher Meldung abgelehnt.
+    await input.setInputFiles({ name: 'animation.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
+    await expect(page.getByRole('alert')).toContainText('nicht unterstützt');
+    await input.setInputFiles(path.join(FIXTURES, 'too-small.png'));
+    await expect(page.getByRole('alert')).toContainText('zu klein');
+
+    // Gültiges Bild: Vorschau vor dem Speichern.
+    await input.setInputFiles(path.join(FIXTURES, 'cover.png'));
+    const preview = page.locator('.cover-picker img.world-cover-img');
+    await expect(preview).toBeVisible();
+    // Die Vorschau muss wirklich geladen sein (nicht nur ein leeres Bildelement).
+    await expect.poll(() => preview.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+    await expect(page.getByText('Neues Bild – wird beim Speichern übernommen.')).toBeVisible();
+    await page.getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.getByRole('heading', { name: 'Testbucht', level: 1 })).toBeVisible();
+    const hero = page.locator('img.world-hero-art');
+    await expect(hero).toHaveAttribute('src', /\/api\/media\/covers\/.+\.(webp|jpg)$/);
+    const src = await hero.getAttribute('src');
+    expect((await page.request.get(src!)).status()).toBe(200);
+
+    // Bleibt nach dem Neuladen erhalten und erscheint auch auf den Weltkarten.
+    await page.reload();
+    await expect(page.locator('img.world-hero-art')).toHaveAttribute('src', src!);
+    await page.goto('/worlds');
+    await expect(page.locator('.world-card').filter({ hasText: 'Testbucht' }).locator('img.world-cover-img')).toHaveAttribute('src', src!);
+
+    // Ersetzen erzeugt eine neue Datei, Entfernen stellt die generierte Grafik wieder her.
+    await page.locator('.world-card').filter({ hasText: 'Testbucht' }).getByRole('link', { name: 'Testbucht', exact: true }).click();
+    await page.getByRole('link', { name: 'Welt bearbeiten' }).click();
+    await page.getByTestId('cover-input').setInputFiles(path.join(FIXTURES, 'cover.png'));
+    await page.getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.locator('img.world-hero-art')).not.toHaveAttribute('src', src!);
+    expect((await page.request.get(src!)).status()).toBe(404);
+    await page.getByRole('link', { name: 'Welt bearbeiten' }).click();
+    await page.getByRole('button', { name: 'Bild entfernen' }).click();
+    await page.getByRole('button', { name: 'Speichern' }).click();
+    await expect(page.getByRole('heading', { name: 'Testbucht', level: 1 })).toBeVisible();
+    await expect(page.locator('img.world-hero-art')).toHaveCount(0);
   });
 
   test('7 · Quest einlösen erhöht die XP', async () => {

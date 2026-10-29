@@ -7,6 +7,7 @@ import { badRequest, forbidden, notFound } from '../lib/errors';
 import { newId } from '../lib/ids';
 import { cleanText } from '../lib/text';
 import { forecastEnding } from './arcs';
+import { coverUrlOf, deleteCoverFile } from './covers';
 import { listCharacters } from './characters';
 import { toCharacterRef } from './mappers';
 import { getActivePlayerRow } from './players';
@@ -38,6 +39,7 @@ interface WorldRow {
   last_event_at: string | null;
   last_event_title: string | null;
   joined: number;
+  cover_image: string | null;
 }
 
 const WORLD_SELECT = `
@@ -76,6 +78,7 @@ function toSummary(ctx: AppContext, r: WorldRow): WorldSummary {
     category: categoryOfGenre(r.genre),
     joined: Boolean(r.joined),
     cast: castOf(ctx, r.id),
+    coverUrl: coverUrlOf(r.cover_image),
     postsToday:
       get<{ n: number }>(
         ctx.db,
@@ -272,6 +275,7 @@ export function deleteWorld(ctx: AppContext, id: string): void {
     run(ctx.db, 'DELETE FROM characters WHERE world_id = ? AND is_custom = 1', id);
     run(ctx.db, 'DELETE FROM worlds WHERE id = ?', id);
   });
+  deleteCoverFile(ctx, row.cover_image);
 }
 
 export function recordWorldCreated(ctx: AppContext, id: string): ProgressDelta {

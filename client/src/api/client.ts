@@ -54,6 +54,33 @@ export async function api<T>(path: string, options: { method?: Method; body?: un
   return data as T;
 }
 
+/** Lädt eine Datei als Rohdaten hoch (z. B. ein Weltbild). */
+export async function upload<T>(path: string, file: Blob, method: 'PUT' | 'POST' = 'PUT'): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, {
+      method,
+      headers: { 'X-SocialVerse': '1', 'Content-Type': file.type, Accept: 'application/json' },
+      body: file,
+      credentials: 'same-origin',
+    });
+  } catch {
+    throw new ApiError(0, 'network', 'Network error');
+  }
+  const text = await response.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  if (!response.ok) {
+    const err = (data as ApiErrorBody | null)?.error;
+    throw new ApiError(response.status, err?.code ?? 'http_error', err?.message ?? `HTTP ${response.status}`);
+  }
+  return data as T;
+}
+
 export const get = <T,>(path: string, signal?: AbortSignal) => api<T>(path, { signal });
 export const post = <T,>(path: string, body?: unknown) => api<T>(path, { method: 'POST', body: body ?? {} });
 export const put = <T,>(path: string, body?: unknown) => api<T>(path, { method: 'PUT', body: body ?? {} });

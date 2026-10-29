@@ -8,6 +8,8 @@ interface WorldArtProps {
   hue: number;
   className?: string;
   label?: string;
+  /** Eigenes Titelbild; ohne Bild wird die passende Grafik erzeugt. */
+  imageUrl?: string | null;
 }
 
 const W = 400;
@@ -51,7 +53,23 @@ function gearPath(cx: number, cy: number, r: number, teeth: number): string {
 }
 
 /** Prozedural erzeugte Titelgrafik einer Welt – deterministisch je Seed. */
-export function WorldArt({ seed, style, hue, className, label }: WorldArtProps) {
+export function WorldArt({ imageUrl, ...props }: WorldArtProps) {
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        className={`world-cover-img ${props.className ?? ''}`}
+        alt={props.label ?? ''}
+        aria-hidden={props.label ? undefined : true}
+        loading="lazy"
+        decoding="async"
+      />
+    );
+  }
+  return <GeneratedWorldArt {...props} />;
+}
+
+function GeneratedWorldArt({ seed, style, hue, className, label }: Omit<WorldArtProps, 'imageUrl'>) {
   const uid = useId().replace(/:/g, '');
   const content = useMemo(() => {
     const rng = createRng(`${seed}:${style}:${hue}`);

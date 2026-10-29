@@ -151,7 +151,7 @@ export function JoinWorldPage() {
         <ArrowLeft aria-hidden /> {world.name}
       </Link>
       <section className="join-hero card">
-        <WorldArt seed={world.id} style={world.artStyle} hue={world.hue} className="join-hero-art" />
+        <WorldArt seed={world.id} style={world.artStyle} hue={world.hue} imageUrl={world.coverUrl} className="join-hero-art" />
         <div className="join-hero-text">
           <h1>{t('play.joinTitle')}</h1>
           <p className="muted">{t('play.joinSubtitle', { world: world.name })}</p>

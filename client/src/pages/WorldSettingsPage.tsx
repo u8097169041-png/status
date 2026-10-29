@@ -24,7 +24,7 @@ export function WorldSettingsPage() {
       ) : (
         <div className="stack">
           <section className="card world-settings-card" style={{ '--world-hue': world.hue } as React.CSSProperties}>
-            <WorldArt seed={world.id} style={world.artStyle} hue={world.hue} className="world-settings-art" />
+            <WorldArt seed={world.id} style={world.artStyle} hue={world.hue} imageUrl={world.coverUrl} className="world-settings-art" />
             <div className="stack-sm grow">
               <h2>{world.name}</h2>
               <p className="small muted">{world.tagline}</p>

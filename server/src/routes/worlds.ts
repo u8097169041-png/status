@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import type { AppContext } from '../context';
 import { requireActivePlayer } from '../services/players';
 import { listEventCards, simulateWorld, triggerEvent } from '../services/simulation';
@@ -12,6 +12,7 @@ import {
   setGroupMember,
   updateRelationship,
 } from '../services/society';
+import { COVER_TYPES, coverFile, removeWorldCover, setWorldCover } from '../services/covers';
 import { cancelGenerationJob, getGenerationJob, startGenerationJob } from '../services/generationJobs';
 import { createWorldWithCharacters, generateDraft } from '../services/worldgen';
 import { deleteWorld, getWorld, listEvents, listWorlds, updateWorld } from '../services/worlds';
@@ -46,6 +47,24 @@ export function worldRoutes(ctx: AppContext): Router {
   });
   r.put('/worlds/:id', (req, res) => {
     res.json(updateWorld(ctx, param(req, 'id'), req.body));
+  });
+  // Eigenes Titelbild: Rohdaten (JPEG/PNG/WebP) statt JSON; Prüfung von Typ, Inhalt und Größe im Service.
+  const rawImage = express.raw({ type: Object.keys(COVER_TYPES), limit: 8 * 1024 * 1024 });
+  r.put('/worlds/:id/cover', rawImage, (req, res) => {
+    res.json({ coverUrl: setWorldCover(ctx, param(req, 'id'), req.headers['content-type'], req.body) });
+  });
+  r.delete('/worlds/:id/cover', (req, res) => {
+    removeWorldCover(ctx, param(req, 'id'));
+    res.status(204).end();
+  });
+  r.get('/media/covers/:file', (req, res) => {
+    const file = coverFile(ctx, param(req, 'file'));
+    res.setHeader('Content-Type', file.contentType);
+    // Dateinamen ändern sich bei jedem neuen Bild – daher dauerhaft zwischenspeicherbar.
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'");
+    res.sendFile(file.path);
   });
   r.delete('/worlds/:id', (req, res) => {
     deleteWorld(ctx, param(req, 'id'));

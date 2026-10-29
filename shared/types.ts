@@ -174,6 +174,8 @@ export interface WorldSummary {
   cast: CharacterRef[];
   /** Simulierte Beiträge der letzten 24 Stunden (keine Live-Daten). */
   postsToday: number;
+  /** Eigenes Titelbild (URL) oder null für die generierte Grafik. */
+  coverUrl: string | null;
 }
 
 export interface WorldDetail extends WorldSummary {
@@ -412,7 +414,7 @@ export interface ProgressDto {
   rewards: { id: string; type: 'title' | 'accent'; unlocked: boolean; unlock: { type: 'level'; level: number } | { type: 'achievement'; id: string } }[];
   collections: {
     characters: { id: string; name: string; avatarHue: number; avatarGlyph: AvatarGlyph; metAt: string | null }[];
-    worlds: { id: string; name: string; hue: number; artStyle: ArtStyle; visitedAt: string | null }[];
+    worlds: { id: string; name: string; hue: number; artStyle: ArtStyle; coverUrl: string | null; visitedAt: string | null }[];
   };
   recentXp: { action: string; amount: number; createdAt: string }[];
 }

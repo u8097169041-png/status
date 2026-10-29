@@ -49,6 +49,8 @@ export interface AppConfig {
   host: string;
   dataDir: string;
   dbFile: string;
+  /** Ordner für hochgeladene Dateien (Weltbilder). */
+  uploadsDir: string;
   localAi: LocalAiConfig;
   serverAi: ServerAiConfig;
   production: boolean;
@@ -124,6 +126,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.c
     host: env.HOST?.trim() || '127.0.0.1',
     dataDir,
     dbFile: resolve(dataDir, 'socialverse.db'),
+    uploadsDir: resolve(dataDir, 'uploads'),
     localAi: {
       enabled: bool(env.LOCAL_AI_ENABLED, true),
       baseUrl: url(env.LOCAL_AI_BASE_URL, DEFAULT_LOCAL_AI_URL),

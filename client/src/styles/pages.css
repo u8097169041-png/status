@@ -456,3 +456,10 @@ a.notification-row:hover { border-color: var(--border-strong); }
 .diag-row.neutral > svg { color: var(--text-faint); }
 .diag-row strong { font-weight: 600; }
 .server-consent { padding: var(--space-3); border-radius: var(--radius); background: var(--warning-soft); }
+
+/* Eigene Weltbilder */
+/* Größe kommt von der jeweiligen Klasse (Karte, Hero, Vorschau …), hier nur die Darstellung. */
+.world-cover-img { display: block; object-fit: cover; }
+.world-card-art img { width: 100%; height: 100%; transition: transform 600ms var(--ease); }
+.world-card:hover .world-card-art img { transform: scale(1.04); }
+.cover-picker .world-preview-art { background: var(--surface-2); }

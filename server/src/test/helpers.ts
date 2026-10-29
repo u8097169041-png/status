@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AiService } from '../ai/aiService';
 import type { FetchFn } from '../ai/types';
 import { createApp } from '../app';
@@ -27,6 +30,7 @@ export const TEST_CONFIG: AppConfig = {
   host: '127.0.0.1',
   dataDir: ':memory:',
   dbFile: ':memory:',
+  uploadsDir: join(tmpdir(), 'socialverse-test-uploads'),
   localAi: {
     enabled: true,
     baseUrl: 'http://ollama.test:11434',
@@ -106,7 +110,8 @@ export function createTestContext(
     }
     return new Response(JSON.stringify(result.json), { status: result.status, headers: { 'Content-Type': 'application/json' } });
   }) as FetchFn;
-  const config = { ...TEST_CONFIG, ...opts.config };
+  // Eigener Upload-Ordner je Testkontext, damit parallel laufende Tests sich nicht gegenseitig Dateien löschen.
+  const config = { ...TEST_CONFIG, uploadsDir: mkdtempSync(join(tmpdir(), 'socialverse-test-uploads-')), ...opts.config };
   const ctx: TestContext = {
     db,
     config,

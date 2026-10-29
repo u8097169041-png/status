@@ -202,7 +202,7 @@ export function ProgressPage() {
               {p.collections.worlds.map((w) => (
                 <li key={w.id} className={`stamp ${w.visitedAt ? 'owned' : 'locked'}`}>
                   <Link to={`/worlds/${w.id}`} aria-label={w.visitedAt ? w.name : `${t('progress.locked')}: ${w.name}`}>
-                    <WorldArt seed={w.id} style={w.artStyle} hue={w.hue} className="stamp-art" />
+                    <WorldArt seed={w.id} style={w.artStyle} hue={w.hue} imageUrl={w.coverUrl} className="stamp-art" />
                     <span className="stamp-label">
                       {w.visitedAt ? <Stamp aria-hidden className="icon-xs" /> : <Lock aria-hidden className="icon-xs" />} {w.name}
                     </span>

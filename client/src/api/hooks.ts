@@ -60,7 +60,7 @@ import type {
   WorldQuestProgressDto,
   WorldSummary,
 } from '../../../shared/types';
-import { del, get, patch, post, put, qs } from './client';
+import { del, get, patch, post, put, qs, upload } from './client';
 
 export const keys = {
   bootstrap: ['bootstrap'] as const,
@@ -570,6 +570,27 @@ export function useGenerationJob(jobId: string | null) {
     refetchInterval: (query) => (query.state.data && query.state.data.status !== 'running' ? false : 1_000),
     staleTime: 0,
   });
+}
+
+/** Titelbild einer Welt speichern oder entfernen (für neue und bestehende eigene Welten). */
+export function useWorldCover() {
+  const qc = useQueryClient();
+  const refresh = (worldId: string) => {
+    refreshWorld(qc, worldId);
+    void qc.invalidateQueries({ queryKey: keys.worlds });
+    void qc.invalidateQueries({ queryKey: keys.discover });
+    void qc.invalidateQueries({ queryKey: keys.bootstrap });
+  };
+  return {
+    save: useMutation({
+      mutationFn: ({ worldId, file }: { worldId: string; file: Blob }) => upload<{ coverUrl: string }>(`/worlds/${worldId}/cover`, file),
+      onSuccess: (_r, v) => refresh(v.worldId),
+    }),
+    remove: useMutation({
+      mutationFn: (worldId: string) => del<void>(`/worlds/${worldId}/cover`),
+      onSuccess: (_r, worldId) => refresh(worldId),
+    }),
+  };
 }
 
 export function useWorldGenerator() {
