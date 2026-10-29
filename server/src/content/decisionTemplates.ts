@@ -1,4 +1,4 @@
-import type { WorldMetric } from '../../../shared/constants';
+import type { RelationshipKind, WorldMetric } from '../../../shared/constants';
 import type { SkillId } from '../../../shared/skills';
 import type { ArcPath } from '../../../shared/types';
 import type { L } from './seedWorlds';
@@ -17,7 +17,8 @@ export interface OptionTemplate {
   influence?: number;
   followers?: number;
   metrics?: Partial<Record<WorldMetric, number>>;
-  affinity?: { target: AffinityTarget; delta: number }[];
+  /** Zuneigungsänderung; optional wird die Beziehung ab einer Mindest-Zuneigung zu einer anderen Art (z. B. Romanze). */
+  affinity?: { target: AffinityTarget; delta: number; becomes?: RelationshipKind; minAffinity?: number }[];
   /** Bei Beitritt: Zuneigung zu bis zu zwei bekannten Figuren. */
   networkAffinity?: number;
   advanceStoryline?: boolean;

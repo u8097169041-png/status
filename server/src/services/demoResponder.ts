@@ -2,6 +2,7 @@ import type { Lang, WritingStyle } from '../../../shared/constants';
 import { CHAT, STOPWORDS } from '../content/voiceTemplates';
 import { createRng } from '../lib/rng';
 import { fill, truncate } from '../lib/text';
+import { ROMANCE_REPLIES } from '../content/datingDecisions';
 
 export interface DemoCharacter {
   id: string;
@@ -14,6 +15,8 @@ export interface DemoCharacter {
   worldName: string | null;
   worldTagline: string | null;
   relations: string[];
+  /** Figur einer Dating-Welt: antwortet auf Fragen zu Liebe und Beziehungen passend (simulierte KI). */
+  romantic?: boolean;
 }
 
 export interface DemoContext {
@@ -30,6 +33,7 @@ const ROLE = /(was machst du|was ist dein (job|beruf)|what do you do|your job)/i
 const INTERESTS = /(interess|hobby|hobbies|magst du|what do you like|was gefällt dir)/i;
 const WORLD = /(wo lebst du|wo wohnst du|deine welt|where do you live|your world)/i;
 const RELATIONS = /(freund|feind|familie|beziehung|friends?|enem(y|ies)|family|relationship)/i;
+const ROMANCE = /(liebe|verliebt|verlieben|date|dating|beziehung|eifersucht|eifersüchtig|flirt|herz|schwarm|trennung|zweite chance|love|crush|jealous|relationship|breakup|break up|second chance|romanti)/i;
 const FEELINGS = /(traurig|einsam|müde|gestresst|angst|schlecht drauf|sad|lonely|tired|stressed|anxious|afraid)/i;
 const THANKS = /^(danke|vielen dank|thx|thanks|thank you)\b/i;
 
@@ -80,6 +84,8 @@ export function demoReply(character: DemoCharacter, message: string, ctx: DemoCo
         ? fill(t(CHAT.relations), { relations: character.relations.slice(0, 3).join(', ') })
         : t(CHAT.noRelations),
     );
+  } else if (character.romantic && ROMANCE.test(trimmed)) {
+    parts.push(t(rng.pick(ROMANCE_REPLIES)));
   } else if (FEELINGS.test(trimmed)) {
     parts.push(t(CHAT.feelings));
   } else {

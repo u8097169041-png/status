@@ -565,6 +565,7 @@ export const en: Dictionary = {
     postapocalyptic: 'Post-apocalypse',
     'slice-of-life': 'Slice of life',
     mystery: 'Mystery',
+    dating: 'Dating & relationships',
   },
   artStyles: {
     network: 'Network',
@@ -577,6 +578,7 @@ export const en: Dictionary = {
     ocean: 'Ocean',
     gears: 'Gears',
     dunes: 'Dunes',
+    romance: 'Romance',
   },
   relationshipKinds: {
     friend: 'Friendship',
@@ -1113,6 +1115,8 @@ export const en: Dictionary = {
     milestones: 'Milestones',
     advanceTime: 'Let time pass',
     coinsGained: '+{coins} sparks',
+    effectBecomes: '{name}: becomes {kind}',
+    effectBecomesAt: '{name}: {kind} from affinity {min}',
   },
   worldQuests: {
     'wq-first-decision': 'Make your first decision',
@@ -1192,6 +1196,7 @@ export const en: Dictionary = {
     entertainment: 'Entertainment',
     scenario: 'Scenarios',
     fiction: 'Fiction',
+    dating: 'Dating',
   },
   goals: {
     reach: 'Build reach',

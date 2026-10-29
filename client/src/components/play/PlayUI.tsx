@@ -117,6 +117,18 @@ export function EffectChips({ effects }: { effects: DecisionEffectsDto }) {
     add(`m-${metric}`, value, (v) => t('tasks.effectMetric', { metric: t(`metrics.${metric as 'harmony'}`), value: v }));
   }
   for (const a of effects.affinity ?? []) add(`a-${a.characterId}`, a.delta, (value) => t('tasks.effectAffinity', { name: a.name, value }));
+  for (const a of effects.affinity ?? []) {
+    if (!a.becomes) continue;
+    const kind = t(`relationshipKinds.${a.becomes}`);
+    chips.push({
+      key: `k-${a.characterId}`,
+      text:
+        a.minAffinity !== undefined && a.minAffinity > -100
+          ? t('tasks.effectBecomesAt', { name: a.name, kind, min: a.minAffinity })
+          : t('tasks.effectBecomes', { name: a.name, kind }),
+      tone: 'neutral',
+    });
+  }
   if (effects.advancesStoryline) chips.push({ key: 'story', text: t('tasks.effectStory'), tone: 'neutral' });
   if (chips.length === 0) return <span className="xsmall faint">{t('tasks.effectNone')}</span>;
   return (

@@ -64,7 +64,7 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await page.goBack();
 
     const categories = page.getByRole('group', { name: 'Kategorie' });
-    for (const label of ['Promis', 'Politik', 'Internet', 'Fantasy', 'Eigene Welten']) {
+    for (const label of ['Promis', 'Politik', 'Internet', 'Fantasy', 'Dating', 'Eigene Welten']) {
       await expect(categories.getByRole('button', { name: label })).toBeVisible();
     }
     await categories.getByRole('button', { name: 'Sport' }).click();
@@ -72,6 +72,9 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await expect(page.locator('.world-card')).toContainText('FC Hafenstadt');
     await categories.getByRole('button', { name: 'Internet' }).click();
     await expect(page.locator('.world-card')).toContainText('Trendwelle');
+    await categories.getByRole('button', { name: 'Dating' }).click();
+    await expect(page.locator('.world-card')).toHaveCount(1);
+    await expect(page.locator('.world-card')).toContainText('Herzklopfen');
     await categories.getByRole('button', { name: 'Eigene Welten' }).click();
     await expect(page.getByRole('link', { name: /Eigene Welt erstellen/ })).toBeVisible();
     await categories.getByRole('button', { name: 'Alle' }).click();
@@ -452,6 +455,29 @@ test.describe.serial('SocialVerse – Kernabläufe', () => {
     await page.getByRole('button', { name: 'Speichern' }).click();
     await expect(page.getByRole('heading', { name: 'Testbucht', level: 1 })).toBeVisible();
     await expect(page.locator('img.world-hero-art')).toHaveCount(0);
+  });
+
+  test('8 · Dating-Welt: Beitritt, Entscheidung mit Beziehungswirkung, Dating im Generator', async () => {
+    await page.goto('/worlds/w-heartbeat/join');
+    await page.getByLabel('Name', { exact: true }).fill('Sam Neu');
+    await page.getByRole('button', { name: 'Beitreten', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Herzklopfen', level: 1 })).toBeVisible();
+    await page.goto('/tasks');
+    const intro = page.locator('article.decision').filter({ hasText: 'Neu im Viertel: Herzklopfen' });
+    await expect(intro).toBeVisible();
+    await expect(intro.locator('.decision-option').filter({ hasText: 'Mit Charme und Witz auftreten' })).toContainText('Benötigt Charisma 1');
+    const story = page.locator('article.decision').filter({ hasText: 'Der Fensterplatz' }).first();
+    await expect(story).toContainText('Behutsam vermitteln');
+    await intro.locator('.decision-option').filter({ hasText: 'Offen auf alle zugehen' }).getByRole('button', { name: 'Diese Option wählen' }).click();
+    await page.getByRole('dialog', { name: 'Entscheidung treffen?' }).getByRole('button', { name: 'Bestätigen' }).click();
+    await expect(page.locator('.decision-history')).toContainText('Gewählt: Offen auf alle zugehen');
+
+    await page.goto('/worlds/new');
+    await page.getByRole('radio', { name: 'Dating & Beziehungen' }).click();
+    await page.getByRole('button', { name: 'Entwurf erzeugen' }).click();
+    await expect(page.getByText('Lokaler Entwurf')).toBeVisible();
+    await expect(page.locator('.world-form').getByRole('combobox', { name: 'Genre' })).toHaveValue('dating');
+    await expect(page.locator('.world-form').getByRole('combobox', { name: 'Bildstil' })).toHaveValue('romance');
   });
 
   test('7 · Quest einlösen erhöht die XP', async () => {

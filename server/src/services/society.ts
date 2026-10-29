@@ -134,6 +134,26 @@ export function deleteRelationship(ctx: AppContext, id: string): void {
  * Ändert die Zuneigung zwischen zwei Charakteren. Legt bei Bedarf eine neue Beziehung an.
  * Gibt alte und neue Werte sowie einen eventuellen Wechsel der Beziehungsart zurück.
  */
+/** Setzt die Art einer Beziehung (z. B. Romanze nach einem Date). Legt die Beziehung bei Bedarf an. */
+export function setRelationshipKind(ctx: AppContext, x: string, y: string, kind: RelationshipKind): void {
+  const [a, b] = x < y ? [x, y] : [y, x];
+  const now = ctx.now().toISOString();
+  const updated = run(ctx.db, 'UPDATE relationships SET kind = ?, updated_at = ? WHERE a_id = ? AND b_id = ?', kind, now, a, b);
+  if (updated.changes === 0) {
+    const worldId = get<{ world_id: string | null }>(ctx.db, 'SELECT world_id FROM characters WHERE id = ?', a)?.world_id ?? null;
+    run(
+      ctx.db,
+      `INSERT INTO relationships (id, world_id, a_id, b_id, kind, affinity, note, updated_at) VALUES (?, ?, ?, ?, ?, 0, '', ?)`,
+      newId('r'),
+      worldId,
+      a,
+      b,
+      kind,
+      now,
+    );
+  }
+}
+
 export function adjustAffinity(
   ctx: AppContext,
   worldId: string,

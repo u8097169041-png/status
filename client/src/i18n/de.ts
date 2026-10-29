@@ -566,6 +566,7 @@ export const de = {
     postapocalyptic: 'Postapokalypse',
     'slice-of-life': 'Alltag',
     mystery: 'Mystery',
+    dating: 'Dating & Beziehungen',
   },
   artStyles: {
     network: 'Netzwerk',
@@ -578,6 +579,7 @@ export const de = {
     ocean: 'Ozean',
     gears: 'Zahnräder',
     dunes: 'Dünen',
+    romance: 'Romantik',
   },
   relationshipKinds: {
     friend: 'Freundschaft',
@@ -1114,6 +1116,8 @@ export const de = {
     milestones: 'Meilensteine',
     advanceTime: 'Zeit vergehen lassen',
     coinsGained: '+{coins} Funken',
+    effectBecomes: '{name}: wird zu {kind}',
+    effectBecomesAt: '{name}: {kind} ab Zuneigung {min}',
   },
   worldQuests: {
     'wq-first-decision': 'Triff deine erste Entscheidung',
@@ -1193,6 +1197,7 @@ export const de = {
     entertainment: 'Unterhaltung',
     scenario: 'Szenarien',
     fiction: 'Fiktion',
+    dating: 'Dating',
   },
   goals: {
     reach: 'Reichweite aufbauen',

@@ -382,6 +382,73 @@ function GeneratedWorldArt({ seed, style, hue, className, label }: Omit<WorldArt
       }
       els.push(<line key="half" x1={W / 2} y1={140} x2={W / 2} y2={H} stroke={hsl(hue, 20, 85, 0.7)} strokeWidth={1.5} />);
       els.push(<ellipse key="circle" cx={W / 2} cy={172} rx={40} ry={14} fill="none" stroke={hsl(hue, 20, 85, 0.7)} strokeWidth={1.5} />);
+    } else if (style === 'romance') {
+      // Dating: Abendhimmel, Lichterkette über den Dächern, warme Fenster und schwebende Herzen
+      defs = (
+        <>
+          <linearGradient id={sky} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={hsl(hue + 250, 45, 16)} />
+            <stop offset="0.6" stopColor={hsl(hue, 55, 38)} />
+            <stop offset="1" stopColor={hsl(hue + 25, 75, 62)} />
+          </linearGradient>
+          <radialGradient id={glow}>
+            <stop offset="0" stopColor={hsl(45, 100, 80, 0.95)} />
+            <stop offset="1" stopColor={hsl(45, 100, 70, 0)} />
+          </radialGradient>
+        </>
+      );
+      els.push(<rect key="sky" width={W} height={H} fill={`url(#${sky})`} />);
+      els.push(<circle key="moon" cx={rng.range(60, W - 60)} cy={rng.range(28, 50)} r={14} fill={hsl(45, 90, 90, 0.9)} />);
+      for (let i = 0; i < 30; i++) {
+        els.push(<circle key={`st${i}`} cx={rng.range(0, W)} cy={rng.range(0, H * 0.45)} r={rng.range(0.4, 1.3)} fill="white" opacity={rng.range(0.3, 0.9)} />);
+      }
+      // Dächer mit warm beleuchteten Fenstern
+      let x = 0;
+      let b = 0;
+      while (x < W) {
+        const w = rng.range(36, 70);
+        const h = rng.range(55, 95);
+        const roof = rng.range(8, 20);
+        els.push(
+          <path key={`h${b}`} d={`M${x} ${H} L${x} ${H - h} L${x + w / 2} ${H - h - roof} L${x + w} ${H - h} L${x + w} ${H} Z`} fill={hsl(hue + 250, 35, 12)} />,
+        );
+        for (let r = 0; r < 3; r++) {
+          for (let c = 0; c < 2; c++) {
+            if (rng.next() < 0.55) {
+              els.push(
+                <rect key={`w${b}-${r}-${c}`} x={x + 8 + c * (w / 2 - 4)} y={H - h + 10 + r * 18} width={8} height={10} rx={1.5} fill={hsl(40, 95, rng.range(60, 75))} opacity={0.9} />,
+              );
+            }
+          }
+        }
+        x += w + rng.range(2, 6);
+        b++;
+      }
+      // Lichterkette
+      const sag = rng.range(18, 30);
+      const y0 = rng.range(70, 90);
+      els.push(<path key="wire" d={`M0 ${y0} Q ${W / 2} ${y0 + sag * 2} ${W} ${y0}`} stroke={hsl(hue + 250, 20, 20)} strokeWidth={1.2} fill="none" />);
+      for (let i = 1; i < 16; i++) {
+        const t = i / 16;
+        const lx = t * W;
+        const ly = (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * (y0 + sag * 2) + t * t * y0;
+        els.push(<circle key={`lg${i}`} cx={lx} cy={ly + 4} r={9} fill={`url(#${glow})`} />);
+        els.push(<circle key={`lb${i}`} cx={lx} cy={ly + 4} r={2.4} fill={hsl(i % 3 === 0 ? 340 : 45, 100, 78)} />);
+      }
+      // Herzen
+      for (let i = 0; i < 5; i++) {
+        const hx = rng.range(20, W - 20);
+        const hy = rng.range(20, y0 - 10);
+        const s = rng.range(4, 8);
+        els.push(
+          <path
+            key={`hz${i}`}
+            d={`M${hx} ${hy + s * 0.9} C ${hx - s * 1.6} ${hy - s * 0.2}, ${hx - s * 0.8} ${hy - s * 1.4}, ${hx} ${hy - s * 0.5} C ${hx + s * 0.8} ${hy - s * 1.4}, ${hx + s * 1.6} ${hy - s * 0.2}, ${hx} ${hy + s * 0.9} Z`}
+            fill={hsl(345, 85, 70)}
+            opacity={rng.range(0.45, 0.85)}
+          />,
+        );
+      }
     } else if (style === 'network') {
       // Internet: leuchtende Knoten, Verbindungen und schwebende Bildschirme
       defs = (

@@ -658,7 +658,7 @@ export interface DecisionEffectsDto {
   influence?: number;
   followers?: number;
   metrics?: Partial<Record<WorldMetric, number>>;
-  affinity?: { characterId: string; name: string; delta: number }[];
+  affinity?: { characterId: string; name: string; delta: number; becomes?: RelationshipKind; minAffinity?: number }[];
   /** Die Option treibt die verknüpfte Geschichte um ein Kapitel voran. */
   advancesStoryline?: boolean;
 }

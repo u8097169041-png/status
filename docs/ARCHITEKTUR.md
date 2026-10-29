@@ -155,6 +155,50 @@ der alten Figuren. Welten, deren Figuren-IDs oder Handles bereits belegt sind, w
 Inhaltsstand 3 ergänzt die Welt „Trendwelle“ und füllt die Enden bestehender Geschichten; Migration 3
 (`quests-skills-arcs`) legt die neuen Spalten und Tabellen an. Bestehende Spielstände behalten XP und Werte;
 Archetyp, Hauptziel und Quests werden beim ersten Zugriff ergänzt.
+Inhaltsstand 4 ergänzt die Dating-Welt „Herzklopfen“ (`content/seedWorlds4.ts`) mit eigenen Enden
+(`ARC_ENDINGS_V4`); Migration 5 (`world-cover-images`) ergänzt `worlds.cover_image`.
+
+## Dating-Kategorie
+
+- `dating` ist Genre und Weltkategorie (`shared/constants.ts`); passender Generator-Pool und Bildstil `romance`.
+- Für Welten der Kategorie Dating wählt `services/decisions.ts` eigene Vorlagen (`content/datingDecisions.ts`):
+  - Einstieg
+  - Date-Einladung
+  - Missverständnis
+  - Eifersucht
+  - Liebesdreieck
+  - zweite Chance
+  - Speed-Dating
+  - Wendepunkte der Geschichten mit Weg zu einem Ende
+- Zuneigungseffekte können eine Beziehungsart setzen (`becomes`, z. B. `romance` oder `friend`). Das geschieht erst ab
+  einer Mindest-Zuneigung (`minAffinity`) und über die Spielregel in `chooseOption`, als eigenes Ereignis-Effekt
+  `relationshipKind`.
+- Quests, Level und Fähigkeiten laufen unverändert: Rollen ohne Stichwort erhalten den Archetyp „local“ mit
+  Hauptziel „Beziehungen“.
+- KI: Der Systemprompt verlangt respektvolle, nicht explizite Romantik mit erwachsenen Figuren. Der Weltgenerator
+  bekommt dieselben Vorgaben für Dating.
+- Ohne KI antworten Figuren aus Dating-Welten auf Liebes- und Beziehungsthemen mit eigenen regelbasierten Antworten
+  (`ROMANCE_REPLIES`).
+
+## Eigene Weltbilder
+
+- **Client (`lib/images.ts`, `components/worlds/CoverPicker.tsx`):**
+  - Prüft Typ (JPEG/PNG/WebP), Größe (≤ 15 MB) und Mindestmaße.
+  - Verkleinert auf ≤ 1600 × 1000 px und kodiert neu: WebP, sonst JPEG. Das entfernt auch Metadaten.
+  - Zeigt eine Vorschau als `blob:`-URL. Die CSP erlaubt dafür `img-src blob:`.
+- **Speichern:** Erst zusammen mit der Welt (neu oder bearbeitet). Scheitert das Bild, bleibt die Welt erhalten.
+- **Server (`services/covers.ts`):**
+  - `PUT /api/worlds/:id/cover` nimmt Rohdaten an. Der Service prüft Content-Type, Dateisignatur (Magic Bytes),
+    Größe (≤ 3 MB) und dass es sich um eine eigene Welt handelt.
+  - Gespeichert wird atomar (temporäre Datei, dann Umbenennen) unter einem vom Server erzeugten Namen in
+    `data/uploads/covers`. Danach wird `worlds.cover_image` gesetzt und die alte Datei gelöscht.
+  - Speicherfehler, z. B. `ENOSPC`, ergeben `507 storage_failed`, und die Datenbank bleibt unverändert.
+- **Ausliefern:** `GET /api/media/covers/:file`
+  - liefert nur Namen, die zum Server-Muster passen (kein Pfad-Traversal);
+  - mit `nosniff`, `default-src 'none'` und dauerhaftem Caching, weil sich der Name bei jedem neuen Bild ändert.
+- **Aufräumen:** Dateien werden beim Ersetzen, Entfernen, Löschen der Welt und bei „Alle Daten löschen“ entfernt.
+- **Anzeige:** `coverUrl` steht in `WorldSummary`, `WorldDetail` und den Fortschritts-Stempeln. `WorldArt` zeigt das
+  Bild oder die generierte Grafik.
 
 ## Fortschritt ohne Mehrfachbelohnung
 
@@ -234,7 +278,22 @@ Aufrufer übergebene regelbasierte Ersatzfunktion (`fallback`) das Ergebnis, mit
 
 - Die lokale Laufzeit wird beim Start und danach höchstens alle 30 s (erreichbar) bzw. 15 s (nicht erreichbar) mit
   kurzen Zeitlimits geprüft.
-- Nach Verbindungsfehlern oder Zeitüberschreitung wird sie bis zur nächsten Prüfung übersprungen.
+- Nur nach Verbindungsfehlern wird sie bis zur nächsten Prüfung übersprungen. Eine Zeitüberschreitung bedeutet
+  „langsam“, nicht „nicht erreichbar“: Sie erscheint als letzte Zeitüberschreitung in der Diagnose. Während einer
+  laufenden Generierung entfällt die Prüfung, weil eine ausgelastete Laufzeit sonst fälschlich als fehlend gälte.
+- **Streaming mit drei Zeitlimits** (`ollamaClient.ts`): bis zum ersten Token inklusive Laden des Modells
+  (`LOCAL_AI_LOAD_TIMEOUT_MS`), die längste Pause zwischen Tokens (`LOCAL_AI_IDLE_TIMEOUT_MS`) und die Gesamtdauer.
+  Die Gesamtdauer ist für Chats `LOCAL_AI_TIMEOUT_MS`, für lange Generierungen (`long: true`) `LOCAL_AI_LONG_TIMEOUT_MS`.
+- Der Fortschritt in Tokens wird gemeldet, und ein `AbortSignal` bricht ab. Die gemessene Geschwindigkeit
+  (`eval_count/eval_duration`) erscheint in der Diagnose.
+- `format` ist ab Ollama 0.5 ein JSON-Schema, sonst `"json"`. `num_ctx` ist 4096. `done_reason = "length"` wird als
+  `truncated` gemeldet.
+- **Weltentwurf als Hintergrundauftrag** (`services/generationJobs.ts`):
+  - `POST /api/worlds/generate-jobs` startet (es läuft höchstens ein Auftrag), `GET …/:id` liefert Fortschritt und
+    Ergebnis, `DELETE …/:id` bricht ab.
+  - Ohne verfügbare KI ist der Auftrag sofort fertig: regelbasierter Entwurf, Grund in `notice`.
+  - Aufträge liegen nur im Arbeitsspeicher und verfallen nach 30 Minuten.
+  - Das Schema des Entwurfs begrenzt alle Feldlängen. Das Token-Limit richtet sich nach der Zahl der Figuren.
 - Ein Slot begrenzt sie auf eine Anfrage gleichzeitig. Chats warten darauf, Hintergrundaufgaben (Welt, Reaktionen,
   Zusammenfassungen) verzichten bei Belegung auf KI.
 

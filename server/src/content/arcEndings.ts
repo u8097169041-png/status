@@ -2,6 +2,7 @@ import type { Lang } from '../../../shared/constants';
 import type { ArcEndingDto, ArcPath } from '../../../shared/types';
 import { fill } from '../lib/text';
 import type { L } from './seedWorlds';
+import { ARC_ENDINGS_V4 } from './seedWorlds4';
 
 /**
  * Enden der Handlungsbögen. Jede Geschichte hat drei mögliche Enden: mutig („bold“), diplomatisch
@@ -229,7 +230,7 @@ export const GENERIC_ENDINGS: EndingTemplate[] = [
 
 /** Konkrete Enden einer Geschichte in der Inhaltssprache (eigene Texte oder allgemeine Vorlage). */
 export function buildEndings(storylineId: string, title: string, world: string, lang: Lang): ArcEndingDto[] {
-  const templates = ARC_ENDINGS[storylineId] ?? GENERIC_ENDINGS;
+  const templates = ARC_ENDINGS[storylineId] ?? ARC_ENDINGS_V4[storylineId] ?? GENERIC_ENDINGS;
   return templates.map((e) => ({
     id: `${storylineId}:${e.path}`,
     path: e.path,

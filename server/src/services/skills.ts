@@ -16,6 +16,7 @@ import {
 } from '../../../shared/skills';
 import type { SkillDto, SkillPointsDto } from '../../../shared/types';
 import { CHARACTER_GOAL_TYPES } from '../content/seedWorlds3';
+import { CHARACTER_GOAL_TYPES_V4 } from '../content/seedWorlds4';
 import type { AppContext } from '../context';
 import { all, get, run, tx } from '../db/database';
 import { AppError, badRequest } from '../lib/errors';
@@ -36,7 +37,7 @@ export function ensureRole(ctx: AppContext, p: PlayerRow): { archetype: Archetyp
   );
   archetype = archetypeFor(info?.role ?? '', info ? categoryOfGenre(info.genre) : '');
   if (!(GOAL_TYPES as readonly string[]).includes(goalType)) {
-    goalType = (p.mode === 'existing' ? CHARACTER_GOAL_TYPES[p.character_id] : undefined) ?? ARCHETYPE_PROFILE[archetype].defaultGoal;
+    goalType = (p.mode === 'existing' ? (CHARACTER_GOAL_TYPES[p.character_id] ?? CHARACTER_GOAL_TYPES_V4[p.character_id]) : undefined) ?? ARCHETYPE_PROFILE[archetype].defaultGoal;
   }
   run(ctx.db, 'UPDATE players SET archetype = ?, goal_type = ? WHERE id = ?', archetype, goalType, p.id);
   p.archetype = archetype;

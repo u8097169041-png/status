@@ -48,7 +48,7 @@ export type RelationshipKind = (typeof RELATIONSHIP_KINDS)[number];
 export const WRITING_STYLES = ['casual', 'formal', 'poetic', 'terse', 'enthusiastic', 'sarcastic', 'scholarly'] as const;
 export type WritingStyle = (typeof WRITING_STYLES)[number];
 
-export const ART_STYLES = ['city', 'cosmic', 'forest', 'ocean', 'gears', 'dunes', 'capital', 'stage', 'stadium', 'network'] as const;
+export const ART_STYLES = ['city', 'cosmic', 'forest', 'ocean', 'gears', 'dunes', 'capital', 'stage', 'stadium', 'network', 'romance'] as const;
 export type ArtStyle = (typeof ART_STYLES)[number];
 
 export const GENRES = [
@@ -58,6 +58,7 @@ export const GENRES = [
   'sports',
   'entertainment',
   'internet',
+  'dating',
   'alt-history',
   'cyberpunk',
   'scifi',
@@ -76,6 +77,7 @@ export const WORLD_CATEGORIES = [
   'politics',
   'internet',
   'fantasy',
+  'dating',
   'business',
   'sports',
   'entertainment',
@@ -93,6 +95,7 @@ export function categoryOfGenre(genre: Genre): WorldCategory {
     case 'entertainment':
     case 'internet':
     case 'fantasy':
+    case 'dating':
       return genre;
     case 'alt-history':
     case 'postapocalyptic':
