@@ -7,6 +7,11 @@ triffst Entscheidungen und beeinflusst damit Beziehungen, Ansehen und den Verlau
 handeln auch selbstständig weiter. Gespräche führt eine **lokale KI** (Ollama, kostenlos) – ohne sie antwortet die
 **simulierte KI**, ebenfalls kostenlos und offline. Spieler brauchen nie einen eigenen API-Schlüssel.
 
+Daneben gibt es den **Lebensmodus**: freie, fortlaufende Lebensgeschichten – als Mafiaboss, Politikerin, Gründer,
+Star oder ganz normaler Mensch. Ein regelbasiertes Spielsystem entscheidet über Erfolg und Misserfolg, Werte,
+Beziehungen, Ereignisse und den (endgültigen) Tod; die KI erzählt nur. Profil-, Titel- und Szenenbilder erzeugt
+optional eine **lokale Bild-KI** (Forge/AUTOMATIC1111 oder ComfyUI) – ohne sie erscheinen gezeichnete Porträts.
+
 ![Startseite: Weltauswahl mit Kategorien, beliebten Welten und Handlungsbögen](docs/screenshots/discover.jpg)
 
 > **Hinweis:** SocialVerse ist eine lokale Einzelplatz-Anwendung. Es gibt keine Benutzerkonten, keine
@@ -18,11 +23,13 @@ handeln auch selbstständig weiter. Gespräche führt eine **lokale KI** (Ollama
 
 1. [Funktionen](#funktionen)
    - [So funktioniert das Spiel](#so-funktioniert-das-spiel)
+   - [Lebensmodus](#lebensmodus)
 2. [Voraussetzungen](#voraussetzungen)
 3. [Schnellstart unter Windows 11](#schnellstart-unter-windows-11)
 4. [Entwicklungsmodus mit Hot Reload](#entwicklungsmodus-mit-hot-reload)
 5. [Start unter macOS/Linux und alle Befehle](#start-unter-macoslinux-und-alle-befehle)
 6. [KI einrichten (lokal, kostenlos)](#ki-einrichten-lokal-kostenlos)
+   - [Lokale Bild-KI einrichten (optional)](#lokale-bild-ki-einrichten-optional)
 7. [Konfiguration (.env)](#konfiguration-env)
 8. [Daten, Export, Backup und Löschen](#daten-export-backup-und-löschen)
 9. [Sicherheit und Datenschutz](#sicherheit-und-datenschutz)
@@ -52,6 +59,9 @@ Technische Details zu Aufbau, Datenmodell, Simulation und Erinnerungsstrategie s
 | **Welten & Figuren** | 13 vorgefertigte, frei erfundene Welten (u. a. Regierungsviertel, Spotlight Boulevard, Trendwelle, Herzklopfen, Unicorn Valley, FC Hafenstadt, Late Night Live, Analog 2026) mit 50 Figuren, Zielen, Beziehungen und Geschichten mit je drei möglichen Enden; eigene Welten und Figuren |
 | **Weltgenerator & -Editor** | Entwurf per lokaler KI als Hintergrundauftrag mit Fortschrittsanzeige und Abbruch; regelbasierter Entwurf als Rückfall (mit Grund und Lösungsschritten); **eigenes Titelbild** (JPEG, PNG, WebP) mit Vorschau, Ersetzen und Entfernen – für neue und bestehende eigene Welten |
 | **Dating** | Eigene Kategorie mit der Welt „Herzklopfen“: Kennenlernen, erste Dates, Freundschaft, Missverständnisse, Eifersucht, Liebesdreieck, lange Beziehungen, Trennung und zweite Chancen. Entscheidungen verändern Zuneigung und Beziehungsart (z. B. Romanze erst ab genug Zuneigung), drei Geschichten mit je drei Enden; nur erwachsene Figuren, romantisch, aber nie explizit |
+| **Lebensmodus** | Eigene Lebensgeschichten aus einem ausführlichen Prompt oder Schritt für Schritt (Hintergrund, Figuren, Beziehungen, Ausgangssituation, Details); Figuren aus dem Social-Modus übernehmen; Startwerte je Rolle (Macht, Einfluss, Vermögen, Ruf, Autorität, Vertrauen, Beziehungen, Fähigkeiten, Loyalität, Ansehen, Aufmerksamkeit, Gesundheit); Würfelergebnis mit Erfolgschance; vier Vorschläge (klug, alternativ, riskant, überraschend) plus freie Eingabe; Zeitsprung; Ereignisse, Figuren mit eigenen Zielen, Gedächtnis mit Wissensgrenzen; permanenter Tod |
+| **Bilder** | Profilfotos für alle Figuren (festes Aussehen, in beiden Modi gleich), Titelbilder für Geschichten, Szenenbilder per Bildschaltfläche in Chats und Geschichten (optional mit eigener Beschreibung) und automatisch bei wichtigen Ereignissen; ohne Bild-KI gezeichnete Porträts und Szenenkarten |
+| **Antwortvorschläge im Chat** | Nach jeder Antwort vier situationsbezogene Vorschläge (klug, alternativ, riskant, überraschend) – ein Klick sendet sie als eigene Nachricht |
 | **Einstellungen** | Sprache (Deutsch/Englisch), KI-Modus (automatisch/lokal, Server-KI mit Freigabe, nur simulierte KI), Diagnose mit Verbindungsstatus und Test, Wahl des lokalen Modells, Limits, Verbrauchsprotokoll, Simulationssteuerung, Erinnerungsoptionen, Datenexport und vollständiges Löschen |
 
 **Lebendige Welten:** Solange SocialVerse läuft, vergeht in regelmäßigen Abständen in einer Welt nach der anderen
@@ -104,6 +114,36 @@ standardmäßig ausgeschaltet.
     Ereignissen geschützt. Private Absichten werden nicht als Tatsachen dargestellt.
 11. **Simulierte Aktivität:** Angaben wie „Beiträge in 24 h“ oder Ereignisse stammen aus der lokalen Simulation und
     sind keine Live-Daten.
+
+### Lebensmodus
+
+Über den Umschalter **Social | Leben** (Seitenleiste bzw. Kopfzeile auf dem Handy) wechselst du in den Lebensmodus.
+Beide Modi teilen Figuren, Bilder und KI, haben aber eigene Mechaniken.
+
+1. **Einrichten:** Beschreibe dein Leben in einem Prompt oder in Teilen. Beispiel: „Ich bin Don Salvatore Greco, der
+   gefürchtete Mafiaboss von Palermo … – Marco Bellini: meine rechte Hand …“. Figuren werden aus Aufzählungen
+   („- Name: Beschreibung“) und Fließtext („meine Frau Lucia“) erkannt. Mit lokaler KI werden Figuren, Orte,
+   Organisationen und Geheimnisse genauer ausgelesen; Rolle, Genre und **Startwerte bestimmt immer das Spielsystem**
+   (ein Mafiaboss startet mit Macht 80+, eine Kassiererin ohne Macht und mit wenig Vermögen). Den Entwurf kannst du vor
+   dem Start bearbeiten.
+2. **Spielen:** Jede Handlung (Vorschlag oder freie Eingabe) wird einer Aktionsart zugeordnet (Gespräch, Überzeugen,
+   Drohen, Gewalt, Täuschen, Geschäft, Romantik, Helfen, Nachforschen, Öffentlichkeit, Verbrechen, Reise, Ruhe,
+   Abwarten). Die Erfolgschance ergibt sich aus deinen Werten, der Beziehung zur Zielfigur und dem Risiko – nie unter
+   5 % und nie über 92 %. Gewürfelt wird ein Ergebnis von „großer Erfolg“ bis „schwerer Fehlschlag“; die Folgen für
+   Werte, Beziehungen und Gesundheit legt das Spielsystem fest, die KI erzählt sie nur.
+3. **Eigenleben:** Figuren haben Persönlichkeit, Ziele, Geheimnisse sowie Zuneigung, Vertrauen, Loyalität und Furcht.
+   Ereignisse entstehen aus der Lage: Verrat bei geringer Loyalität, Angriffe von Feinden, Razzien bei hoher
+   Aufmerksamkeit, Skandale, Eifersucht, Trennungen, Krankheit, Glücksfälle, Machtkämpfe zwischen Figuren.
+   Während du nicht spielst, vergeht höchstens alle 8 Stunden Zeit (regelbasiert, ohne KI-Aufruf, abschaltbar über
+   „Automatische Simulation“).
+4. **Gedächtnis:** Erinnerungen werden strukturiert gespeichert (Entscheidungen, Versprechen, Verrat, Todesfälle,
+   Geheimnisse, Beziehungen, Fakten) – jeweils mit Wichtigkeit und **wer davon weiß**. Vor jeder KI-Erzählung werden
+   die relevanten Erinnerungen gezielt abgerufen; kritische Fakten sind immer dabei, ältere Verläufe werden
+   zusammengefasst. Figuren erhalten nur, was sie wissen können.
+5. **Tod:** Sinkt die Gesundheit auf 0, endet die Geschichte **endgültig** – keine Wiederbelebung, auch nicht nach einem
+   Neustart. Die Geschichte bleibt lesbar.
+
+![Lebensgeschichte: Erzählung mit Würfelergebnis, vier Vorschlägen, Werten und Figuren](docs/screenshots/leben.jpg)
 
 ![Feed einer Welt mit Statusleiste der Spielfigur und Stories dieser Welt](docs/screenshots/feed.jpg)
 
@@ -262,6 +302,47 @@ lädt das Modell zusätzlich in den Speicher. Ein Chat dauert damit wenige Sekun
 - Die Diagnose unter **Einstellungen → KI & Modelle** zeigt die gemessene Geschwindigkeit, die Zeitlimits und die
   letzte Zeitüberschreitung.
 
+### Lokale Bild-KI einrichten (optional)
+
+SocialVerse erzeugt Bilder **nur lokal** über eine vorhandene Stable-Diffusion-Oberfläche. Es lädt selbst nichts
+herunter. Ohne Bild-KI funktioniert alles weiter mit gezeichneten Porträts und Szenenkarten (kostenlos, offline).
+
+`npm run image:check` erkennt Grafikkarte und Bild-KI und gibt eine Empfehlung aus:
+
+| Hardware | Empfehlung | Download (ca.) | Dauer pro Bild (grob) |
+| --- | --- | --- | --- |
+| NVIDIA ab 8 GB Grafikspeicher | Fotorealistisches **SDXL**-Modell (z. B. RealVisXL, Juggernaut XL) | 6–7 GB | 10–40 s |
+| NVIDIA 4–6 GB | Fotorealistisches **SD-1.5**-Modell (z. B. Realistic Vision), Forge | 2 GB | 15–60 s |
+| AMD (Windows) | ComfyUI mit DirectML/ZLUDA, SD 1.5 – aufwendiger | 2 GB | stark abhängig |
+| Ohne Grafikkarte | Bild-KI auslassen (auf dem Prozessor mehrere Minuten pro Bild) | – | – |
+
+**Variante A – Stable Diffusion WebUI Forge:** Paket von der offiziellen GitHub-Seite
+(`lllyasviel/stable-diffusion-webui-forge`) laden, in `webui-user.bat` `set COMMANDLINE_ARGS=--api` eintragen, das
+Modell (`.safetensors`) nach `models\Stable-diffusion` kopieren und Forge starten. SocialVerse findet es unter
+`http://127.0.0.1:7860`.
+
+**Variante B – ComfyUI:** Portable Windows-Version von der offiziellen GitHub-Seite (`comfyanonymous/ComfyUI`),
+Modell nach `ComfyUI\models\checkpoints`, `run_nvidia_gpu.bat` starten. SocialVerse findet es unter
+`http://127.0.0.1:8188`.
+
+Modelle nur von den offiziellen Modellseiten laden und deren **Lizenz prüfen**. Danach in **Einstellungen → Bild-KI**
+auf „Erneut prüfen“ klicken.
+
+**So entstehen die Bilder:**
+
+- **Festes Aussehen:** Jede Figur hat ein gespeichertes Aussehen (Geschlecht, Alter, Haut, Haare, Augen, Statur, Bart,
+  Merkmale, Kleidung), das du auf der Figurenseite bearbeiten kannst. Es geht in jeden Bildprompt ein; Profilfotos
+  nutzen einen festen Seed. So sieht eine Figur in allen Bildern und in beiden Modi möglichst gleich aus.
+- **Bild des Moments:** Die Kamera-Schaltfläche in Chats und Geschichten fasst die letzten Nachrichten, das Aussehen
+  der Beteiligten, Ort, Stimmung und passende frühere Ereignisse zu einem fotorealistischen Prompt zusammen (mit
+  lokaler Sprach-KI ins Englische übertragen, sonst regelbasiert). Optional ergänzt du eine eigene Beschreibung.
+  Jedes Bild bekommt einen neuen Seed und eine andere Kamera-/Lichtvariante – keine Wiederholungen.
+- **Schonend:** Aufträge laufen nacheinander (Spieleraufträge vor Hintergrundaufträgen, höchstens 6 wartende
+  Hintergrundbilder), identische Aufträge kommen aus dem Cache, Fehler werden nicht automatisch wiederholt.
+- **Gespeichert** werden Bilder in `data/uploads/images` und bleiben nach Neustarts erhalten.
+- **Inhalte:** Sexuelle, Minderjährige betreffende oder extrem gewalttätige Darstellungen werden abgelehnt;
+  ein Negativprompt schließt Nacktheit und Gore aus.
+
 ### Server-KI (optional, für einen späteren zentralen Betrieb)
 
 Die Server-KI ist für ein späteres Hosting gedacht, bei dem der **Betreiber** einen KI-Dienst bereitstellt
@@ -326,6 +407,12 @@ Standardwerte ersetzt.
 | `LOCAL_AI_LOAD_TIMEOUT_MS` / `LOCAL_AI_IDLE_TIMEOUT_MS` | `120000` / `30000` | Zeit bis zum ersten Wort (inkl. Laden des Modells) / längste Pause zwischen zwei Wörtern |
 | `LOCAL_AI_TIMEOUT_MS` / `LOCAL_AI_LONG_TIMEOUT_MS` | `180000` / `600000` | Gesamtdauer Chat / Weltentwurf |
 | `LOCAL_AI_MAX_TOKENS` | `350` | Antwortlänge im Chat (Weltentwürfe nutzen ein eigenes, größeres Limit) |
+| `IMAGE_BACKEND` | `auto` | Bild-KI: `auto` (Forge/A1111 und ComfyUI suchen), `sdwebui`, `comfyui`, `none` |
+| `IMAGE_SDWEBUI_URL` / `IMAGE_COMFYUI_URL` | `http://127.0.0.1:7860` / `http://127.0.0.1:8188` | Adressen der lokalen Bild-KI |
+| `IMAGE_COMFYUI_CHECKPOINT` | leer | Modelldatei für ComfyUI (leer = erstes gefundenes) |
+| `IMAGE_STEPS` / `IMAGE_CFG` | `24` / `5.5` | Rechenschritte und Prompt-Treue |
+| `IMAGE_PORTRAIT_SIZE` / `IMAGE_SCENE_SIZE` | leer | Feste Bildgrößen wie `896x1152`; leer = passend zum Modell |
+| `IMAGE_TIMEOUT_MS` | `600000` | Höchstdauer eines Bildes |
 | `SERVER_AI_ENABLED` | `false` | Server-KI grundsätzlich erlauben (Betreiber) |
 | `SERVER_AI_BASE_URL` | `https://openrouter.ai/api/v1` | OpenAI-kompatible Adresse |
 | `SERVER_AI_API_KEY` | leer | Zugangsschlüssel – nur serverseitig, nie im Frontend |
@@ -417,7 +504,14 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   Ollama), Weltentwurf als Hintergrundauftrag, Weltbilder (Upload, Typ-/Signatur-/Größenprüfung, Pfadschutz,
   Ersetzen, Entfernen, Löschen mit Welt und Reset, Zuordnung nach Neustart) und die Dating-Kategorie (erwachsene
   Figuren, Enden, Romanze erst ab genug Zuneigung, Liebesdreieck, regelbasierte Dating-Antworten ohne KI,
-  Generator-Vorgaben, Ergänzung bestehender Datenbanken).
+  Generator-Vorgaben, Ergänzung bestehender Datenbanken); außerdem der **Lebensmodus** (Einrichtung aus Prompt und
+  Teilen, Startwerte Mafiaboss vs. Bürgerin, Würfe ohne garantierten Erfolg, Züge mit Vorschlag und freier Eingabe,
+  Zeitsprung, permanenter Tod inkl. Neustart, tote Figuren sprechen nicht, Wissensgrenzen, Abruf kritischer Fakten
+  nach 3.000 Nachrichten, Zusammenfassungen, Abruf vor jeder KI-Erzählung, Wiederholungsschutz der Vorschläge,
+  Wiederherstellung nach Absturz, Persistenz) und die **Bild-KI** gegen Nachbauten von Forge/A1111 und ComfyUI
+  (Erkennung, SDXL/SD-1.5-Größen, festes Aussehen im Prompt, Cache, Warteschlange mit Vorrang, Fehler ohne
+  Wiederholung, Speicherung nach Neustart, Pfadschutz, Bildschaltfläche im Chat, Szenenkarte ohne Bild-KI,
+  gesperrte Beschreibungen, Chat-Vorschläge).
 - **Ende-zu-Ende (Playwright):** Startseite/Weltauswahl (Kategorien, Weltkarten, Navigation vor dem Beitritt,
   keine weltinternen Inhalte), Quests/Level/Fähigkeiten (Hauptquest, gesperrte Optionen, Fähigkeit steigern,
   Dialogoption mit Wirkung, Persistenz), Weltvorschau und Beitritt, eigene und bekannte Figur,
@@ -428,7 +522,10 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
   Löschen, Weltbild (ungültige Dateien, Vorschau, Speichern, Neuladen, Weltkarte, Ersetzen, Entfernen), Dating-Welt
   (Kategoriefilter, Beitritt, Dating-Entscheidung, Dating im Generator), Weltentwurf mit lokaler KI (Fortschritt,
   Abbruch, Ergebnis) sowie die Hybrid-KI gegen lokale Nachbauten von Ollama (`e2e/mock-ollama.mjs`) und einem
-  OpenAI-kompatiblen Server (`e2e/mock-openrouter.mjs`) in einer zweiten App-Instanz.
+  OpenAI-kompatiblen Server (`e2e/mock-openrouter.mjs`) in einer zweiten App-Instanz; der Lebensmodus ohne KI
+  (Modus wechseln, Einrichtung, Vorschlag, freie Eingabe, Zeitsprung, Szenenkarte, Gedächtnis, Neuladen, mobile
+  Reiter, Löschen) und mit simulierter lokaler KI und Bild-KI (`e2e/mock-sdwebui.mjs`: KI-Erzählung, Szenenfoto in
+  Geschichte und Chat, Chat-Vorschläge, Diagnose in den Einstellungen).
 - **Barrierefreiheit:** Während der Entwicklung wurden alle Seiten (Desktop und Mobil) mit axe-core auf WCAG 2 A/AA
   geprüft; gefundene Probleme wurden behoben. Diese Prüfung ist nicht Teil der automatischen Testsuite.
 
@@ -448,6 +545,9 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
 | „KI-Generierung fehlgeschlagen (Zeitüberschreitung)“ beim Weltentwurf | Seit dieser Version läuft der Entwurf im Hintergrund mit Fortschritt (bis 10 Min.). Bleibt es zu langsam: `npm run ai:check -- --test` zeigt die Geschwindigkeit; kleineres Modell (z. B. `qwen2.5:3b`) wählen, weniger Figuren erzeugen oder `LOCAL_AI_LONG_TIMEOUT_MS`/`LOCAL_AI_LOAD_TIMEOUT_MS` in `.env` erhöhen. Enthält eine ältere `.env` noch `LOCAL_AI_TIMEOUT_MS=60000`, kann der Wert für Chats auf `180000` gesetzt werden. |
 | Lokale KI antwortet im Chat sehr langsam | Kleineres Modell wählen, andere Programme schließen. Die erste Antwort nach dem Start dauert länger (Modell wird geladen). |
 | Weltbild lässt sich nicht speichern | Nur JPEG, PNG und WebP bis 15 MB, mindestens 320 × 160 Pixel. „Konnte nicht gespeichert werden“: freien Speicherplatz und Schreibrechte für `data/uploads` prüfen. |
+| Es erscheinen nur gezeichnete Porträts | `npm run image:check` ausführen. Forge/A1111 muss mit `--api` gestartet sein und ein Modell geladen haben; danach Einstellungen → Bild-KI → „Erneut prüfen“. |
+| Bilder dauern sehr lange | Auf dem Prozessor normal (mehrere Minuten). Kleineres Modell (SD 1.5), `IMAGE_STEPS=18` oder automatische Bilder in den Einstellungen ausschalten. |
+| Lebensgeschichte „wird gerade weitererzählt“ | Die Erzählung des letzten Zugs läuft noch (lokale KI). Kurz warten; nach einem Neustart wird eine unterbrochene Erzählung automatisch regelbasiert abgeschlossen. |
 | Inhalte in falscher Sprache | Demo-Inhalte entstehen in der Sprache des ersten Starts. Einstellungen → Allgemein → „Demo-Inhalte … neu laden“ (löscht alle Daten). |
 
 ---
@@ -464,6 +564,17 @@ npm run test:e2e     # Ende-zu-Ende-Tests im Browser (Chromium)
 - **Weltbilder nur für eigene Welten:** Vorgefertigte Welten sind (wie bisher) nicht bearbeitbar und behalten ihre Grafik.
 - **`ki-einrichten.bat` nicht auf Windows getestet:** Das Skript fragt vor jedem Download nach und nutzt nur
   `winget` und `ollama`; es wurde jedoch unter Linux geschrieben.
+- **Bild-KI nicht mit echtem Modell getestet:** Hier gab es weder Grafikkarte noch Forge/ComfyUI noch Modelle. Die
+  Anbindung ist gegen protokollgetreue Nachbauten der A1111- und ComfyUI-API getestet (Prompts, Größen, Ablauf,
+  Speicherung). Bildqualität, Geschwindigkeit und Ähnlichkeit der Gesichter bitte auf dem eigenen PC prüfen.
+- **Gleiches Gesicht nur annähernd:** Festes Aussehen und fester Seed halten Figuren ähnlich; ohne zusätzliche
+  Werkzeuge (z. B. IP-Adapter oder eigene LoRA) garantieren Stable-Diffusion-Modelle aber kein identisches Gesicht in
+  verschiedenen Szenen.
+- **Gezeichnete Porträts sind nicht fotorealistisch:** Ohne Bild-KI gibt es keine rechtssicheren fotorealistischen
+  Bildquellen für beliebige Figuren und Szenen; deshalb zeichnet SocialVerse Porträts und Szenenkarten selbst
+  (keine fremden Bilder, offline).
+- **Lebensmodus ohne KI:** Die regelbasierte Erzählung ist knapp und vorlagenbasiert; Spielsystem, Ereignisse,
+  Gedächtnis und Vorschläge funktionieren vollständig, die Erzählung wirkt mit lokaler KI deutlich lebendiger.
 - **Antwortqualität lokaler Modelle:** Kleine Modelle (3–4 Mrd. Parameter) antworten schlichter als große Cloud-Modelle
   und halten das JSON-Format nicht immer ein; dann wird der Text übernommen bzw. auf die simulierte KI ausgewichen.
 - **Einzelplatz:** Ein lokales Profil, keine Benutzerkonten, keine Synchronisation zwischen Geräten.

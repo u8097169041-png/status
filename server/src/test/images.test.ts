@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { describeAppearance } from '../../../shared/appearance';
+import { isBlockedImageRequest, portraitPrompt } from '../images/prompts';
 import { characterAppearance } from '../services/appearances';
 import { comfyUiMock, createTestApp, createTestContext, joinAsCustom, ollamaMock, routeMocks, sdWebUiMock, type ImageCall } from './helpers';
 
@@ -136,6 +137,34 @@ describe('Bild-KI: Erkennung und Profilbilder', () => {
     expect(res.headers['content-type']).toBe('image/png');
     await request(second.app).get(url).expect(200);
     second.ctx.db.close();
+  });
+
+  it('gesperrte Inhalte kommen auch über Aussehen oder Prompt nicht durch', async () => {
+    const calls: ImageCall[] = [];
+    const { app, ctx } = setup({ images: sdWebUiMock({ calls }) });
+    const res = await request(app).put('/api/characters/c-mira/appearance').set(W).send({ clothing: 'nothing, nude' }).expect(400);
+    expect(res.body.error.code).toBe('image_blocked');
+    await expect(ctx.images.request({ kind: 'scene', ownerType: 't', ownerId: 'x', prompt: 'a topless person on a beach', seed: 1, size: 'scene', priority: 'user' })).rejects.toThrow(/nicht erzeugt/);
+    expect(calls).toHaveLength(0);
+    // Alle mitgelieferten Figuren erzeugen zulässige Prompts (keine Fehlalarme).
+    await request(app).post('/api/characters/c-mira/avatar').set(W).send({}).expect(202);
+  });
+
+  it('Inhaltsfilter: keine Fehlalarme bei mitgelieferten Figuren und harmlosen Wörtern', () => {
+    for (const lang of ['de', 'en'] as const) {
+      const ctx = createTestContext({ lang });
+      const rows = ctx.db.prepare('SELECT c.id, c.role, w.atmosphere, w.description FROM characters c LEFT JOIN worlds w ON w.id = c.world_id').all() as {
+        id: string;
+        role: string;
+        atmosphere: string | null;
+        description: string | null;
+      }[];
+      const bad = rows.filter((r) => isBlockedImageRequest(portraitPrompt(characterAppearance(ctx, r.id), { role: r.role, setting: `${r.atmosphere ?? ''} ${r.description ?? ''}` })));
+      expect(bad.map((b) => b.id)).toEqual([]);
+    }
+    for (const ok of ['Nudelküchen im Nebel', 'Strippenzieher im Parlament', 'ein Sexismus-Skandal', 'a breastplate of steel', 'minor injuries', 'Sextett im Jazzclub']) expect(isBlockedImageRequest(ok), ok).toBe(false);
+    for (const blocked of ['nackt im Bett', 'explizite Sexszene', 'a nude model', 'topless on the beach', 'Pornofoto', 'a teen at a party', 'children fighting', 'sexy lingerie'])
+      expect(isBlockedImageRequest(blocked), blocked).toBe(true);
   });
 
   it('Dateinamen werden streng geprüft (kein Pfadzugriff)', async () => {

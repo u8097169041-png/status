@@ -282,7 +282,7 @@ export function ruleDraft(ctx: AppContext, input: SetupInput, notice?: string): 
     .map((l) => l.trim())
     .filter((l) => l && !/^([-*•–]|\d+[.)])\s*/.test(l) && !LINE_RE.test(l));
   const sentences = prose.join(' ').split(/(?<=[.!?])\s+/).filter(Boolean);
-  const opening = truncate(cleanText(parts.start ?? '') || (sentences.length > 2 ? sentences.at(-1)! : ''), 500);
+  const opening = truncate(cleanText(parts.start ?? '') || (sentences.length >= 2 ? sentences.at(-1)! : ''), 500);
   const relations: LifeSetupDraft['relations'] = [];
   const rel = parts.relationships ?? '';
   for (const line of rel.split(/\n+/)) {

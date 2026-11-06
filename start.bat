@@ -45,6 +45,7 @@ if not exist ".env" (
 )
 
 node scripts\ai-check.mjs --short
+node scripts\image-check.mjs --short
 
 set APP_PORT=3001
 for /f "usebackq eol=# tokens=1,* delims==" %%a in (".env") do (

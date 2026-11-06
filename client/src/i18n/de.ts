@@ -1661,7 +1661,7 @@ export const de = {
     autoScenes: 'Wichtige Ereignisse automatisch bebildern',
     autoScenesHint: 'Nur in Lebensgeschichten, höchstens alle 5 Züge.',
     lastError: 'Letzter Fehler: {message}',
-    setupHint: 'Einrichtung: README, Abschnitt „Lokale Bild-KI“. Prüfen: npm run ai:check',
+    setupHint: 'Einrichtung: README, Abschnitt „Lokale Bild-KI“. Prüfen: npm run image:check',
     noModel: 'Bild-KI erreichbar, aber kein Modell geladen.',
   },
   appearance: {

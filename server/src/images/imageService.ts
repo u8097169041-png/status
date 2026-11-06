@@ -11,7 +11,8 @@ import type { AppConfig } from '../config';
 import { get, run, type DB } from '../db/database';
 import { newId } from '../lib/ids';
 import { ComfyUiBackend, SdWebUiBackend, type BackendProbe, type ImageBackend, type ImageBackendId } from './backends';
-import { PHOTO_NEGATIVE, sizeFor } from './prompts';
+import { AppError } from '../lib/errors';
+import { isBlockedImageRequest, PHOTO_NEGATIVE, sizeFor } from './prompts';
 
 export type ImageKind = 'avatar' | 'cover' | 'scene';
 
@@ -193,6 +194,10 @@ export class ImageService {
    * Ein bereits vorhandenes, identisches Bild (Cache) wird sofort zurückgegeben.
    */
   async request(input: ImageRequestInput): Promise<ImageJobDto | null> {
+    // Letzte Schutzstufe für alle Bildarten: auch Aussehen, Orte oder KI-Text dürfen keine gesperrten Inhalte einschleusen.
+    if (isBlockedImageRequest(input.prompt)) {
+      throw new AppError(400, 'image_blocked', 'Dieses Bild kann nicht erzeugt werden (keine sexuellen, Minderjährige betreffenden oder extrem gewalttätigen Darstellungen).');
+    }
     await this.refresh();
     if (!this.available()) return null;
     const backendId = this.probe!.id!;

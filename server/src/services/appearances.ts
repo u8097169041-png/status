@@ -8,9 +8,9 @@ import type { CharacterAppearanceDto, ImageJobDto } from '../../../shared/types'
 import { SEED_APPEARANCES } from '../content/seedAppearances';
 import type { AppContext } from '../context';
 import { get, run } from '../db/database';
-import { notFound } from '../lib/errors';
+import { AppError, notFound } from '../lib/errors';
 import { imageUrlOf } from '../images/imageService';
-import { portraitPrompt } from '../images/prompts';
+import { isBlockedImageRequest, portraitPrompt } from '../images/prompts';
 import { getSettings } from './settings';
 
 interface AppearanceRow {
@@ -81,6 +81,7 @@ export function getCharacterAppearance(ctx: AppContext, id: string): CharacterAp
 export function setCharacterAppearance(ctx: AppContext, id: string, input: unknown): CharacterAppearanceDto {
   const current = characterAppearance(ctx, id);
   const next = normalizeAppearance(input, current);
+  if (isBlockedImageRequest(next.clothing)) throw new AppError(400, 'image_blocked', 'Diese Kleidungsbeschreibung kann nicht verwendet werden.');
   // Ein neues Aussehen passt nicht mehr zum alten Foto – es wird bei Bedarf neu erzeugt.
   run(ctx.db, 'UPDATE characters SET appearance = ?, avatar_image_id = NULL WHERE id = ?', JSON.stringify(next), id);
   return getCharacterAppearance(ctx, id);

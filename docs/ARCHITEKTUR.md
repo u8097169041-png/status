@@ -15,6 +15,10 @@ Dieses Dokument beschreibt Aufbau, Datenmodell und die wichtigsten Mechanismen f
                                                           node:sqlite  ▼             ├─▶ lokale KI: Ollama (127.0.0.1:11434)
                                                       data/socialverse.db            ├─▶ Server-KI (HTTPS, nur mit Freigabe)
                                                                                      └─▶ simulierte KI (regelbasiert)
+                                                                       │ Bilddienst
+                                                                       ├─▶ Forge/A1111 (127.0.0.1:7860, /sdapi/v1/txt2img)
+                                                                       ├─▶ ComfyUI (127.0.0.1:8188, /prompt → /history → /view)
+                                                                       └─▶ gezeichnete SVG-Porträts (ohne Bild-KI)
 ```
 
 - **Ein npm-Projekt** mit drei Quellordnern: `client/` (Oberfläche), `server/` (API, Logik, Daten, KI) und
@@ -33,6 +37,10 @@ client/src/
   pages/          eine Datei pro Route
   styles/         tokens.css (Designsystem), base, components, layout, pages
 server/src/
+  life/           Lebensmodus: engine.ts (Spielsystem), narrator.ts (KI-Erzählung, Vorschläge), memory.ts
+                  (Gedächtnis), service.ts (Züge, Zeit, Bilder), setup.ts (Einrichtung), stats.ts, store.ts, characters.ts
+  images/         imageService.ts (Erkennung, Warteschlange, Cache, Speicherung), backends.ts (A1111, ComfyUI),
+                  prompts.ts (fotorealistische Prompts, Sperrliste), scenes.ts (Szene aus Verlauf und Figuren)
   ai/             aiService.ts (Router: Auswahl, Limits, Protokoll), providers.ts (lokal/Server/simuliert),
                   ollamaClient.ts, openaiClient.ts, structured.ts (validierte Ergebnisse), prompts.ts, types.ts
   content/        zweisprachige Beispieldaten und Vorlagen (Simulation, Reaktionen, Demo-Chat, Generator)
@@ -43,7 +51,8 @@ server/src/
   test/           Vitest-Tests und Test-Hilfen (In-Memory-DB, simulierte Ollama- und Server-KI)
   index.ts        Einstieg (unterdrückt die SQLite-Experimentalwarnung, lädt main.ts)
   main.ts         Konfiguration, Datenbank, App, Scheduler, Serverstart
-shared/           Typen (DTOs), Konstanten/Grenzwerte, XP/Quests/Erfolge/Belohnungen, Beziehungsstatus
+shared/           Typen (DTOs), Konstanten/Grenzwerte, XP/Quests/Erfolge/Belohnungen, Beziehungsstatus,
+                  appearance.ts (festes Aussehen, SVG-Porträt), life.ts (Lebensmodus), regex.ts (Unicode-Wortgrenzen)
 e2e/              Playwright-Tests sowie lokale Nachbauten von Ollama und einem OpenAI-kompatiblen KI-Server
 scripts/          Server-Build, E2E-Serverstart, Startprüfung, KI-Prüfung (ai-check.mjs) für die .bat-Dateien
 ```
@@ -80,6 +89,9 @@ Wichtige Tabellen:
 | `wallet_ledger`, `purchases` | Spielwährung („Funken“) als Buchungsjournal mit eindeutigen Schlüsseln; freigeschaltete Shop-Artikel |
 | `activity_log`, `xp_events`, `quest_claims`, `achievements`, `encounters`, `world_visits` | Fortschritt (Weltaufgaben nutzen `quest_claims` mit der Spielfigur als Zeitraum) |
 | `ai_usage`, `simulation_log`, `scheduled_jobs`, `notifications`, `settings`, `secrets`, `meta` | Betrieb |
+| `images` | Erzeugte Bilder (Art, Besitzer, Prompt, Seed, Größe, Backend, Modell, Datei) mit eindeutigem `cache_key`; `characters.appearance` / `avatar_image_id` für festes Aussehen und Profilfoto |
+| `life_stories`, `life_characters`, `life_relations` | Lebensgeschichten (Werte, Welt, Ort, Anwesende, Zug/Tag, Status, Ende), Figuren mit Haltung, Zuneigung, Vertrauen, Loyalität, Furcht, Status, Geheimnissen |
+| `life_messages`, `life_events`, `life_memories` | Verlauf (Spieler, Erzähler, Figuren, Ereignisse, Bilder; `pending` während der Erzählung), Zeitleiste, Gedächtnis mit `importance`, `critical`, `subjects`, `known_by`, `keywords` |
 
 ## Spielfiguren und aktive Welt
 
@@ -338,6 +350,71 @@ Aufrufer übergebene regelbasierte Ersatzfunktion (`fallback`) das Ergebnis, mit
 **Einrichtung:** `scripts/ai-check.mjs` (`npm run ai:check`) prüft Laufzeit, Modelle, RAM und Speicher, empfiehlt ein
 Modell und lädt nichts herunter. `ki-einrichten.bat` installiert Ollama bzw. lädt ein Modell nur nach Bestätigung.
 
+## Lebensmodus
+
+**Zug (`life/service.ts → takeTurn`)** – alles Spielrelevante passiert synchron in einer Transaktion, bevor die KI
+etwas schreibt:
+
+1. Eingabe bzw. Vorschlag (nur aus der jüngsten Erzählung gültig) wird klassifiziert (`engine.classifyAction`:
+   Aktionsart, Ziel, Risiko, Tötungsabsicht, Versprechen).
+2. `successChance` (Grundwert der Aktionsart + gewichtete Werte + Beziehung + Risiko, begrenzt auf 5–92 %), Wurf mit
+   Seed (`<story.seed>:<turn>`), fünf Ergebnisstufen; Auswirkungen aus `content/lifeContent.ts` (Werte, Ziel-Beziehung,
+   Gesundheitsschaden). Unentdeckte Täuschung ändert beim Ziel nichts; tödliche Gewalt tötet unwichtige Figuren oder
+   bei großem Erfolg.
+3. Erinnerungen: Entscheidung (mit Zeugen als Wissenden), Versprechen und Verrat (kritisch), Tod, aufgedeckte Geheimnisse.
+4. Ereignisse (`rollEvents`) aus dem Zustand: Gewichte für Verrat, Angriff, Razzia, Skandal, Gelegenheit, Romantik,
+   Eifersucht, Trennung, Krankheit, Unfall, Aufstieg/Fehde/Tod von Nebenfiguren, Glücksfall, Verlust; die letzten
+   Ereignisarten werden gemieden.
+5. Gesundheit ≤ 0 → `status = 'ended'`, kritische Todeserinnerung, Abschlussmeldung. `requireActive` lehnt danach jeden
+   Zug mit `409 story_ended` ab – es gibt keinen Weg zurück.
+6. Eine Erzählnachricht wird mit `pending = 1` angelegt; die Erzählung läuft im Hintergrund (`startNarration`). Je
+   Geschichte gibt es eine Sperre; der Client fragt während `narrating` regelmäßig nach.
+
+**Erzählung (`life/narrator.ts`):** Der Prompt enthält Prämisse, Schauplatz, Werte, Besitz, offene Versprechen, die
+anwesenden Figuren mit Persönlichkeit, Zielen, Aussehen, Beziehung, **ihrem eigenen Wissen** (`recall` mit der Figur
+als Betrachter) und – nur für den Erzähler – Geheimnissen, die Liste handlungsunfähiger Figuren, Zusammenfassungen,
+das Langzeitgedächtnis aus Spielersicht, die letzten 12 Nachrichten und das **verbindliche Ergebnis des
+Spielsystems**. Die Antwort ist ein JSON-Schema (Erzählung, bis zu 3 Dialogzeilen, Ort, Anwesende, bis zu 3 Fakten,
+genau 4 Vorschläge). `parseNarration` lässt nur lebende, bekannte Sprecher zu, ersetzt fehlende oder wiederholte
+Vorschläge durch regelbasierte und speichert Fakten mit ihren Wissenden. Ohne KI bzw. bei Fehlern erzählt
+`fallbackNarration` aus Vorlagen. Hintergrund-Zeitsprünge (Abwesenheit) rufen nie eine KI auf.
+
+**Gedächtnis (`life/memory.ts`):** Ebenen: Kurzzeit (letzte Nachrichten), Zusammenfassungen (alle ~40 Nachrichten,
+mit KI oder regelbasiert), Langzeit-Erinnerungen (strukturiert), Figuren- und Beziehungswissen (`known_by`,
+`subjects`), Welt (Orte, Organisationen) und Spielerstatus (Werte in `life_stories`). `recall` bewertet nach
+Stichwortüberschneidung (normalisierte Wortstämme), beteiligten Figuren, Wichtigkeit, Aktualität und Kritikalität;
+**kritische Fakten** (Tod, Versprechen, Verrat, Kernbeziehungen, Ausgangslage) werden immer zuerst und unabhängig
+von Stichwörtern geliefert. Zusammenfassungen ersetzen nie Erinnerungen, sie ergänzen sie. Todesfälle, die nur Zeugen
+kannten, sprechen sich bei einem Zeitsprung herum (`reveal`).
+
+**Einrichtung (`life/setup.ts`):** Regelbasierter Leser (Name/Rolle aus „Ich bin …“, Figuren aus Aufzählungen und
+„meine Frau Lucia“, Haltung aus Schlüsselwörtern, Orte, Organisationen, Besitz) und optional die KI als
+Hintergrundauftrag mit JSON-Schema. Archetyp, Genres und Startwerte (`life/stats.ts`) berechnet immer das
+Spielsystem. Social-Figuren werden verknüpft (`social_character_id`) und behalten Aussehen und Foto.
+
+**Takt:** `tickLifeStories` (Scheduler) lässt aktive Geschichten höchstens alle 8 Stunden weiterlaufen, nur solange
+„Automatische Simulation“ an ist und die Geschichte in den letzten 14 Tagen gespielt wurde. Beim Start schließt
+`recoverPendingNarrations` unterbrochene Erzählungen regelbasiert ab.
+
+## Bilder
+
+- **Erkennung:** `ImageService.refresh` prüft (30 s zwischengespeichert) Forge/A1111 (`/sdapi/v1/options`) und ComfyUI
+  (`/system_stats`, `/object_info/CheckpointLoaderSimple`). Die Modellfamilie (SDXL oder SD 1.5) bestimmt die Größen.
+- **Aufträge:** eine Warteschlange, immer nur ein Bild gleichzeitig; Spieleraufträge vor Hintergrundaufträgen,
+  höchstens 6 wartende Hintergrundaufträge, ein Profilbildauftrag je Figur. Kein automatischer Wiederholungsversuch.
+- **Cache:** `cache_key = sha256(backend, modell, größe, seed, prompt, negativprompt)`; identische Aufträge liefern das
+  gespeicherte Bild. Dateien werden atomar geschrieben (`.tmp` → Umbenennen), Dateinamen sind zufällig und werden
+  beim Ausliefern streng geprüft (`/api/media/images/:file`, `Content-Security-Policy: default-src 'none'`).
+- **Konsistenz:** `shared/appearance.ts` legt das Aussehen jeder Figur fest (aus Seed-Tabelle, Rolle oder Bearbeitung);
+  `describeAppearance` erzeugt daraus den Personenteil jedes Prompts. Profilfotos nutzen einen stabilen Seed aus der
+  Figuren-ID. Szenen nutzen einen zufälligen Seed und wechselnde Kamera-/Lichtvarianten.
+- **Szenen (`images/scenes.ts`):** letzte 10 Nachrichten, passende Erinnerungen, Aussehen der sichtbaren Figuren, Ort,
+  Stimmung und eigene Beschreibung → mit lokaler Sprach-KI eine kurze englische Bildbeschreibung (JSON), sonst
+  regelbasiert. Szenenbilder werden als Nachricht (`source = 'image'` bzw. `role = 'image'`) gespeichert und nicht in
+  den Gesprächsverlauf der KI übernommen.
+- **Ohne Bild-KI:** `/api/media/avatars/:id` liefert ein gezeichnetes SVG-Porträt (mit ETag), Szenen werden als
+  Szenenkarte (Figuren, Ort, Beschreibung) gespeichert.
+
 ## Frontend
 
 - **Navigation:** In einer Welt: Feed, Aufgaben, Chats, Aktivität, Profil (Seitenleiste bzw. untere Leiste auf dem
@@ -350,6 +427,10 @@ Modell und lädt nichts herunter. `ki-einrichten.bat` installiert Ollama bzw. l�
 - **Designsystem:** CSS-Variablen in `tokens.css` (Farben, Abstände, Radien, Typografie); Akzentfarbe per
   Belohnung austauschbar (`data-accent`). Schriften werden lokal über `@fontsource` ausgeliefert.
 - **Grafiken:** Welt- und Avatarbilder entstehen prozedural als SVG (deterministisch je Seed) – keine externen Bilder.
+  Erzeugte Profilfotos (`photoUrl`) ersetzen die Initialen in allen Avataren; ohne Foto bleibt das bisherige Design.
+- **Modi:** Der Umschalter „Social | Leben“ wechselt zwischen Welt-Navigation und Lebensmodus (`/life`, `/life/new`,
+  `/life/:id`). Die Spielansicht zeigt auf dem Desktop Verlauf und Seitenleiste (Werte, Figuren, Ereignisse,
+  Gedächtnis), auf dem Handy Reiter.
 - **Barrierefreiheit:** semantische Landmarken, Skip-Link, Tastaturbedienung (Tabs mit Pfeiltasten, Menüs,
   Fokusfalle in Dialogen), `aria`-Attribute, ausreichende Kontraste, `prefers-reduced-motion`.
 - **i18n:** `de.ts` ist die Referenz; `en.ts` muss dieselben Schlüssel haben (TypeScript + Test prüfen das).

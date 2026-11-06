@@ -3,6 +3,7 @@
  * Alles wird sofort gespeichert; die Erzählung ergänzt nur Text, Dialoge, Vorschläge und neue Fakten.
  */
 import { z } from 'zod';
+import { uw } from '../../../shared/regex';
 import type { ImageJobDto } from '../../../shared/types';
 import type { LifeEventDto, LifeMessageDto, LifeResolutionDto, LifeStat, LifeStats, LifeStoryDto, LifeStorySummaryDto, LifeSuggestion } from '../../../shared/life';
 import { AWAY_INTRO, OPENING, TIME_PASSES } from '../content/lifeContent';
@@ -22,6 +23,7 @@ import { EVERYONE, knows, openPromises, PLAYER, recall, remember, reveal, toMemo
 import { narrate, type TurnContext } from './narrator';
 import { genresOf, getStory, presentOf, requireActive, saveWorld, statKeysOf, statsOf, worldOf, type StoryRow } from './store';
 
+const TRAVEL_TARGET = uw(/\b(?:nach|zum|zur|ins|in|to|towards|into)\s+(?:(?:dem|den|der|die|das|the)\s+)?(\p{Lu}[\p{L}\d'-]+(?:\s\p{Lu}[\p{L}\d'-]+){0,3})/u);
 const turnLocks = new Set<string>();
 const narrations = new Map<string, Promise<void>>();
 const imageJobs = new Map<string, string>();
@@ -398,8 +400,9 @@ export async function takeTurn(ctx: AppContext, id: string, input: unknown): Pro
       let location = s.location;
       let nextPresent = [...new Set([...present, ...(target && target.status === 'alive' ? [target.id] : []), ...events.flatMap((e) => e.participants)])];
       if (cls.category === 'travel') {
-        const m = /(?:nach|zu|zum|zur|in|to|towards)\s+([\p{L}\d][\p{L}\d .'-]{1,40})/u.exec(text);
-        if (m) location = m[1].trim();
+        // Nur ein echter Ortsname (großgeschrieben) nach „nach/zum/in …“ – nicht „ein paar Tage“.
+        const m = TRAVEL_TARGET.exec(text);
+        if (m) location = m[1].replace(/[.,;!?].*$/, '').trim();
         nextPresent = target ? [target.id] : [];
       }
       const aliveIds = new Set(listLifeCharacters(ctx, id).filter((c) => c.status === 'alive').map((c) => c.id));

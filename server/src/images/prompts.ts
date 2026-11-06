@@ -40,7 +40,7 @@ export const LIGHT_VARIATIONS = [
 
 /** Inhalte, für die kein Bild erzeugt wird (sexuelle Darstellungen, Minderjährige, extreme Gewalt). Wortanfänge genügen („Nacktbild“, „Sexszene“). */
 const BLOCKED = uw(
-  /\b(nackt|nude|naked|nudit|nsfw|sex|porn|erotisch|erotik|erotic|genital|brüste|breast|boobs|topless|oben ohne|unterwäsche|lingerie|dessous|stripp|enthaupt|decapitat|verstümmel|dismember|gore\b|kind(er)?\b.*\b(nackt|gewalt)|child\b|children\b|minderjährig|minor\b|teen(ager)?s?\b)/i,
+  /\b(nackt|nacktheit|nude|nudes|nudity|naked|nsfw|sex(?!tett|ton|tant|is)\w*|porn\w*|erotisch\w*|erotik|erotic\w*|genital\w*|brüste|breasts?|boobs|topless|oben ohne|unterwäsche|lingerie|dessous|stripper|striptease|stripclub|strip club|enthaupt\w*|decapitat\w*|verstümmel\w*|dismember\w*|gore|kind(er)?\b.*\b(nackt|gewalt)|child|children|kids?|minderjährig\w*|underage|teen|teens|teenager)\b/i,
 );
 
 export function isBlockedImageRequest(text: string): boolean {

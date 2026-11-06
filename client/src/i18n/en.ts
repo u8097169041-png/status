@@ -1660,7 +1660,7 @@ export const en: Dictionary = {
     autoScenes: 'Illustrate important events automatically',
     autoScenesHint: 'Life stories only, at most every 5 turns.',
     lastError: 'Last error: {message}',
-    setupHint: 'Setup: README, section "Local image AI". Check: npm run ai:check',
+    setupHint: 'Setup: README, section "Local image AI". Check: npm run image:check',
     noModel: 'Image AI reachable, but no model loaded.',
   },
   appearance: {

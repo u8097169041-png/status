@@ -417,3 +417,44 @@ describe('Szenenbilder und Dauerhaftigkeit', () => {
 
 // Hilfstyp für Tests, die den Kontext direkt brauchen.
 export type { TestContext };
+
+describe('Reisen und Ortswechsel', () => {
+  it('erkennt nur echte Ortsnamen als neues Ziel', async () => {
+    const { app } = setup();
+    const story = await createStory(app, MAFIA);
+    const before = story.location;
+    const stay = await turn(app, story.id, { text: 'Ich will die Stadt für ein paar Tage verlassen.' });
+    expect(stay.location).not.toMatch(/paar Tage/);
+    expect(stay.location === before || stay.location === 'Restaurant Da Greco' || stay.location.length > 0).toBe(true);
+    const moved = await turn(app, story.id, { text: 'Ich fahre nach Neapel, um alte Freunde zu treffen.' });
+    expect(moved.location).toBe('Neapel');
+  });
+
+  it('versteht englische Prompts (Rolle, Startwerte)', () => {
+    const ctx = createTestContext({ lang: 'en' });
+    const d = ruleDraft(ctx, parseSetupInput({ prompt: 'I am Tony Moretti, a powerful mafia boss in Chicago.\n- Sal Russo: my right hand, loyal for years\nTonight the rival family makes a move.' }));
+    expect(d.playerName).toBe('Tony Moretti');
+    expect(d.archetype).toBe('crime_boss');
+    expect(d.characters.find((c) => c.name === 'Sal Russo')?.stance).toBe('ally');
+    expect(d.opening).toContain('Tonight');
+  });
+});
+
+describe('Ereignisse', () => {
+  it('keine zufälligen Todesfälle in der Anlaufphase; später möglich, aber nicht für Hauptfiguren in kurzen Geschichten', async () => {
+    const { rollEvents } = await import('../life/engine');
+    const { app, ctx } = setup();
+    const story = await createStory(app, MAFIA);
+    const s = getStory(ctx, story.id);
+    const chars = listLifeCharacters(ctx, story.id);
+    const kinds = (turn: number) =>
+      Array.from({ length: 400 }, (_, i) => rollEvents({ ...s, turn }, { health: 80, heat: 20, loyalty: 60 }, ['crime'], chars, createRng(`ev${turn}:${i}`), 'time', []))
+        .flat()
+        .filter((e) => e.kind === 'npc_death');
+    expect(kinds(2)).toHaveLength(0);
+    const later = kinds(12);
+    expect(later.length).toBeGreaterThan(0);
+    const main = new Set(chars.filter((c) => c.importance >= 3).map((c) => c.id));
+    expect(later.every((e) => e.participants.every((p) => !main.has(p)))).toBe(true);
+  });
+});

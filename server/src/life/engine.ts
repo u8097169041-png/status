@@ -386,7 +386,8 @@ export function rollEvents(
     weight: 0.02,
     build: () => ({ participants: [], stats: { health: -rng.int(15, 50) }, relation: [], memory: { kind: 'event', critical: true, importance: 4, knownBy: [EVERYONE] } }),
   });
-  const mortal = alive.filter((c) => c.importance <= 3);
+  // Zufällige Todesfälle erst nach einer Anlaufphase; Hauptfiguren (Wichtigkeit 3) erst in langen Geschichten.
+  const mortal = story.turn >= 8 ? alive.filter((c) => c.importance <= 2 || story.turn >= 30) : [];
   if (mortal.length && (crime || rng.chance(0.3))) {
     const victim = rng.pick(mortal);
     candidates.push({
