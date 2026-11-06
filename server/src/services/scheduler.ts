@@ -3,6 +3,7 @@ import { claimDueJobs, finishJob, resetRunningJobs } from './jobs';
 import { runJob } from './reactions';
 import { maybeRunAutoTick } from './simulation';
 import { purgeExpiredStories } from './stories';
+import { tickLifeStories } from '../life/service';
 
 /**
  * Hintergrundaufgaben: verzögerte Reaktionen von Charakteren und die begrenzte automatische Weltsimulation.
@@ -37,6 +38,8 @@ export function startScheduler(ctx: AppContext, opts: { jobIntervalMs?: number; 
     try {
       purgeExpiredStories(ctx);
       await maybeRunAutoTick(ctx);
+      // Lebensgeschichten entwickeln sich höchstens alle 8 Stunden weiter (regelbasiert, ohne KI-Aufruf).
+      await tickLifeStories(ctx);
     } catch (error) {
       console.warn('[scheduler] Automatische Simulation fehlgeschlagen:', (error as Error).message);
     } finally {

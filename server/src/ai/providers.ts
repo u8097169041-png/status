@@ -191,7 +191,7 @@ export class LocalProvider implements AiProvider {
         maxTokens: req.maxTokens,
         temperature: req.temperature,
         format,
-        numCtx: LOCAL_NUM_CTX,
+        numCtx: req.numCtx ?? LOCAL_NUM_CTX,
         timeouts: {
           firstTokenMs: this.config.loadTimeoutMs,
           idleMs: this.config.idleTimeoutMs,

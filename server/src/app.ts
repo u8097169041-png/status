@@ -9,6 +9,8 @@ import { characterRoutes } from './routes/characters';
 import { coreRoutes } from './routes/core';
 import { feedRoutes } from './routes/feed';
 import { worldRoutes } from './routes/worlds';
+import { lifeRoutes } from './routes/life';
+import { mediaRoutes } from './routes/media';
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
@@ -112,6 +114,15 @@ export function createApp(ctx: AppContext, options: AppOptions = {}): express.Ex
   app.use('/api/worlds/:id/events', expensive);
   app.use('/api/ai/test', expensive);
   app.use('/api/decisions/:id/choose', expensive);
+  app.post('/api/life/setup-jobs', expensive);
+  app.post('/api/life/stories/:id/turns', expensive);
+  app.post('/api/life/stories/:id/advance', expensive);
+  // Bilder sind auf einem PC die teuerste Aktion: strenger begrenzt.
+  const images = rateLimit(12);
+  app.post('/api/life/stories/:id/images', images);
+  app.post('/api/chats/:id/images', images);
+  app.post('/api/characters/:id/avatar', images);
+  app.post('/api/life/characters/:id/avatar', images);
 
   app.use('/api', coreRoutes(ctx));
   app.use('/api', feedRoutes(ctx));
@@ -119,6 +130,8 @@ export function createApp(ctx: AppContext, options: AppOptions = {}): express.Ex
   app.use('/api', worldRoutes(ctx));
   app.use('/api', aiRoutes(ctx));
   app.use('/api', playRoutes(ctx));
+  app.use('/api', mediaRoutes(ctx));
+  app.use('/api', lifeRoutes(ctx));
   app.use('/api', (_req, _res, next) => next(new AppError(404, 'not_found', 'Unbekannter API-Endpunkt.')));
 
   if (options.clientDir && existsSync(resolve(options.clientDir, 'index.html'))) {

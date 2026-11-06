@@ -4,7 +4,9 @@ import type {
   AiNotice,
   AiProviderId,
   ChatDetail,
+  ChatImageResult,
   ChatMessageDto,
+  ChatSuggestion,
   ChatSummary,
   MemoryEntryDto,
   SendMessageResult,
@@ -28,6 +30,10 @@ import { skillLevel } from './skills';
 import { adjustAffinity } from './society';
 import { SKILL_RULES } from '../../../shared/skills';
 import { dayKey } from '../lib/time';
+import { imageUrlOf } from '../images/imageService';
+import { buildScene, checkExtra } from '../images/scenes';
+import { characterAppearance } from './appearances';
+import { chatSuggestions } from './chatSuggestions';
 
 /**
  * Chats sind Gespräche zwischen einer Spielfigur und einer Figur derselben Welt. Jede Spielfigur hat eigene
@@ -51,13 +57,15 @@ interface MessageRow {
   provider: ChatMessageDto['provider'];
   model: string | null;
   created_at: string;
+  data: string | null;
 }
 
 /** Ab so vielen „herausgefallenen“ Nachrichten wird die Zusammenfassung aktualisiert. */
 const SUMMARY_BATCH = 8;
 const busyChats = new Set<string>();
 
-function toMessage(r: MessageRow): ChatMessageDto {
+function toMessage(ctx: AppContext, r: MessageRow): ChatMessageDto {
+  const data = parseJson<{ suggestions?: ChatSuggestion[]; imageId?: string; sceneCard?: ChatMessageDto['sceneCard'] }>(r.data ?? '{}', {});
   return {
     id: r.id,
     role: r.role,
@@ -66,8 +74,13 @@ function toMessage(r: MessageRow): ChatMessageDto {
     provider: r.provider ?? null,
     model: r.model,
     createdAt: r.created_at,
+    ...(data.suggestions ? { suggestions: data.suggestions } : {}),
+    ...(r.source === 'image' ? { imageUrl: imageUrlOf(ctx.images.getImage(data.imageId ?? null)?.file), sceneCard: data.sceneCard ?? null } : {}),
   };
 }
+
+/** Szenenbilder sind keine Gesprächsbeiträge – sie gehen nicht in Verlauf, Zusammenfassung oder Zähler der KI ein. */
+const NOT_IMAGE = "source != 'image'";
 
 export interface ChatTarget {
   characterId: string;
@@ -148,7 +161,7 @@ export function listChats(ctx: AppContext, worldId: string): ChatSummary[] {
   const rows = all<{ character_id: string; last_content: string | null; last_at: string | null; n: number }>(
     ctx.db,
     `SELECT cv.character_id,
-            (SELECT content FROM conversation_messages m WHERE m.conversation_id = cv.id ORDER BY m.id DESC LIMIT 1) AS last_content,
+            (SELECT content FROM conversation_messages m WHERE m.conversation_id = cv.id AND m.source != 'image' ORDER BY m.id DESC LIMIT 1) AS last_content,
             (SELECT created_at FROM conversation_messages m WHERE m.conversation_id = cv.id ORDER BY m.id DESC LIMIT 1) AS last_at,
             (SELECT COUNT(*) FROM conversation_messages m WHERE m.conversation_id = cv.id) AS n
        FROM conversations cv
@@ -180,7 +193,7 @@ export function getChat(ctx: AppContext, characterId: string): ChatDetail {
         ctx.db,
         `SELECT * FROM (SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 200) ORDER BY id`,
         conv.id,
-      ).map(toMessage)
+      ).map((r) => toMessage(ctx, r))
     : [];
   return {
     characterId,
@@ -297,7 +310,7 @@ export function buildChatMessages(ctx: AppContext, characterId: string, pendingU
   const history = conv
     ? all<MessageRow>(
         ctx.db,
-        `SELECT * FROM (SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id`,
+        `SELECT * FROM (SELECT * FROM conversation_messages WHERE conversation_id = ? AND ${NOT_IMAGE} ORDER BY id DESC LIMIT ?) ORDER BY id`,
         conv.id,
         memoryEnabled ? window : 2,
       )
@@ -315,14 +328,14 @@ async function updateSummary(ctx: AppContext, conversationId: string): Promise<v
   // Nachrichten, die aus dem Fenster gefallen und noch nicht zusammengefasst sind.
   const boundary = get<{ id: number }>(
     ctx.db,
-    `SELECT id FROM conversation_messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?`,
+    `SELECT id FROM conversation_messages WHERE conversation_id = ? AND ${NOT_IMAGE} ORDER BY id DESC LIMIT 1 OFFSET ?`,
     conversationId,
     conv.memory_window,
   );
   if (!boundary) return;
   const pending = all<MessageRow>(
     ctx.db,
-    `SELECT * FROM conversation_messages WHERE conversation_id = ? AND id > ? AND id <= ? ORDER BY id`,
+    `SELECT * FROM conversation_messages WHERE conversation_id = ? AND id > ? AND id <= ? AND ${NOT_IMAGE} ORDER BY id`,
     conversationId,
     conv.summarized_upto,
     boundary.id,
@@ -383,11 +396,12 @@ function insertMessage(
   source: ChatMessageDto['source'],
   model: string | null,
   provider: ChatMessageDto['provider'] = null,
+  data: Record<string, unknown> | null = null,
 ): ChatMessageDto {
   const now = ctx.now().toISOString();
   const { lastInsertRowid } = run(
     ctx.db,
-    `INSERT INTO conversation_messages (conversation_id, role, content, source, provider, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO conversation_messages (conversation_id, role, content, source, provider, model, created_at, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     conversationId,
     role,
     content,
@@ -395,9 +409,10 @@ function insertMessage(
     provider,
     model,
     now,
+    data ? JSON.stringify(data) : null,
   );
   run(ctx.db, 'UPDATE conversations SET updated_at = ? WHERE id = ?', now, conversationId);
-  return toMessage(get<MessageRow>(ctx.db, 'SELECT * FROM conversation_messages WHERE id = ?', lastInsertRowid)!);
+  return toMessage(ctx, get<MessageRow>(ctx.db, 'SELECT * FROM conversation_messages WHERE id = ?', lastInsertRowid)!);
 }
 
 function isDatingCharacter(ctx: AppContext, characterId: string): boolean {
@@ -448,6 +463,88 @@ function localReply(ctx: AppContext, characterId: string, conv: ConversationRow,
       turn,
     },
   );
+}
+
+function suggestionsFor(ctx: AppContext, characterId: string, conversationId: string, reply: string, tone: ChatTone, seed: number): ChatSuggestion[] {
+  const settings = getSettings(ctx.db);
+  const { character, world } = loadPromptCharacter(ctx, characterId);
+  const recent = all<{ data: string | null }>(
+    ctx.db,
+    `SELECT data FROM conversation_messages WHERE conversation_id = ? AND role = 'assistant' AND data IS NOT NULL ORDER BY id DESC LIMIT 3`,
+    conversationId,
+  ).flatMap((r) => (parseJson<{ suggestions?: ChatSuggestion[] }>(r.data, {}).suggestions ?? []).map((x) => x.text));
+  return chatSuggestions({
+    lang: settings.language,
+    reply,
+    interests: character.interests,
+    names: [character.name],
+    event: world?.recentEvents[0] ?? null,
+    dating: isDatingCharacter(ctx, characterId),
+    tone,
+    seed: `${conversationId}:${seed}`,
+    recent,
+  });
+}
+
+const imageSchema = z.object({ description: z.string().max(300).default('') }).strict();
+
+/**
+ * Bild des aktuellen Moments im Chat: Verlauf (vor allem die letzten Nachrichten), Aussehen beider Figuren,
+ * Welt/Ort und Zusammenfassung fließen in den Bildprompt. Mit Bild-KI als Foto, sonst als Szenenkarte.
+ */
+export async function requestChatImage(ctx: AppContext, characterId: string, input: unknown): Promise<ChatImageResult> {
+  const parsed = imageSchema.safeParse(input ?? {});
+  if (!parsed.success) throw badRequest('invalid_image_request', 'Ungültige Bildbeschreibung.');
+  const extra = checkExtra(parsed.data.description);
+  const target = resolveTarget(ctx, characterId);
+  const conv = findConversation(ctx, target);
+  if (!conv) throw badRequest('chat_empty', 'Schreibt zuerst ein paar Nachrichten – dann kann der Moment bebildert werden.');
+  const { character, world } = loadPromptCharacter(ctx, characterId);
+  const settings = getSettings(ctx.db);
+  const playerName = target.player ? getCharacterRow(ctx, target.player.character_id).name : settings.language === 'de' ? 'Ich' : 'Me';
+  const history = all<MessageRow>(
+    ctx.db,
+    `SELECT * FROM (SELECT * FROM conversation_messages WHERE conversation_id = ? AND ${NOT_IMAGE} ORDER BY id DESC LIMIT 10) ORDER BY id`,
+    conv.id,
+  );
+  if (!history.length) throw badRequest('chat_empty', 'Schreibt zuerst ein paar Nachrichten – dann kann der Moment bebildert werden.');
+  const people = [
+    { name: character.name, appearance: characterAppearance(ctx, characterId), role: character.role },
+    ...(target.player ? [{ name: playerName, appearance: characterAppearance(ctx, target.player.character_id), role: getCharacterRow(ctx, target.player.character_id).role }] : []),
+  ];
+  const summary = summaryOf(ctx, conv.id);
+  const previous = get<{ n: number }>(ctx.db, `SELECT COUNT(*) AS n FROM conversation_messages WHERE conversation_id = ? AND source = 'image'`, conv.id)?.n ?? 0;
+  const scene = await buildScene(ctx, {
+    transcript: history.map((m) => `${m.role === 'user' ? playerName : character.name}: ${truncate(m.content, 260)}`),
+    memories: summary ? [truncate(summary, 300)] : [],
+    characters: people,
+    location: '',
+    setting: world ? `${world.name} – ${truncate(world.description || world.tagline, 160)}` : character.role,
+    mood: isDatingCharacter(ctx, characterId) ? 'romantic, warm' : 'natural, candid',
+    lang: settings.language,
+    extra,
+    variation: previous + 1,
+  });
+  const characterIds = [characterId, ...(target.player ? [target.player.character_id] : [])];
+  const job = await ctx.images.request({
+    kind: 'scene',
+    ownerType: 'conversation',
+    ownerId: conv.id,
+    prompt: scene.prompt,
+    caption: scene.caption,
+    // Neuer Seed je Bild – derselbe Moment ergibt nie zweimal exakt dasselbe Foto.
+    seed: Math.floor(Math.random() * 2_147_483_647),
+    size: 'scene',
+    priority: 'user',
+    onDone: (imageId) => {
+      insertMessage(ctx, conv.id, 'assistant', scene.caption, 'image', null, null, { imageId, characterIds });
+    },
+  });
+  if (job) return { job, message: null };
+  const message = insertMessage(ctx, conv.id, 'assistant', scene.caption, 'image', null, null, {
+    sceneCard: { location: scene.location, characterIds, caption: scene.caption, mood: scene.mood },
+  });
+  return { job: null, message };
 }
 
 const sendSchema = z.object({ content: z.string().max(LIMITS.chatMessage * 2) });
@@ -521,8 +618,9 @@ export async function sendMessage(ctx: AppContext, characterId: string, input: u
       else if (!result.ok && result.code !== 'unavailable') notice = { code: result.code, message: result.message };
       else if (result.ok && !turn && result.provider !== 'fallback') notice = { code: 'invalid_response', message: 'Antwort der KI war unbrauchbar.' };
     }
+    const suggestions = suggestionsFor(ctx, characterId, conv.id, replyText, tone, userMessage.id);
     const reply = tx(ctx.db, () => {
-      const saved = insertMessage(ctx, conv.id, 'assistant', replyText, provider === 'fallback' ? 'demo' : 'ai', model, provider);
+      const saved = insertMessage(ctx, conv.id, 'assistant', replyText, provider === 'fallback' ? 'demo' : 'ai', model, provider, { suggestions });
       // Spielregel statt KI-Willkür: Die Stimmung einer echten KI-Antwort ändert die Zuneigung um höchstens 1,
       // und das höchstens einmal pro Tag und Figur. XP, Quests und Fähigkeiten bleiben unberührt.
       const delta = TONE_AFFINITY[tone];

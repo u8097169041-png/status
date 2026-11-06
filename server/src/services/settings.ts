@@ -35,6 +35,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   privacy: {
     sendDisplayName: true,
   },
+  images: {
+    autoAvatars: true,
+    autoScenes: true,
+  },
 };
 
 const modelId = z
@@ -82,6 +86,7 @@ export const settingsPatchSchema = z
       .partial()
       .strict(),
     privacy: z.object({ sendDisplayName: z.boolean() }).partial().strict(),
+    images: z.object({ autoAvatars: z.boolean(), autoScenes: z.boolean() }).partial().strict(),
   })
   .partial()
   .strict();
@@ -118,6 +123,7 @@ export function getSettings(db: DB): AppSettings {
     simulation: { ...DEFAULT_SETTINGS.simulation, ...stored.simulation },
     memory: { ...DEFAULT_SETTINGS.memory, ...stored.memory },
     privacy: { ...DEFAULT_SETTINGS.privacy, ...stored.privacy },
+    images: { ...DEFAULT_SETTINGS.images, ...stored.images },
   };
 }
 
@@ -141,6 +147,7 @@ export function updateSettings(db: DB, input: unknown): AppSettings {
     simulation: { ...current.simulation, ...patch.simulation },
     memory: { ...current.memory, ...patch.memory },
     privacy: { ...current.privacy, ...patch.privacy },
+    images: { ...current.images, ...patch.images },
   };
   saveSettings(db, next);
   return next;

@@ -44,6 +44,25 @@ export interface ServerAiConfig {
   priceOutputPerMTok: number | null;
 }
 
+/**
+ * Lokale Bildgenerierung. Unterstützt werden die lokalen HTTP-Schnittstellen von
+ * Stable Diffusion WebUI (AUTOMATIC1111/Forge, Start mit --api) und ComfyUI. Ohne erreichbare Bild-KI
+ * zeichnet SocialVerse Porträts und Szenenkarten selbst (keine externen Dienste, keine Kosten).
+ */
+export interface ImageAiConfig {
+  backend: 'auto' | 'sdwebui' | 'comfyui' | 'none';
+  sdwebuiUrl: string;
+  comfyuiUrl: string;
+  /** Checkpoint für ComfyUI (leer = erster installierter). */
+  comfyCheckpoint: string;
+  steps: number;
+  cfg: number;
+  /** Breite×Höhe; leer = automatisch passend zum Modell (SD 1.5 bzw. SDXL). */
+  portraitSize: string;
+  sceneSize: string;
+  timeoutMs: number;
+}
+
 export interface AppConfig {
   port: number;
   host: string;
@@ -53,6 +72,7 @@ export interface AppConfig {
   uploadsDir: string;
   localAi: LocalAiConfig;
   serverAi: ServerAiConfig;
+  imageAi: ImageAiConfig;
   production: boolean;
   version: string;
 }
@@ -153,6 +173,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, cwd = process.c
       monthlyBudgetUsd: num(env.SERVER_AI_MONTHLY_BUDGET_USD, 2, 0, 100_000),
       priceInputPerMTok: optionalNum(env.SERVER_AI_PRICE_INPUT_PER_MTOK, 1_000),
       priceOutputPerMTok: optionalNum(env.SERVER_AI_PRICE_OUTPUT_PER_MTOK, 1_000),
+    },
+    imageAi: {
+      backend: (['auto', 'sdwebui', 'comfyui', 'none'] as const).find((b) => b === env.IMAGE_BACKEND?.trim().toLowerCase()) ?? 'auto',
+      sdwebuiUrl: url(env.IMAGE_SDWEBUI_URL, 'http://127.0.0.1:7860'),
+      comfyuiUrl: url(env.IMAGE_COMFYUI_URL, 'http://127.0.0.1:8188'),
+      comfyCheckpoint: (env.IMAGE_COMFYUI_CHECKPOINT?.trim() ?? '').replace(/[^\w .()/-]/g, '').slice(0, 200),
+      steps: int(env.IMAGE_STEPS, 24, 1, 150),
+      cfg: num(env.IMAGE_CFG, 5.5, 1, 30),
+      portraitSize: /^\d{3,4}x\d{3,4}$/.test(env.IMAGE_PORTRAIT_SIZE?.trim() ?? '') ? env.IMAGE_PORTRAIT_SIZE!.trim() : '',
+      sceneSize: /^\d{3,4}x\d{3,4}$/.test(env.IMAGE_SCENE_SIZE?.trim() ?? '') ? env.IMAGE_SCENE_SIZE!.trim() : '',
+      timeoutMs: int(env.IMAGE_TIMEOUT_MS, 600_000, 10_000, 3_600_000),
     },
     production: env.NODE_ENV === 'production',
     version: APP_VERSION,

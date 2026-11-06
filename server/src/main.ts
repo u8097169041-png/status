@@ -1,17 +1,19 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AiService } from './ai/aiService';
+import { ImageService } from './images/imageService';
 import { createApp } from './app';
 import { loadConfig } from './config';
 import type { AppContext } from './context';
 import { openDatabase } from './db/database';
 import { seedIfEmpty } from './db/seed';
 import { startScheduler } from './services/scheduler';
+import { recoverPendingNarrations } from './life/service';
 
 const config = loadConfig();
 const db = openDatabase(config.dbFile);
 const now = () => new Date();
-const ctx: AppContext = { db, config, now, ai: new AiService(db, config, now) };
+const ctx: AppContext = { db, config, now, ai: new AiService(db, config, now), images: new ImageService(db, config, now) };
 
 if (seedIfEmpty(db, now())) console.log('[db] Neue Datenbank angelegt und mit Demo-Inhalten gefüllt.');
 
@@ -22,6 +24,9 @@ const allowedHosts = (process.env.ALLOWED_HOSTS ?? '')
   .split(',')
   .map((h) => h.trim())
   .filter(Boolean);
+
+// Nach einem Absturz/Neustart unterbrochene Erzählungen abschließen, damit keine Geschichte hängen bleibt.
+recoverPendingNarrations(ctx);
 
 const app = createApp(ctx, { clientDir, allowedHosts });
 const stopScheduler = startScheduler(ctx);
@@ -52,6 +57,15 @@ void ctx.ai.refreshHealth(true).then(() => {
   if (status.reason === 'local-unreachable') {
     console.log(`  Hinweis:   Keine lokale KI unter ${status.local.baseUrl} – Einrichtung: README, Abschnitt „Lokale KI einrichten“.`);
   }
+});
+
+void ctx.images.refresh(true).then(() => {
+  const s = ctx.images.status();
+  console.log(
+    s.reachable
+      ? `  Bild-KI:   ${s.backend === 'comfyui' ? 'ComfyUI' : 'Stable Diffusion WebUI/Forge'} erreichbar (${s.model ?? 'Modell unbekannt'})`
+      : '  Bild-KI:   keine lokale Bildgenerierung erreichbar – es werden gezeichnete Porträts und Szenenkarten verwendet.',
+  );
 });
 
 server.on('error', (error: NodeJS.ErrnoException) => {

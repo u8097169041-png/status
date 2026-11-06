@@ -2,6 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AiService } from '../ai/aiService';
+import { ImageService } from '../images/imageService';
 import type { FetchFn } from '../ai/types';
 import { createApp } from '../app';
 import type { AppConfig } from '../config';
@@ -22,6 +23,8 @@ export interface MockResult {
   status: number;
   json?: unknown;
   ndjson?: { lines: unknown[]; firstDelayMs?: number; delayMs?: number };
+  /** Binärantwort (z. B. ein Bild). */
+  raw?: { data: Buffer; type: string };
 }
 export type MockHandler = (url: string, body: unknown) => MockResult | Promise<MockResult>;
 
@@ -40,6 +43,17 @@ export const TEST_CONFIG: AppConfig = {
     loadTimeoutMs: 5_000,
     idleTimeoutMs: 2_000,
     maxTokens: 350,
+  },
+  imageAi: {
+    backend: 'auto',
+    sdwebuiUrl: 'http://sd.test:7860',
+    comfyuiUrl: 'http://comfy.test:8188',
+    comfyCheckpoint: '',
+    steps: 20,
+    cfg: 5,
+    portraitSize: '',
+    sceneSize: '',
+    timeoutMs: 5_000,
   },
   serverAi: {
     enabled: false,
@@ -108,6 +122,7 @@ export function createTestContext(
       });
       return new Response(stream, { status: result.status, headers: { 'Content-Type': 'application/x-ndjson' } });
     }
+    if (result.raw) return new Response(new Uint8Array(result.raw.data), { status: result.status, headers: { 'Content-Type': result.raw.type } });
     return new Response(JSON.stringify(result.json), { status: result.status, headers: { 'Content-Type': 'application/json' } });
   }) as FetchFn;
   // Eigener Upload-Ordner je Testkontext, damit parallel laufende Tests sich nicht gegenseitig Dateien löschen.
@@ -117,6 +132,7 @@ export function createTestContext(
     config,
     now,
     ai: new AiService(db, config, now, fetchFn),
+    images: new ImageService(db, config, now, fetchFn, 5),
     setNow: (date) => {
       current = date;
     },
@@ -229,11 +245,73 @@ export function ollamaMock(
   };
 }
 
-/** Leitet Anfragen je nach Adresse an die lokale bzw. die Server-Simulation weiter. */
-export function routeMocks(local: MockHandler | null, server: MockHandler | null): MockHandler {
+/** Leitet Anfragen je nach Adresse an die lokale KI, die Server-KI bzw. die Bild-KI-Simulation weiter. */
+export function routeMocks(local: MockHandler | null, server: MockHandler | null, images: MockHandler | null = null): MockHandler {
   return (url, body) => {
-    const handler = url.includes('ollama.test') ? local : server;
+    const handler = url.includes('ollama.test') ? local : url.includes('sd.test') || url.includes('comfy.test') ? images : server;
     return handler ? handler(url, body) : { status: 0, json: null };
+  };
+}
+
+/** Kleinste gültige PNG-Datei (1×1). */
+export const TINY_PNG = Buffer.from(
+  '89504e470d0a1a0a0000000d4948445200000001000000010806000000' + '1f15c4890000000d49444154789c6360000002000154a24f1d0000000049454e44ae426082',
+  'hex',
+);
+
+export interface ImageCall {
+  prompt: string;
+  negative: string;
+  width: number;
+  height: number;
+  seed: number;
+}
+
+/** Simulierte Stable-Diffusion-WebUI/Forge (A1111-API). Jedes Bild ist eindeutig (Seed im Inhalt). */
+export function sdWebUiMock(options: { model?: string; down?: boolean; status?: number; delayMs?: number; calls?: ImageCall[] } = {}): MockHandler {
+  return async (url, body) => {
+    if (!url.includes('sd.test') || options.down) return { status: 0, json: null };
+    if (url.endsWith('/sdapi/v1/options')) return { status: 200, json: { sd_model_checkpoint: options.model ?? 'juggernautXL_v9.safetensors [abc]' } };
+    if (url.endsWith('/sdapi/v1/txt2img')) {
+      const b = body as { prompt: string; negative_prompt: string; width: number; height: number; seed: number };
+      options.calls?.push({ prompt: b.prompt, negative: b.negative_prompt, width: b.width, height: b.height, seed: b.seed });
+      if (options.delayMs) await new Promise((r) => setTimeout(r, options.delayMs));
+      if (options.status) return { status: options.status, json: { error: 'boom' } };
+      const unique = Buffer.concat([TINY_PNG, Buffer.from(`seed:${b.seed}:${b.prompt.length}`)]);
+      return { status: 200, json: { images: [unique.toString('base64')], info: '{}' } };
+    }
+    return { status: 404, json: { detail: 'Not Found' } };
+  };
+}
+
+/** Simulierte ComfyUI-API (Warteschlange, Verlauf, Bildabruf). */
+export function comfyUiMock(options: { checkpoints?: string[]; calls?: ImageCall[]; pendingPolls?: number } = {}): MockHandler {
+  let polls = 0;
+  const done = new Set<string>();
+  return (url, body) => {
+    if (!url.includes('comfy.test')) return { status: 0, json: null };
+    if (url.endsWith('/system_stats')) return { status: 200, json: { system: { os: 'nt' }, devices: [{ name: 'cuda:0 NVIDIA GeForce RTX 3060', vram_total: 12_884_901_888 }] } };
+    if (url.endsWith('/object_info/CheckpointLoaderSimple')) {
+      return { status: 200, json: { CheckpointLoaderSimple: { input: { required: { ckpt_name: [options.checkpoints ?? ['realisticVisionV60_v60B1.safetensors']] } } } } };
+    }
+    if (url.endsWith('/prompt')) {
+      const graph = (body as { prompt: Record<string, { class_type: string; inputs: Record<string, unknown> }> }).prompt;
+      const pos = Object.values(graph).filter((n) => n.class_type === 'CLIPTextEncode');
+      const latent = Object.values(graph).find((n) => n.class_type === 'EmptyLatentImage')!;
+      const sampler = Object.values(graph).find((n) => n.class_type === 'KSampler')!;
+      options.calls?.push({ prompt: String(pos[0].inputs.text), negative: String(pos[1].inputs.text), width: Number(latent.inputs.width), height: Number(latent.inputs.height), seed: Number(sampler.inputs.seed) });
+      const id = `p${options.calls?.length ?? 1}-${Number(sampler.inputs.seed)}`;
+      done.add(id);
+      return { status: 200, json: { prompt_id: id, number: 1 } };
+    }
+    const history = /\/history\/([^/?]+)$/.exec(url);
+    if (history) {
+      if (polls++ < (options.pendingPolls ?? 1)) return { status: 200, json: {} };
+      const id = decodeURIComponent(history[1]);
+      return { status: 200, json: { [id]: { status: { status_str: 'success' }, outputs: { '9': { images: [{ filename: `${id}.png`, subfolder: '', type: 'output' }] } } } } };
+    }
+    if (url.includes('/view?')) return { status: 200, raw: { data: Buffer.concat([TINY_PNG, Buffer.from(url)]), type: 'image/png' } };
+    return { status: 404, json: {} };
   };
 }
 

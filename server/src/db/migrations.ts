@@ -529,4 +529,147 @@ UPDATE conversation_messages SET provider = CASE source WHEN 'ai' THEN 'server' 
 ALTER TABLE worlds ADD COLUMN cover_image TEXT;
 `,
   },
+  {
+    version: 6,
+    name: 'images-and-life-simulation',
+    sql: `
+-- Erzeugte Bilder (Profilbilder, Titelbilder, Szenen). cache_key verhindert doppelte Generierung.
+CREATE TABLE images (
+  id TEXT PRIMARY KEY,
+  cache_key TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL CHECK (kind IN ('avatar', 'cover', 'scene')),
+  owner_type TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  negative_prompt TEXT NOT NULL DEFAULT '',
+  caption TEXT NOT NULL DEFAULT '',
+  seed INTEGER NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  backend TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  file TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_images_owner ON images(owner_type, owner_id, kind);
+
+-- Aussehen (JSON) und Profilfoto der Social-Figuren.
+ALTER TABLE characters ADD COLUMN appearance TEXT NOT NULL DEFAULT '';
+ALTER TABLE characters ADD COLUMN avatar_image_id TEXT;
+-- Zusatzdaten einer Chat-Nachricht (Handlungsvorschläge, Szenenbild).
+ALTER TABLE conversation_messages ADD COLUMN data TEXT;
+
+-- Lebenssimulation: frei definierte, fortlaufende Geschichten.
+CREATE TABLE life_stories (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  premise TEXT NOT NULL,
+  setup TEXT NOT NULL DEFAULT '{}',
+  genre TEXT NOT NULL,
+  archetype TEXT NOT NULL,
+  player_name TEXT NOT NULL,
+  player_role TEXT NOT NULL,
+  player_appearance TEXT NOT NULL DEFAULT '{}',
+  stats TEXT NOT NULL,
+  stat_keys TEXT NOT NULL,
+  assets TEXT NOT NULL DEFAULT '[]',
+  world TEXT NOT NULL DEFAULT '{}',
+  location TEXT NOT NULL DEFAULT '',
+  present TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'ended')),
+  ending TEXT,
+  turn INTEGER NOT NULL DEFAULT 0,
+  day INTEGER NOT NULL DEFAULT 1,
+  seed TEXT NOT NULL,
+  lang TEXT NOT NULL,
+  cover_image_id TEXT,
+  summarized_upto INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_tick_at TEXT NOT NULL
+);
+
+CREATE TABLE life_characters (
+  id TEXT PRIMARY KEY,
+  story_id TEXT NOT NULL REFERENCES life_stories(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  personality TEXT NOT NULL DEFAULT '[]',
+  goals TEXT NOT NULL DEFAULT '[]',
+  secrets TEXT NOT NULL DEFAULT '[]',
+  appearance TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'alive' CHECK (status IN ('alive', 'dead', 'missing', 'imprisoned', 'gone')),
+  affinity INTEGER NOT NULL DEFAULT 0,
+  trust INTEGER NOT NULL DEFAULT 50,
+  loyalty INTEGER NOT NULL DEFAULT 50,
+  fear INTEGER NOT NULL DEFAULT 0,
+  stance TEXT NOT NULL DEFAULT 'neutral',
+  importance INTEGER NOT NULL DEFAULT 2,
+  social_character_id TEXT,
+  avatar_image_id TEXT,
+  status_turn INTEGER,
+  status_note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_life_characters_story ON life_characters(story_id);
+
+-- Beziehungen der Nebenfiguren untereinander.
+CREATE TABLE life_relations (
+  story_id TEXT NOT NULL REFERENCES life_stories(id) ON DELETE CASCADE,
+  a_id TEXT NOT NULL,
+  b_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  affinity INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (story_id, a_id, b_id)
+);
+
+CREATE TABLE life_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  story_id TEXT NOT NULL REFERENCES life_stories(id) ON DELETE CASCADE,
+  turn INTEGER NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('player', 'narrator', 'character', 'event', 'system', 'image')),
+  speaker_id TEXT,
+  content TEXT NOT NULL,
+  data TEXT,
+  pending INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_life_messages_story ON life_messages(story_id, id);
+
+-- Gedächtnis: wichtige Fakten mit Wichtigkeit, Wissenden und Stichwörtern für den gezielten Abruf.
+CREATE TABLE life_memories (
+  id TEXT PRIMARY KEY,
+  story_id TEXT NOT NULL REFERENCES life_stories(id) ON DELETE CASCADE,
+  turn INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  content TEXT NOT NULL,
+  importance INTEGER NOT NULL DEFAULT 2,
+  critical INTEGER NOT NULL DEFAULT 0,
+  subjects TEXT NOT NULL DEFAULT '[]',
+  known_by TEXT NOT NULL DEFAULT '["player"]',
+  keywords TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_life_memories_story ON life_memories(story_id, critical, importance);
+
+CREATE TABLE life_events (
+  id TEXT PRIMARY KEY,
+  story_id TEXT NOT NULL REFERENCES life_stories(id) ON DELETE CASCADE,
+  turn INTEGER NOT NULL,
+  day INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('minor', 'major', 'critical')),
+  effects TEXT NOT NULL DEFAULT '[]',
+  participants TEXT NOT NULL DEFAULT '[]',
+  image_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_life_events_story ON life_events(story_id, turn);
+`,
+  },
 ];
