@@ -32,7 +32,7 @@ function FigureOption({
   const { t } = useI18n();
   return (
     <button type="button" role="radio" aria-checked={selected} className={`figure-option ${selected ? 'selected' : ''}`} onClick={onSelect}>
-      <Avatar name={character.name} hue={character.avatarHue} glyph={character.avatarGlyph} size="md" decorative />
+      <Avatar name={character.name} hue={character.avatarHue} glyph={character.avatarGlyph} photoUrl={character.photoUrl} size="md" decorative />
       <span className="grow min-w-0">
         <strong className="row small">
           <span className="truncate">{character.name}</span> {character.prominent && <VerifiedBadge />}

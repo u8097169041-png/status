@@ -118,6 +118,8 @@ export interface LifeMessageDto {
   suggestions?: LifeSuggestion[];
   resolution?: LifeResolutionDto;
   severity?: 'minor' | 'major' | 'critical';
+  /** Überschrift eines Ereignisses. */
+  title?: string;
   imageUrl?: string | null;
   /** Gezeichnete Szenenkarte (ohne Bild-KI): beteiligte Figuren und Ort. */
   sceneCard?: { location: string; characterIds: string[]; caption: string; mood: string } | null;

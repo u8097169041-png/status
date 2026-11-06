@@ -1,4 +1,4 @@
-import { Activity, Bot, Brain, CheckCircle2, Cloud, Cpu, Download, Globe, Info, RefreshCw, Shield, Trash2, XCircle } from 'lucide-react';
+import { Activity, Bot, Brain, CheckCircle2, Cloud, Cpu, Download, Globe, ImageIcon, Info, RefreshCw, Shield, Trash2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { LIMITS, type Lang } from '../../../shared/constants';
@@ -12,6 +12,7 @@ import {
   useSimulationStatus,
   useUpdateSettings,
 } from '../api/hooks';
+import { useImageStatus } from '../api/lifeHooks';
 import { AiModeBadge } from '../components/AiModeBadge';
 import { useErrorToast } from '../components/progress/useProgressFeedback';
 import { NumberField, SelectField, Toggle } from '../components/ui/Form';
@@ -392,6 +393,60 @@ function AiSection({ settings, save }: { settings: AppSettings; save: (patch: De
   );
 }
 
+/** Lokale Bild-KI: Diagnose (kostenlos, nur lokale Adressen) und Schalter für automatische Bilder. */
+function ImageSection({ settings, save }: { settings: AppSettings; save: (patch: DeepPartial<AppSettings>) => void }) {
+  const { t } = useI18n();
+  const [refresh, setRefresh] = useState(false);
+  const status = useImageStatus(refresh);
+  const s = status.data;
+  const backendName = s?.backend === 'comfyui' ? 'ComfyUI' : s?.backend === 'sdwebui' ? 'Forge/A1111' : '';
+  return (
+    <section id="images" className="settings-section card stack">
+      <h2 className="row">
+        <ImageIcon aria-hidden className="icon-sm accent" /> {t('imageSettings.title')}
+      </h2>
+      <p className="small muted">{t('imageSettings.intro')}</p>
+      {status.isPending && <Loading />}
+      {s && (
+        <ul className="diag-list">
+          <DiagRow
+            ok={s.backend ? true : s.reachable ? false : false}
+            label={t('imageSettings.status')}
+            value={s.backend ? t('imageSettings.reachable', { backend: backendName }) : s.reachable ? t('imageSettings.noModel') : t('imageSettings.unreachable')}
+            hint={t('imageSettings.urls', { sdwebui: s.urls.sdwebui, comfyui: s.urls.comfyui })}
+          />
+          {s.model && <DiagRow ok={null} label={t('imageSettings.modelLabel')} value={s.model} hint={t('imageSettings.family', { family: s.family })} />}
+          {s.backend && (
+            <DiagRow
+              ok={null}
+              label={t('imageSettings.queueLabel')}
+              value={t('imageSettings.queue', { waiting: s.queue.waiting, running: s.queue.running })}
+              hint={t('imageSettings.sizes', { portrait: `${s.sizes.portrait.width}×${s.sizes.portrait.height}`, scene: `${s.sizes.scene.width}×${s.sizes.scene.height}` })}
+            />
+          )}
+          {s.lastError && <DiagRow ok={false} label={t('imageSettings.errorLabel')} value={s.lastError.message} />}
+        </ul>
+      )}
+      <div className="row">
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          disabled={status.isFetching}
+          onClick={() => {
+            if (refresh) void status.refetch();
+            else setRefresh(true);
+          }}
+        >
+          <RefreshCw aria-hidden /> {t('imageSettings.check')}
+        </button>
+        <span className="xsmall muted">{t('imageSettings.setupHint')}</span>
+      </div>
+      <Toggle label={t('imageSettings.autoAvatars')} hint={t('imageSettings.autoAvatarsHint')} checked={settings.images.autoAvatars} onChange={(v) => save({ images: { autoAvatars: v } })} />
+      <Toggle label={t('imageSettings.autoScenes')} hint={t('imageSettings.autoScenesHint')} checked={settings.images.autoScenes} onChange={(v) => save({ images: { autoScenes: v } })} />
+    </section>
+  );
+}
+
 export function SettingsPage() {
   const { t, locale } = useI18n();
   const location = useLocation();
@@ -423,7 +478,7 @@ export function SettingsPage() {
         </div>
       </header>
       <nav className="chip-row scroll settings-nav" aria-label={t('settings.title')}>
-        {(['general', 'ai', 'simulation', 'memory', 'privacy', 'about'] as const).map((id) => (
+        {(['general', 'ai', 'images', 'simulation', 'memory', 'privacy', 'about'] as const).map((id) => (
           <a key={id} href={`#${id}`} className="chip">
             {t(`settings.${id}`)}
           </a>
@@ -462,6 +517,8 @@ export function SettingsPage() {
         </section>
 
         <AiSection settings={settings} save={save} />
+
+        <ImageSection settings={settings} save={save} />
 
         <section id="simulation" className="settings-section card stack">
           <h2 className="row">

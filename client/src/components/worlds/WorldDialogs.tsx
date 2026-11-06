@@ -66,7 +66,7 @@ function CharacterPicker({
               else onChange(max === 1 ? [c.id] : [...selected, c.id].slice(-max));
             }}
           >
-            <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="sm" decorative />
+            <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="sm" decorative />
             <span className="truncate">{c.name}</span>
             {isSelected && <Check aria-hidden className="icon-xs" />}
           </button>

@@ -5,6 +5,8 @@ const MOCK_PORT = 3198;
 /** Zweite App-Instanz für die KI-Tests: lokale KI (Ollama-Nachbau) und konfigurierte Server-KI (OpenRouter-Nachbau). */
 const AI_PORT = 3197;
 const OLLAMA_PORT = 3196;
+/** Nachbau der Bild-KI-Schnittstelle (Forge/A1111) – erzeugt kleine PNG-Verläufe statt echter Fotos. */
+const SD_PORT = 3194;
 
 export default defineConfig({
   testDir: 'e2e',
@@ -34,6 +36,11 @@ export default defineConfig({
       env: { MOCK_OLLAMA_TOKEN_DELAY_MS: '40' },
     },
     {
+      command: `node e2e/mock-sdwebui.mjs ${SD_PORT}`,
+      port: SD_PORT,
+      reuseExistingServer: false,
+    },
+    {
       // Startet den Produktionsbuild mit einer frischen, temporären Datenbank (ohne echte KI).
       command: `node scripts/e2e-server.mjs ${PORT}`,
       url: `http://127.0.0.1:${PORT}/api/health`,
@@ -52,6 +59,8 @@ export default defineConfig({
         SERVER_AI_BASE_URL: `http://127.0.0.1:${MOCK_PORT}/api/v1`,
         SERVER_AI_API_KEY: 'sk-or-v1-e2e-mock-key-0123456789',
         SERVER_AI_MODEL: 'mock/free-chat',
+        IMAGE_BACKEND: 'sdwebui',
+        IMAGE_SDWEBUI_URL: `http://127.0.0.1:${SD_PORT}`,
       },
     },
   ],

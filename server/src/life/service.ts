@@ -72,6 +72,7 @@ function toMessage(ctx: AppContext, r: MessageRow, names: Map<string, string>): 
     ...(Array.isArray(data.suggestions) ? { suggestions: data.suggestions as LifeSuggestion[] } : {}),
     ...(data.resolution ? { resolution: data.resolution as LifeResolutionDto } : {}),
     ...(data.severity ? { severity: data.severity as LifeMessageDto['severity'] } : {}),
+    ...(typeof data.title === 'string' ? { title: data.title } : {}),
     ...(r.role === 'image' ? { imageUrl: imageUrlOf(image?.file), sceneCard: (data.sceneCard as LifeMessageDto['sceneCard']) ?? null } : {}),
     ...(data.away ? { away: true } : {}),
     createdAt: r.created_at,
@@ -208,7 +209,8 @@ function applyEvents(ctx: AppContext, s: StoryRow, chars: LifeCharacterRow[], st
       ctx.now().toISOString(),
     );
     // Verborgener Verrat erscheint dem Spieler nur als Ahnung – die Wahrheit kennt nur der Verräter.
-    insertMessage(ctx, s.id, turn, 'event', `${e.title}: ${e.description}`, { severity: e.severity, kind: e.kind, eventId });
+    // Titel und Beschreibung getrennt speichern (die Beschreibung nennt die Beteiligten bereits).
+    insertMessage(ctx, s.id, turn, 'event', e.description, { severity: e.severity, kind: e.kind, eventId, title: e.title });
     if (e.memory) {
       const subject = e.participants.map((p) => chars.find((c) => c.id === p)?.name).filter(Boolean).join(', ');
       const content = e.kind === 'betrayal' && !e.memory.knownBy.includes(PLAYER) ? `${subject} hat ${s.player_name} verraten.` : `${e.title}: ${e.description}`;
@@ -553,7 +555,7 @@ async function summarizeIfNeeded(ctx: AppContext, id: string, background: boolea
   if (!summary) {
     // Regelbasiert: Handlungen des Spielers und Ereignisse in Kurzform.
     const acts = chunk.filter((m) => m.role === 'player').map((m) => truncate(m.content, 60));
-    const events = chunk.filter((m) => m.role === 'event').map((m) => m.content.split(':')[0]);
+    const events = chunk.filter((m) => m.role === 'event').map((m) => parseJson<{ title?: string }>(m.data ?? '{}', {}).title ?? truncate(m.content, 50));
     summary = truncate(`${s.lang === 'de' ? `Züge ${chunk[0].turn}–${chunk.at(-1)!.turn}` : `Turns ${chunk[0].turn}–${chunk.at(-1)!.turn}`}: ${acts.join('; ')}${events.length ? ` | ${events.join(', ')}` : ''}`, 900);
   }
   remember(ctx, id, { kind: 'summary', content: summary, importance: 3, knownBy: [PLAYER], turn: chunk.at(-1)!.turn, source: 'summary' });

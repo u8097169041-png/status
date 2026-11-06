@@ -116,7 +116,7 @@ export function DiscoverPage() {
               <ul className="joined-worlds">
                 {joined.map(({ world, player }) => (
                   <li key={world.id} className="card card-tight joined-world" style={{ '--world-hue': world.hue } as React.CSSProperties}>
-                    <Avatar name={player.character.name} hue={player.character.avatarHue} glyph={player.character.avatarGlyph} size="md" decorative />
+                    <Avatar name={player.character.name} hue={player.character.avatarHue} glyph={player.character.avatarGlyph} photoUrl={player.character.photoUrl} size="md" decorative />
                     <span className="grow min-w-0">
                       <strong className="block truncate">{world.name}</strong>
                       <span className="xsmall muted block truncate">

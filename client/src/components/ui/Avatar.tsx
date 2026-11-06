@@ -1,4 +1,5 @@
 import { Cog, Eye, Feather, Flame, Leaf, Moon, Sparkles, Star, Waves, type LucideIcon } from 'lucide-react';
+import { useState } from 'react';
 import type { AvatarGlyph } from '../../../../shared/constants';
 
 const GLYPHS: Partial<Record<AvatarGlyph, LucideIcon>> = {
@@ -35,11 +36,15 @@ interface AvatarProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
   ring?: boolean | 'muted';
   decorative?: boolean;
+  /** Profilfoto oder gezeichnetes Porträt; ohne Bild (oder wenn es nicht lädt) erscheinen Initialen bzw. Symbol. */
+  photoUrl?: string | null;
 }
 
-export function Avatar({ name, hue, glyph = 'initials', size = 'md', ring, decorative }: AvatarProps) {
+export function Avatar({ name, hue, glyph = 'initials', size = 'md', ring, decorative, photoUrl }: AvatarProps) {
+  const [failed, setFailed] = useState<string | null>(null);
   const Icon = GLYPHS[glyph];
-  const cls = ['avatar', `avatar-${size}`, ring === true ? 'ring' : ring === 'muted' ? 'ring-muted' : ''].join(' ');
+  const showPhoto = Boolean(photoUrl) && failed !== photoUrl;
+  const cls = ['avatar', `avatar-${size}`, ring === true ? 'ring' : ring === 'muted' ? 'ring-muted' : '', showPhoto ? 'has-photo' : ''].join(' ');
   return (
     <span
       className={cls}
@@ -48,7 +53,13 @@ export function Avatar({ name, hue, glyph = 'initials', size = 'md', ring, decor
       aria-label={decorative ? undefined : name}
       aria-hidden={decorative ? true : undefined}
     >
-      {Icon ? <Icon aria-hidden /> : initials(name)}
+      {showPhoto ? (
+        <img src={photoUrl!} alt="" loading="lazy" decoding="async" draggable={false} onError={() => setFailed(photoUrl ?? null)} />
+      ) : Icon ? (
+        <Icon aria-hidden />
+      ) : (
+        initials(name)
+      )}
     </span>
   );
 }

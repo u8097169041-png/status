@@ -24,6 +24,8 @@ export interface AuthorRef {
   handle: string;
   avatarHue: number;
   avatarGlyph: AvatarGlyph;
+  /** Erzeugtes Profilfoto (lokale Bild-KI), sonst null – dann Initialen. */
+  photoUrl?: string | null;
   isRealPersonSim: boolean;
   worldId: string | null;
   /** Bekannte Figur dieser Welt („verifiziert“). */
@@ -99,6 +101,8 @@ export interface CharacterSummary {
   worldName: string | null;
   avatarHue: number;
   avatarGlyph: AvatarGlyph;
+  /** Erzeugtes Profilfoto (lokale Bild-KI), sonst null – dann Initialen. */
+  photoUrl: string | null;
   isCustom: boolean;
   isRealPersonSim: boolean;
   mood: string;
@@ -229,6 +233,7 @@ export interface CharacterRef {
   name: string;
   avatarHue: number;
   avatarGlyph: AvatarGlyph;
+  photoUrl?: string | null;
 }
 
 export interface RelationshipDto {

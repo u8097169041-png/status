@@ -11,7 +11,7 @@ export function CharacterCard({ character, showWorld = true }: { character: Char
     <article className="character-card card-interactive">
       <div className="character-card-banner" style={{ background: hueGradient(character.avatarHue) }} aria-hidden />
       <Link to={`/characters/${character.id}`} className="character-card-link">
-        <Avatar name={character.name} hue={character.avatarHue} glyph={character.avatarGlyph} size="lg" ring="muted" decorative />
+        <Avatar name={character.name} hue={character.avatarHue} glyph={character.avatarGlyph} photoUrl={character.photoUrl} size="lg" ring="muted" decorative />
         <div className="character-card-titles">
           <h3 className="row">
             {character.name} {character.prominent && <VerifiedBadge />}

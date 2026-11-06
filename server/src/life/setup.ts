@@ -276,7 +276,12 @@ export function ruleDraft(ctx: AppContext, input: SetupInput, notice?: string): 
   const assets = [...new Set([...text.matchAll(ASSET_RE)].map((m) => m[1]))].slice(0, 5);
   const place = [...text.matchAll(PLACE_RE)].map((m) => m[1]).find((p) => !NOT_PLACE.test(p.split(' ')[0])) ?? '';
   const setting = truncate(cleanText(parts.background ?? '') || (place ? `${place} – ${DEFAULT_SETTING[genres[0]][lang]}` : DEFAULT_SETTING[genres[0]][lang]), 400);
-  const sentences = cleanText(input.prompt).split(/(?<=[.!?])\s+/).filter(Boolean);
+  // Ausgangssituation: der letzte Satz der Beschreibung, der nicht zu einer Aufzählung (Figurenliste) gehört.
+  const prose = input.prompt
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^([-*•–]|\d+[.)])\s*/.test(l) && !LINE_RE.test(l));
+  const sentences = prose.join(' ').split(/(?<=[.!?])\s+/).filter(Boolean);
   const opening = truncate(cleanText(parts.start ?? '') || (sentences.length > 2 ? sentences.at(-1)! : ''), 500);
   const relations: LifeSetupDraft['relations'] = [];
   const rel = parts.relationships ?? '';

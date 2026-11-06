@@ -12,7 +12,7 @@ export function authorLink(author: AuthorRef): string {
 export function AuthorAvatar({ author, size = 'md' }: { author: AuthorRef; size?: 'sm' | 'md' | 'lg' }) {
   return (
     <Link to={authorLink(author)} tabIndex={-1} aria-hidden>
-      <Avatar name={author.name} hue={author.avatarHue} glyph={author.avatarGlyph} size={size} decorative />
+      <Avatar name={author.name} hue={author.avatarHue} glyph={author.avatarGlyph} photoUrl={author.photoUrl} size={size} decorative />
     </Link>
   );
 }

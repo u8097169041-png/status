@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Bell,
   ChevronDown,
   Coins,
@@ -9,6 +10,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   PlusCircle,
+  Theater,
   Repeat,
   Search,
   Settings,
@@ -22,7 +24,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router';
 import type { BootstrapDto } from '../../../../shared/types';
 import { usePlayActions } from '../../api/hooks';
 import { useI18n, type TKey } from '../../i18n';
@@ -37,6 +39,8 @@ import { BrandMark } from './BrandMark';
 interface NavItem {
   to: string;
   label: TKey;
+  /** Kürzere Beschriftung für die untere Leiste auf dem Handy. */
+  short?: TKey;
   icon: LucideIcon;
   end?: boolean;
 }
@@ -71,6 +75,33 @@ const SECONDARY_IN_WORLD: NavItem[] = [
   { to: '/settings', label: 'nav.settings', icon: Settings },
   { to: '/privacy', label: 'nav.privacy', icon: Shield },
 ];
+
+/** Lebensmodus: eigene Geschichten mit eigener Mechanik; Einstellungen und Figuren sind gemeinsam. */
+const PRIMARY_LIFE: NavItem[] = [
+  { to: '/life', label: 'life.navStories', icon: BookOpen, end: true },
+  { to: '/life/new', label: 'life.navNew', short: 'life.navNewShort', icon: PlusCircle },
+  { to: '/characters', label: 'nav.characters', icon: Users },
+  { to: '/settings', label: 'nav.settings', icon: Settings },
+];
+
+const SECONDARY_LIFE: NavItem[] = [
+  { to: '/privacy', label: 'nav.privacy', icon: Shield },
+];
+
+/** Umschalter zwischen Social-Modus (Welten) und Lebensmodus (freie Lebensgeschichten). */
+function ModeSwitch({ life }: { life: boolean }) {
+  const { t } = useI18n();
+  return (
+    <nav className="mode-switch" aria-label={t('modes.label')}>
+      <Link to="/" className={!life ? 'active' : ''} aria-current={!life ? 'page' : undefined} title={t('modes.socialHint')}>
+        <Globe2 aria-hidden /> <span>{t('modes.social')}</span>
+      </Link>
+      <Link to="/life" className={life ? 'active' : ''} aria-current={life ? 'page' : undefined} title={t('modes.lifeHint')}>
+        <Theater aria-hidden /> <span>{t('modes.life')}</span>
+      </Link>
+    </nav>
+  );
+}
 
 const SECONDARY_DISCOVERY: NavItem[] = [
   { to: '/characters', label: 'nav.characters', icon: Users },
@@ -118,7 +149,7 @@ function WorldSwitcher({ boot, compact }: { boot: BootstrapDto; compact?: boolea
         <>
           {me ? (
             <span className="role-avatar" style={{ '--world-hue': world?.hue ?? 220 } as React.CSSProperties}>
-              <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} size="xs" decorative />
+              <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} photoUrl={me.photoUrl} size="xs" decorative />
             </span>
           ) : (
             <span className="world-dot" style={{ background: 'var(--text-faint)' }} aria-hidden />
@@ -138,6 +169,8 @@ function WorldSwitcher({ boot, compact }: { boot: BootstrapDto; compact?: boolea
 export function AppShell({ boot, children }: { boot: BootstrapDto; children: ReactNode }) {
   const { t, lang, locale } = useI18n();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const life = pathname === '/life' || pathname.startsWith('/life/');
   const unread = boot.unreadNotifications;
   const pending = boot.pendingDecisions;
   const me = boot.activePlayer?.character;
@@ -149,8 +182,8 @@ export function AppShell({ boot, children }: { boot: BootstrapDto; children: Rea
 
   const countFor = (to: string) => (to === '/activity' ? unread : to === '/tasks' ? pending : 0);
   const inWorld = Boolean(boot.activeWorld);
-  const PRIMARY = inWorld ? PRIMARY_IN_WORLD : PRIMARY_DISCOVERY;
-  const SECONDARY = inWorld ? SECONDARY_IN_WORLD : SECONDARY_DISCOVERY;
+  const PRIMARY = life ? PRIMARY_LIFE : inWorld ? PRIMARY_IN_WORLD : PRIMARY_DISCOVERY;
+  const SECONDARY = life ? SECONDARY_LIFE : inWorld ? SECONDARY_IN_WORLD : SECONDARY_DISCOVERY;
 
   const renderLink = (item: NavItem) => {
     const Icon = item.icon;
@@ -181,9 +214,12 @@ export function AppShell({ boot, children }: { boot: BootstrapDto; children: Rea
           <BrandMark />
           <span className="brand-name">SocialVerse</span>
         </Link>
-        <div className="sidebar-world">
-          <WorldSwitcher boot={boot} />
-        </div>
+        <ModeSwitch life={life} />
+        {!life && (
+          <div className="sidebar-world">
+            <WorldSwitcher boot={boot} />
+          </div>
+        )}
         <nav className="nav" aria-label={t('nav.main')}>
           {PRIMARY.map(renderLink)}
           <span className="nav-label">{t('nav.more')}</span>
@@ -195,7 +231,7 @@ export function AppShell({ boot, children }: { boot: BootstrapDto; children: Rea
           </div>
           <Link to="/profile" className="sidebar-profile">
             {me ? (
-              <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} size="md" decorative />
+              <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} photoUrl={me.photoUrl} size="md" decorative />
             ) : (
               <Avatar name={boot.profile.displayName} hue={boot.profile.avatarHue} glyph={boot.profile.avatarGlyph} size="md" decorative />
             )}
@@ -214,8 +250,9 @@ export function AppShell({ boot, children }: { boot: BootstrapDto; children: Rea
           <Link to="/" className="brand" aria-label="SocialVerse">
             <BrandMark />
           </Link>
-          <WorldSwitcher boot={boot} compact />
+          {life ? <ModeSwitch life /> : <WorldSwitcher boot={boot} compact />}
           <div className="topbar-actions">
+            {!life && <ModeSwitch life={false} />}
             <Link to="/activity" className="icon-btn" aria-label={unread > 0 ? t('nav.notificationsCount', { count: unread }) : t('nav.notifications')}>
               <Bell />
               {unread > 0 && <span className="dot">{unread > 9 ? '9+' : unread}</span>}
@@ -245,7 +282,7 @@ export function AppShell({ boot, children }: { boot: BootstrapDto; children: Rea
           return (
             <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => (isActive ? 'active' : '')}>
               <Icon aria-hidden />
-              <span>{t(item.label)}</span>
+              <span>{t(item.short ?? item.label)}</span>
               {count > 0 && <span className="nav-dot" aria-label={`${count}`} />}
             </NavLink>
           );
