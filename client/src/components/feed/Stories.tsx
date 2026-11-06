@@ -176,7 +176,7 @@ function StoryViewer({
           ))}
         </div>
         <div className="story-head">
-          <Avatar name={story.author.name} hue={story.author.avatarHue} glyph={story.author.avatarGlyph} size="sm" decorative />
+          <Avatar name={story.author.name} hue={story.author.avatarHue} glyph={story.author.avatarGlyph} photoUrl={story.author.photoUrl} size="sm" decorative />
           <div className="grow">
             <AuthorName author={story.author} />
             <span className="xsmall story-time">
@@ -231,7 +231,7 @@ export function StoriesBar({ worldId }: { worldId: string }) {
           onClick={() => (ownIndex >= 0 ? setViewing({ groups, index: ownIndex }) : setCreating(true))}
           aria-label={ownIndex >= 0 ? t('stories.yours') : t('stories.create')}
         >
-          {me && <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} size="lg" decorative />}
+          {me && <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} photoUrl={me.photoUrl} size="lg" decorative />}
         </button>
         {/* Ohne eigene Story erstellt bereits der Ring eine neue – das Plus ist dann nur Dekoration. */}
         <button
@@ -259,7 +259,7 @@ export function StoriesBar({ worldId }: { worldId: string }) {
                 onClick={() => setViewing({ groups, index })}
                 aria-label={t('stories.viewer', { name: author.name })}
               >
-                <Avatar name={author.name} hue={author.avatarHue} glyph={author.avatarGlyph} size="lg" decorative />
+                <Avatar name={author.name} hue={author.avatarHue} glyph={author.avatarGlyph} photoUrl={author.photoUrl} size="lg" decorative />
               </button>
               <span className="story-name">{author.name.split(' ')[0]}</span>
             </div>

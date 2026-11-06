@@ -26,6 +26,8 @@ export interface CharacterRow {
   prominent: number;
   is_player: number;
   created_at: string;
+  appearance?: string;
+  avatar_image_id?: string | null;
 }
 
 export interface ProfileRow {
@@ -63,6 +65,7 @@ export function toCharacterSummary(row: CharacterSummaryRow): CharacterSummary {
     worldName: row.world_name,
     avatarHue: row.avatar_hue,
     avatarGlyph: row.avatar_glyph as AvatarGlyph,
+    photoUrl: photoUrlOf(row.id, row.avatar_image_id),
     isCustom: Boolean(row.is_custom),
     isRealPersonSim: Boolean(row.is_real_person_sim),
     mood: row.mood,
@@ -87,8 +90,14 @@ export function toCharacterCore(row: CharacterRow) {
   } satisfies Partial<CharacterDetail>;
 }
 
-export function toCharacterRef(row: Pick<CharacterRow, 'id' | 'name' | 'avatar_hue' | 'avatar_glyph'>): CharacterRef {
-  return { id: row.id, name: row.name, avatarHue: row.avatar_hue, avatarGlyph: row.avatar_glyph as AvatarGlyph };
+/** Adresse des Profilfotos; der Parameter ändert sich mit jedem neuen Foto (sauberes Neuladen im Browser). */
+export function photoUrlOf(id: string | null | undefined, imageId: string | null | undefined): string | null {
+  return id && imageId ? `/api/media/avatars/${encodeURIComponent(id)}?p=${encodeURIComponent(imageId.slice(-8))}` : null;
+}
+
+export function toCharacterRef(row: Pick<CharacterRow, 'id' | 'name' | 'avatar_hue' | 'avatar_glyph'> & { avatar_image_id?: string | null }): CharacterRef {
+  const photoUrl = photoUrlOf(row.id, row.avatar_image_id);
+  return { id: row.id, name: row.name, avatarHue: row.avatar_hue, avatarGlyph: row.avatar_glyph as AvatarGlyph, ...(photoUrl ? { photoUrl } : {}) };
 }
 
 export function getProfileRow(ctx: AppContext): ProfileRow {
@@ -99,7 +108,8 @@ export function getProfileRow(ctx: AppContext): ProfileRow {
 
 /** Spalten der Spielfigur eines eigenen Inhalts (Alias pc für den Charakter, pl für die Spielfigur). */
 export const PLAYER_AUTHOR_COLUMNS = `pl.id AS pl_id, pc.name AS pc_name, pc.handle AS pc_handle, pc.avatar_hue AS pc_hue,
-  pc.avatar_glyph AS pc_glyph, pc.is_real_person_sim AS pc_real, pc.world_id AS pc_world, pc.prominent AS pc_prominent`;
+  pc.avatar_glyph AS pc_glyph, pc.is_real_person_sim AS pc_real, pc.world_id AS pc_world, pc.prominent AS pc_prominent,
+  pc.id AS pc_id, pc.avatar_image_id AS pc_photo`;
 
 export interface PlayerAuthorColumns {
   pl_id: string | null;
@@ -110,6 +120,8 @@ export interface PlayerAuthorColumns {
   pc_real: number | null;
   pc_world: string | null;
   pc_prominent: number | null;
+  pc_id?: string | null;
+  pc_photo?: string | null;
 }
 
 /** Autor eigener Inhalte: die Spielfigur (falls vorhanden), sonst das lokale Profil. */
@@ -122,6 +134,7 @@ export function userAuthor(profile: ProfileRow, player?: Partial<PlayerAuthorCol
       handle: player.pc_handle ?? profile.handle,
       avatarHue: player.pc_hue ?? profile.avatar_hue,
       avatarGlyph: (player.pc_glyph ?? 'initials') as AvatarGlyph,
+      photoUrl: photoUrlOf(player.pc_id, player.pc_photo),
       isRealPersonSim: Boolean(player.pc_real),
       worldId: player.pc_world ?? null,
       verified: Boolean(player.pc_prominent),
@@ -151,6 +164,7 @@ export function characterAuthor(row: {
   c_real: number | null;
   c_world: string | null;
   c_prominent?: number | null;
+  c_photo?: string | null;
 }): AuthorRef {
   return {
     type: 'character',
@@ -159,6 +173,7 @@ export function characterAuthor(row: {
     handle: row.c_handle ?? 'unknown',
     avatarHue: row.c_hue ?? 0,
     avatarGlyph: (row.c_glyph ?? 'initials') as AvatarGlyph,
+    photoUrl: photoUrlOf(row.c_id, row.c_photo),
     isRealPersonSim: Boolean(row.c_real),
     worldId: row.c_world,
     verified: Boolean(row.c_prominent),
@@ -167,4 +182,4 @@ export function characterAuthor(row: {
 
 /** SQL-Spalten für den Charakter-Autor (Alias c). */
 export const AUTHOR_COLUMNS = `c.id AS c_id, c.name AS c_name, c.handle AS c_handle, c.avatar_hue AS c_hue,
-  c.avatar_glyph AS c_glyph, c.is_real_person_sim AS c_real, c.world_id AS c_world, c.prominent AS c_prominent`;
+  c.avatar_glyph AS c_glyph, c.is_real_person_sim AS c_real, c.world_id AS c_world, c.prominent AS c_prominent, c.avatar_image_id AS c_photo`;

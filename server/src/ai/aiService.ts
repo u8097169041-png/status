@@ -29,7 +29,8 @@ import {
 /** Früher in der App gespeicherter OpenRouter-Schlüssel (Version 1). Wird nicht mehr verwendet. */
 export const LEGACY_API_KEY_SECRET = 'openrouter_api_key';
 
-export type AiPurpose = 'chat' | 'summary' | 'world' | 'reaction' | 'generator' | 'test';
+/** story = Erzählung einer Lebensgeschichte (längere Antworten, größerer Kontext). */
+export type AiPurpose = 'chat' | 'summary' | 'world' | 'reaction' | 'generator' | 'story' | 'test';
 
 export interface AiCallRequest {
   purpose: AiPurpose;
@@ -46,6 +47,8 @@ export interface AiCallRequest {
   signal?: AbortSignal;
   /** Fortschritt in erzeugten Tokens. */
   onProgress?: (tokens: number) => void;
+  /** Kontextlänge der lokalen KI (Standard 4096). */
+  numCtx?: number;
   /** Regelbasierter Ersatz (simulierte KI), wenn keine echte KI verfügbar ist oder sie scheitert. */
   fallback?: () => string;
 }
@@ -395,7 +398,12 @@ export class AiService {
     const temperature = req.temperature ?? ai.temperature;
     const requested = req.maxTokens ?? ai.maxTokens;
     if (provider === 'local') {
-      const cap = req.purpose === 'generator' ? Math.max(this.config.localAi.maxTokens, 2_200) : this.config.localAi.maxTokens;
+      const cap =
+        req.purpose === 'generator'
+          ? Math.max(this.config.localAi.maxTokens, 2_200)
+          : req.purpose === 'story'
+            ? Math.max(this.config.localAi.maxTokens, 1_000)
+            : this.config.localAi.maxTokens;
       const maxTokens = Math.min(requested, cap);
       // Chats warten kurz auf ein belegtes Modell; Hintergrundaufgaben verzichten in diesem Fall auf KI.
       const release = await this.local.acquire(BACKGROUND_PURPOSES.includes(req.purpose) ? 0 : SLOT_WAIT_MS);
@@ -409,6 +417,7 @@ export class AiService {
           temperature,
           json: req.json ?? false,
           long: req.long,
+          numCtx: req.numCtx,
           signal: req.signal,
           onProgress: req.onProgress,
           model,
@@ -431,7 +440,7 @@ export class AiService {
       }
     }
 
-    const maxTokens = Math.min(requested, req.purpose === 'generator' ? this.config.serverAi.maxTokensLong : this.config.serverAi.maxTokens);
+    const maxTokens = Math.min(requested, req.purpose === 'generator' || req.purpose === 'story' ? this.config.serverAi.maxTokensLong : this.config.serverAi.maxTokens);
     const check = await this.checkServerLimits(req, model, maxTokens);
     if ('code' in check) return { ok: false, code: check.code, message: check.message, retriable: false };
     const started = Date.now();

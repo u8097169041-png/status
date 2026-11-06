@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { useBootstrap, useCharacter, useCharacterMutations } from '../api/hooks';
+import { AppearanceCard } from '../components/characters/AppearanceCard';
 import { FeedList } from '../components/feed/FeedList';
 import { useErrorToast, useProgressFeedback } from '../components/progress/useProgressFeedback';
 import { Avatar, hueGradient } from '../components/ui/Avatar';
@@ -69,7 +70,7 @@ export function CharacterPage() {
       <section className="profile-header card">
         <div className="profile-banner" style={{ background: hueGradient(c.avatarHue) }} aria-hidden />
         <div className="profile-head">
-          <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="xxl" ring="muted" />
+          <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="xxl" ring="muted" />
           <div className="profile-actions">
             {!controlled && (
               <Link to={`/chats/${c.id}`} className="btn btn-primary">
@@ -127,6 +128,8 @@ export function CharacterPage() {
           </div>
         </div>
       </section>
+
+      <AppearanceCard characterId={c.id} name={c.name} />
 
       <Tabs<Tab>
         label={c.name}
@@ -234,7 +237,7 @@ export function CharacterPage() {
                 const other = r.a.id === c.id ? r.b : r.a;
                 return (
                   <li key={r.id} className="card card-tight relationship-row">
-                    <Avatar name={other.name} hue={other.avatarHue} glyph={other.avatarGlyph} size="md" decorative />
+                    <Avatar name={other.name} hue={other.avatarHue} glyph={other.avatarGlyph} photoUrl={other.photoUrl} size="md" decorative />
                     <div className="grow">
                       <Link to={`/characters/${other.id}`}>
                         <strong className="small">{other.name}</strong>

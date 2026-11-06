@@ -1,10 +1,14 @@
-import { ArrowLeft, Brain, Eye, MessageCirclePlus, MessagesSquare, Plus, Send, Trash2, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Brain, Camera, Eye, MessageCirclePlus, MessagesSquare, Plus, Send, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { LIMITS } from '../../../shared/constants';
 import type { ChatDetail } from '../../../shared/types';
 import { ApiError } from '../api/client';
-import { useCharacters, useChat, useChatActions, useChats, usePromptPreview } from '../api/hooks';
+import { keys, useCharacters, useChat, useChatActions, useChats, usePromptPreview } from '../api/hooks';
+import { useChatImage } from '../api/lifeHooks';
+import { ImageDialog, ImageJobIndicator, SceneImage, SuggestionButtons } from '../components/media/Media';
+import { useQueryClient } from '@tanstack/react-query';
+import type { ImageJobDto } from '../../../shared/types';
 import { AuthorName } from '../components/feed/AuthorLine';
 import { ChatActionsBar } from '../components/play/ChatActionsBar';
 import { NotJoinedState, useActivePlay } from '../components/play/PlayUI';
@@ -47,7 +51,7 @@ function NewChatModal({ worldId, onClose }: { worldId: string; onClose: () => vo
                 navigate(`/chats/${c.id}`);
               }}
             >
-              <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="md" decorative />
+              <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="md" decorative />
               <span className="grow">
                 <strong className="small">{c.name}</strong>
                 <span className="xsmall muted block truncate">{c.role}</span>
@@ -187,13 +191,28 @@ function Conversation({ characterId }: { characterId: string }) {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
+  const [imageJob, setImageJob] = useState<string | null>(null);
+  const image = useChatImage(characterId);
+  const { player } = useActivePlay();
+  const qc = useQueryClient();
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const pending = actions.send.isPending ? actions.send.variables : null;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
-  }, [chat.data?.messages.length, pending]);
+  }, [chat.data?.messages.length, pending, imageJob]);
+
+  const onImageDone = useCallback(
+    (job: ImageJobDto) => {
+      setImageJob(null);
+      void qc.invalidateQueries({ queryKey: keys.chat(characterId) });
+      if (job.status === 'done') push('success', t('images.done'));
+      else if (job.status === 'failed') push('error', t('images.failed', { reason: job.error ?? '?' }));
+    },
+    [qc, characterId, push, t],
+  );
 
   useEffect(() => {
     setDraft('');
@@ -207,6 +226,9 @@ function Conversation({ characterId }: { characterId: string }) {
   }
   const data = chat.data;
   const c = data.character;
+  // Vorschläge gehören zur jüngsten Antwort der Figur (Szenenbilder dazwischen werden übersprungen).
+  const lastReply = [...data.messages].reverse().find((m) => m.source !== 'image');
+  const lastSuggestions = lastReply?.role === 'assistant' ? (lastReply.suggestions ?? []) : [];
 
   const send = (text: string) => {
     const content = text.trim();
@@ -231,7 +253,7 @@ function Conversation({ characterId }: { characterId: string }) {
           <ArrowLeft />
         </button>
         <Link to={`/characters/${c.id}`} className="row grow min-w-0" aria-label={t('chats.viewProfile')}>
-          <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="md" decorative />
+          <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="md" decorative />
           <span className="min-w-0">
             <strong className="block truncate">{c.name}</strong>
             <span className="xsmall muted block truncate">
@@ -253,7 +275,7 @@ function Conversation({ characterId }: { characterId: string }) {
       <div className="messages" aria-live="polite">
         {data.messages.length === 0 && !pending && (
           <div className="chat-empty">
-            <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="xl" decorative />
+            <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="xl" decorative />
             <AuthorName author={{ type: 'character', id: c.id, name: c.name, handle: c.handle, avatarHue: c.avatarHue, avatarGlyph: c.avatarGlyph, isRealPersonSim: c.isRealPersonSim, worldId: c.worldId, verified: c.prominent }} />
             <p className="small muted center-text">{c.tagline}</p>
             <p className="small">{t('chats.sayHello', { name: c.name })}</p>
@@ -266,9 +288,22 @@ function Conversation({ characterId }: { characterId: string }) {
             </div>
           </div>
         )}
-        {data.messages.map((m) => (
+        {data.messages.map((m) =>
+          m.source === 'image' ? (
+            <div key={m.id} className="message assistant image-message">
+              <SceneImage
+                imageUrl={m.imageUrl}
+                sceneCard={m.sceneCard}
+                caption={m.content}
+                people={[
+                  { id: c.id, name: c.name, hue: c.avatarHue, photoUrl: c.photoUrl },
+                  ...(player ? [{ id: player.character.id, name: player.character.name, hue: player.character.avatarHue, photoUrl: player.character.photoUrl }] : []),
+                ]}
+              />
+            </div>
+          ) : (
           <div key={m.id} className={`message ${m.role}`}>
-            {m.role === 'assistant' && <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="sm" decorative />}
+            {m.role === 'assistant' && <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="sm" decorative />}
             <div className="message-stack">
               <div className="bubble">{m.content}</div>
               <span className="message-meta">
@@ -285,7 +320,8 @@ function Conversation({ characterId }: { characterId: string }) {
               </span>
             </div>
           </div>
-        ))}
+          ),
+        )}
         {pending && (
           <>
             <div className="message user pending">
@@ -294,7 +330,7 @@ function Conversation({ characterId }: { characterId: string }) {
               </div>
             </div>
             <div className="message assistant">
-              <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="sm" decorative />
+              <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="sm" decorative />
               <div className="bubble typing" aria-label={t('chats.typing', { name: c.name })}>
                 <span />
                 <span />
@@ -303,9 +339,15 @@ function Conversation({ characterId }: { characterId: string }) {
             </div>
           </>
         )}
+        {imageJob && <ImageJobIndicator jobId={imageJob} onDone={onImageDone} />}
         <div ref={endRef} />
       </div>
 
+      {!pending && lastSuggestions.length > 0 && (
+        <div className="chat-suggestions" aria-label={t('chatExtras.suggestions')}>
+          <SuggestionButtons suggestions={lastSuggestions} onPick={(s) => send(s.text)} disabled={actions.send.isPending} />
+        </div>
+      )}
       <ChatActionsBar characterId={characterId} characterName={c.name} disabled={actions.send.isPending} />
       <form
         className="chat-composer"
@@ -329,6 +371,16 @@ function Conversation({ characterId }: { characterId: string }) {
             }
           }}
         />
+        <button
+          type="button"
+          className="btn btn-ghost composer-image"
+          onClick={() => setImageOpen(true)}
+          disabled={data.messages.length === 0 || Boolean(imageJob) || image.isPending}
+          aria-label={t('images.button')}
+          title={t('images.button')}
+        >
+          <Camera aria-hidden />
+        </button>
         <button type="submit" className="btn btn-primary" disabled={!draft.trim() || draft.length > LIMITS.chatMessage || actions.send.isPending} aria-label={t('common.send')}>
           {actions.send.isPending ? <span className="spinner" aria-hidden /> : <Send aria-hidden />}
         </button>
@@ -340,6 +392,22 @@ function Conversation({ characterId }: { characterId: string }) {
       )}
 
       {memoryOpen && <MemoryPanel chat={data} onClose={() => setMemoryOpen(false)} />}
+      {imageOpen && (
+        <ImageDialog
+          busy={image.isPending}
+          onClose={() => setImageOpen(false)}
+          onSubmit={(description) =>
+            image.mutate(description, {
+              onSuccess: (r) => {
+                setImageOpen(false);
+                if (r.job && (r.job.status === 'queued' || r.job.status === 'running')) setImageJob(r.job.id);
+                else if (r.job?.status === 'done') push('success', t('images.done'));
+              },
+              onError: showError,
+            })
+          }
+        />
+      )}
       {previewOpen && <PromptPreviewModal characterId={characterId} onClose={() => setPreviewOpen(false)} />}
       {confirmClear && (
         <ConfirmDialog
@@ -402,7 +470,7 @@ export function ChatsPage() {
             {sorted.map((chat) => (
               <li key={chat.characterId}>
                 <Link to={`/chats/${chat.characterId}`} className={`chat-row ${chat.characterId === characterId ? 'active' : ''}`} aria-current={chat.characterId === characterId ? 'page' : undefined}>
-                  <Avatar name={chat.character.name} hue={chat.character.avatarHue} glyph={chat.character.avatarGlyph} size="md" decorative />
+                  <Avatar name={chat.character.name} hue={chat.character.avatarHue} glyph={chat.character.avatarGlyph} photoUrl={chat.character.photoUrl} size="md" decorative />
                   <span className="grow min-w-0">
                     <span className="row-between">
                       <strong className="small truncate">{chat.character.name}</strong>

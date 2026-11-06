@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { LANGUAGES } from '../../../shared/constants';
 import { deleteAllCovers } from './covers';
 import { resetGenerationJobs } from './generationJobs';
+import { resetLifeState } from '../life/service';
+import { resetSetupJobs } from '../life/setup';
 import type { AppContext } from '../context';
 import { all, schemaVersion } from '../db/database';
 import { DATA_TABLES, seedDatabase, wipeAllData } from '../db/seed';
@@ -43,6 +45,9 @@ export function resetAllData(ctx: AppContext, input: unknown): void {
   wipeAllData(ctx.db);
   deleteAllCovers(ctx);
   resetGenerationJobs();
+  resetSetupJobs();
+  resetLifeState();
+  ctx.images.reset();
   // Gelöschte Inhalte auch physisch aus der Datenbankdatei entfernen.
   ctx.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
   ctx.db.exec('VACUUM;');

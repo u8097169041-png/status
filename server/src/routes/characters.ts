@@ -8,10 +8,12 @@ import {
   getChat,
   listChats,
   promptPreview,
+  requestChatImage,
   sendMessage,
   updateChatSettings,
 } from '../services/chats';
 import { activeWorldId } from '../services/players';
+import { ensureAvatarInBackground } from '../services/appearances';
 import { getSettings } from '../services/settings';
 import { param, q } from './helpers';
 
@@ -47,7 +49,15 @@ export function characterRoutes(ctx: AppContext): Router {
     res.json(worldId ? listChats(ctx, worldId) : []);
   });
   r.get('/chats/:characterId', (req, res) => {
-    res.json(getChat(ctx, param(req, 'characterId')));
+    const id = param(req, 'characterId');
+    const chat = getChat(ctx, id);
+    // Profilfoto bei Bedarf im Hintergrund erzeugen (nur mit Bild-KI; höchstens einmal je Figur).
+    ensureAvatarInBackground(ctx, id);
+    res.json(chat);
+  });
+  r.post('/chats/:characterId/images', async (req, res) => {
+    const result = await requestChatImage(ctx, param(req, 'characterId'), req.body);
+    res.status(result.job && result.job.status !== 'done' ? 202 : 200).json(result);
   });
   r.post('/chats/:characterId/messages', async (req, res) => {
     res.status(201).json(await sendMessage(ctx, param(req, 'characterId'), req.body));

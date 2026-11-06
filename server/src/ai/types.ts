@@ -66,6 +66,8 @@ export interface ProviderRequest {
   signal?: AbortSignal;
   /** Fortschritt: bisher erzeugte Tokens. */
   onProgress?: (tokens: number) => void;
+  /** Kontextlänge (nur lokale KI). */
+  numCtx?: number;
 }
 
 /** Bereitschaft nach letztem Kenntnisstand – ohne Netzwerkzugriff abfragbar. */

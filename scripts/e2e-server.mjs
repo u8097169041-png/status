@@ -18,6 +18,8 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
     LOCAL_AI_ENABLED: process.env.LOCAL_AI_ENABLED ?? 'false',
     SERVER_AI_ENABLED: process.env.SERVER_AI_ENABLED ?? 'false',
     SERVER_AI_API_KEY: process.env.SERVER_AI_API_KEY ?? '',
+    // Keine Bild-KI, außer ein Test gibt ausdrücklich eine (simulierte) an – auch wenn auf dem Rechner Forge läuft.
+    IMAGE_BACKEND: process.env.IMAGE_BACKEND ?? 'none',
   },
   cwd: process.cwd(),
 });

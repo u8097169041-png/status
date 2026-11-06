@@ -39,7 +39,7 @@ function DecisionCard({ decision }: { decision: DecisionDto }) {
         <div className="row wrap">
           {decision.participants.map((p) => (
             <span key={p.id} className="chip chip-static">
-              <Avatar name={p.name} hue={p.avatarHue} glyph={p.avatarGlyph} size="xs" decorative /> {p.name}
+              <Avatar name={p.name} hue={p.avatarHue} glyph={p.avatarGlyph} photoUrl={p.photoUrl} size="xs" decorative /> {p.name}
             </span>
           ))}
         </div>

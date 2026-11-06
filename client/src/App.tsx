@@ -18,6 +18,9 @@ import { ChatsPage } from './pages/ChatsPage';
 import { DiscoverPage } from './pages/DiscoverPage';
 import { FeedPage } from './pages/FeedPage';
 import { JoinWorldPage } from './pages/JoinWorldPage';
+import { LifeSetupPage } from './pages/LifeSetupPage';
+import { LifeStoriesPage } from './pages/LifeStoriesPage';
+import { LifeStoryPage } from './pages/LifeStoryPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { PostPage } from './pages/PostPage';
@@ -121,6 +124,9 @@ export function App() {
                 <Route path="/notifications" element={<NotificationsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
+                <Route path="/life" element={<LifeStoriesPage />} />
+                <Route path="/life/new" element={<LifeSetupPage />} />
+                <Route path="/life/:id" element={<LifeStoryPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </AppShell>

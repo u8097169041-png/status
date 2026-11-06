@@ -24,6 +24,8 @@ export interface AuthorRef {
   handle: string;
   avatarHue: number;
   avatarGlyph: AvatarGlyph;
+  /** Erzeugtes Profilfoto (lokale Bild-KI), sonst null – dann Initialen. */
+  photoUrl?: string | null;
   isRealPersonSim: boolean;
   worldId: string | null;
   /** Bekannte Figur dieser Welt („verifiziert“). */
@@ -99,6 +101,8 @@ export interface CharacterSummary {
   worldName: string | null;
   avatarHue: number;
   avatarGlyph: AvatarGlyph;
+  /** Erzeugtes Profilfoto (lokale Bild-KI), sonst null – dann Initialen. */
+  photoUrl: string | null;
   isCustom: boolean;
   isRealPersonSim: boolean;
   mood: string;
@@ -229,6 +233,7 @@ export interface CharacterRef {
   name: string;
   avatarHue: number;
   avatarGlyph: AvatarGlyph;
+  photoUrl?: string | null;
 }
 
 export interface RelationshipDto {
@@ -330,15 +335,32 @@ export interface ChatSummary {
   messageCount: number;
 }
 
+export interface ChatSuggestion {
+  id: string;
+  kind: import('./life').SuggestionKind;
+  text: string;
+}
+
 export interface ChatMessageDto {
   id: number;
   role: 'user' | 'assistant';
   content: string;
-  source: 'user' | 'ai' | 'demo';
+  /** „image“: Szenenbild des Moments (nicht Teil des Gesprächs für die KI). */
+  source: 'user' | 'ai' | 'demo' | 'image';
   /** Herkunft einer Antwort: lokale KI, Server-KI oder simulierte KI (regelbasiert). */
   provider: AiProviderId | null;
   model: string | null;
   createdAt: string;
+  /** Vier Vorschläge für die nächste Nachricht (nur an der jüngsten Antwort relevant). */
+  suggestions?: ChatSuggestion[];
+  imageUrl?: string | null;
+  /** Gezeichnete Szenenkarte, falls keine Bild-KI verfügbar ist. */
+  sceneCard?: { location: string; characterIds: string[]; caption: string; mood: string } | null;
+}
+
+export interface ChatImageResult {
+  job: ImageJobDto | null;
+  message: ChatMessageDto | null;
 }
 
 export interface MemoryEntryDto {
@@ -474,6 +496,7 @@ export interface AppSettings {
   simulation: SimulationSettings;
   memory: MemorySettings;
   privacy: PrivacySettings;
+  images: ImageSettings;
 }
 
 export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? (T[K] extends unknown[] ? T[K] : DeepPartial<T[K]>) : T[K] };
@@ -902,4 +925,51 @@ export interface ChatActionResult {
 export interface PostReach {
   followers: number;
   influence: number;
+}
+
+// ---------- Bilder ----------
+
+export interface ImageStatusDto {
+  /** Konfiguration in .env (auto = automatisch erkennen). */
+  configured: 'auto' | 'sdwebui' | 'comfyui' | 'none';
+  /** Aktive Bild-KI; null = gezeichnete Ersatzbilder. */
+  backend: 'sdwebui' | 'comfyui' | null;
+  reachable: boolean | null;
+  model: string | null;
+  family: 'sd15' | 'sdxl' | 'unknown';
+  error: string | null;
+  urls: { sdwebui: string; comfyui: string };
+  sizes: { portrait: { width: number; height: number }; scene: { width: number; height: number } };
+  steps: number;
+  queue: { waiting: number; running: number };
+  checkedAt: string | null;
+  lastError: { message: string; at: string } | null;
+}
+
+export interface ImageJobDto {
+  id: string;
+  kind: 'avatar' | 'cover' | 'scene';
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+  /** Platz in der Warteschlange (0 = läuft oder fertig). */
+  position: number;
+  elapsedMs: number;
+  imageId: string | null;
+  imageUrl: string | null;
+  error: string | null;
+}
+
+export interface ImageSettings {
+  /** Profilbilder automatisch erzeugen, wenn ein Chat geöffnet wird und noch kein Foto existiert. */
+  autoAvatars: boolean;
+  /** Szenenbilder bei wichtigen Ereignissen in Lebensgeschichten automatisch erzeugen. */
+  autoScenes: boolean;
+}
+
+export interface CharacterAppearanceDto {
+  characterId: string;
+  appearance: import('./appearance').Appearance;
+  /** Vom Nutzer angepasst (sonst automatisch festgelegt). */
+  custom: boolean;
+  photoUrl: string | null;
+  pendingJob: ImageJobDto | null;
 }

@@ -111,7 +111,7 @@ export function FeedPage() {
               {npcs.slice(0, 8).map((c) => (
                 <li key={c.id}>
                   <Link to={`/chats/${c.id}`} className="row">
-                    <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="sm" decorative />
+                    <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="sm" decorative />
                     <span className="grow truncate small">{c.name}</span>
                     <span className="xsmall faint truncate mini-role">{c.role}</span>
                   </Link>

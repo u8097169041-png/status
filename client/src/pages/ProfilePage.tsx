@@ -127,7 +127,7 @@ function PlayerList() {
     <ul className="player-list">
       {list.map((pl: PlayerDto) => (
         <li key={pl.id} className={`player-row card card-tight ${pl.isActive ? 'active' : ''}`} style={{ '--world-hue': pl.worldHue } as React.CSSProperties}>
-          <Avatar name={pl.character.name} hue={pl.character.avatarHue} glyph={pl.character.avatarGlyph} size="md" decorative />
+          <Avatar name={pl.character.name} hue={pl.character.avatarHue} glyph={pl.character.avatarGlyph} photoUrl={pl.character.photoUrl} size="md" decorative />
           <span className="grow min-w-0">
             <strong className="row small">
               <span className="truncate">{pl.character.name}</span> {pl.character.prominent && <VerifiedBadge />}
@@ -183,7 +183,7 @@ export function ProfilePage() {
           />
           <div className="profile-head">
             <span className={`avatar-frame-wrap ${p.frameItem}`}>
-              <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} size="xxl" ring />
+              <Avatar name={me.name} hue={me.avatarHue} glyph={me.avatarGlyph} photoUrl={me.photoUrl} size="xxl" ring />
             </span>
             <div className="profile-actions">
               <Link to={`/worlds/${player.worldId}/join`} className="btn btn-secondary">

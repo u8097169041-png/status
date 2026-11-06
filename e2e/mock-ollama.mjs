@@ -28,11 +28,40 @@ function worldDraft(count) {
   };
 }
 
+/** Erzählung einer Lebensgeschichte: nutzt die vom Spielsystem gelieferte Szene und schlägt vier passende Handlungen vor. */
+function narration(body) {
+  const user = String(body.messages?.at(-1)?.content ?? '');
+  const scene = user.match(/^- ([^(\n]+) \(/m)?.[1]?.trim() ?? '';
+  const result = user.match(/outcome ([a-z ]+) \(success chance was (\d+)%\)/);
+  const action = user.match(/Player action: "([^"]{0,80})/)?.[1] ?? '';
+  const turn = (user.match(/^Player action:/gm) ?? []).length + (user.match(/^Narrator:/gm) ?? []).length;
+  return JSON.stringify({
+    narration: result
+      ? `Lokale KI erzählt: Du versuchst „${action}“ – ${result[1]} (${result[2]} %).${scene ? ` ${scene} beobachtet dich genau.` : ''}`
+      : `Lokale KI erzählt: Der Abend beginnt.${scene ? ` ${scene} wartet bereits auf dich.` : ''}`,
+    dialogue: scene ? [{ speaker: scene, text: `Wir müssen reden (${turn}).` }] : [],
+    location: 'Restaurant Da Greco',
+    present: scene ? [scene] : [],
+    facts: [],
+    suggestions: [
+      { kind: 'smart', text: `Mit ${scene || 'allen'} in Ruhe die Lage besprechen ${turn}`, category: 'talk', target: scene },
+      { kind: 'alternative', text: `Die Bücher des Restaurants prüfen ${turn}`, category: 'investigate', target: '' },
+      { kind: 'risky', text: `${scene || 'Den Gegner'} offen bedrohen ${turn}`, category: 'threaten', target: scene },
+      { kind: 'surprising', text: `Eine Feier für alle ausrichten ${turn}`, category: 'public', target: '' },
+    ],
+  });
+}
+
 function replyFor(body) {
   const last = String(body.messages?.at(-1)?.content ?? '').slice(0, 60);
   const format = body.format;
   if (format && typeof format === 'object' && format.properties?.characters) {
+    if (format.properties.playerRole) return JSON.stringify({ title: 'Palermo bei Nacht', playerName: '', playerRole: '', setting: '', characters: [] });
     return JSON.stringify(worldDraft(format.properties.characters.minItems ?? 3));
+  }
+  if (format && typeof format === 'object' && format.properties?.narration) return narration(body);
+  if (format && typeof format === 'object' && format.properties?.visible) {
+    return JSON.stringify({ action: 'two people talking quietly at a candle-lit table', location: 'a small restaurant', mood: 'tense', visible: [] });
   }
   if (format) return JSON.stringify({ reply: `Lokale KI-Antwort: Du schreibst „${last}“.`, tone: 'warm' });
   return 'OK';

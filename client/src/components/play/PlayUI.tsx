@@ -62,7 +62,7 @@ export function PlayerStatusBar({ player, coins }: { player: PlayerDto; coins: n
     <section className="player-bar card" aria-label={t('play.statusLabel')}>
       <div className="player-bar-who">
         <Link to="/profile" className="player-bar-avatar" tabIndex={-1} aria-hidden>
-          <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="md" decorative />
+          <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="md" decorative />
         </Link>
         <span className="min-w-0">
           <Link to="/profile" className="row truncate player-bar-name">

@@ -46,7 +46,7 @@ export function PostComposer({ worldId }: { worldId: string }) {
         submit();
       }}
     >
-      {me && <Avatar name={me.character.name} hue={me.character.avatarHue} glyph={me.character.avatarGlyph} decorative />}
+      {me && <Avatar name={me.character.name} hue={me.character.avatarHue} glyph={me.character.avatarGlyph} photoUrl={me.character.photoUrl} decorative />}
       <div className="composer-body">
         <label htmlFor={id} className="sr-only">
           {t('composer.placeholder')}

@@ -87,8 +87,8 @@ function RelationshipsTab({ world }: { world: WorldDetail }) {
           {world.relationships.map((r) => (
             <li key={r.id} className="card card-tight relationship-row">
               <span className="avatar-stack">
-                <Avatar name={r.a.name} hue={r.a.avatarHue} glyph={r.a.avatarGlyph} size="sm" decorative />
-                <Avatar name={r.b.name} hue={r.b.avatarHue} glyph={r.b.avatarGlyph} size="sm" decorative />
+                <Avatar name={r.a.name} hue={r.a.avatarHue} glyph={r.a.avatarGlyph} photoUrl={r.a.photoUrl} size="sm" decorative />
+                <Avatar name={r.b.name} hue={r.b.avatarHue} glyph={r.b.avatarGlyph} photoUrl={r.b.photoUrl} size="sm" decorative />
               </span>
               <div className="grow">
                 <strong className="small">
@@ -172,7 +172,7 @@ function GroupsTab({ world }: { world: WorldDetail }) {
                   {g.members.length === 0 && <li className="xsmall faint">{t('group.noMembers')}</li>}
                   {g.members.map((m) => (
                     <li key={m.character.id} className="row">
-                      <Avatar name={m.character.name} hue={m.character.avatarHue} glyph={m.character.avatarGlyph} size="xs" decorative />
+                      <Avatar name={m.character.name} hue={m.character.avatarHue} glyph={m.character.avatarGlyph} photoUrl={m.character.photoUrl} size="xs" decorative />
                       <Link to={`/characters/${m.character.id}`} className="small grow truncate">
                         {m.character.name}
                       </Link>
@@ -480,7 +480,7 @@ export function WorldPage() {
               {world.characters.map((c) => (
                 <li key={c.id}>
                   <Link to={`/characters/${c.id}`} className="row">
-                    <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} size="sm" decorative />
+                    <Avatar name={c.name} hue={c.avatarHue} glyph={c.avatarGlyph} photoUrl={c.photoUrl} size="sm" decorative />
                     <span className="grow truncate small">{c.name}</span>
                     <span className="xsmall faint">{td(`moods.${c.mood}`, c.mood)}</span>
                   </Link>

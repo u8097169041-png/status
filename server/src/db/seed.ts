@@ -357,6 +357,13 @@ export function applyContentUpdates(db: DB, now: Date): boolean {
 
 /** Alle Tabellen mit Anwendungsdaten (ohne Migrationsverwaltung). Reihenfolge berücksichtigt Fremdschlüssel. */
 export const DATA_TABLES = [
+  'life_events',
+  'life_memories',
+  'life_messages',
+  'life_relations',
+  'life_characters',
+  'life_stories',
+  'images',
   'story_views',
   'stories',
   'bookmarks',
