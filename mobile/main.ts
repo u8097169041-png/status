@@ -17,7 +17,7 @@ import {
   type OutcomeTier,
 } from '../shared/life';
 import { de } from '../client/src/i18n/de';
-import { aiErrorText, aiSetupTurn, aiStoryTurn, getSample, isPermanentAiError, toDraft, type AiDraftRaw, type StoryContext, type Turn } from './ai';
+import { aiErrorText, aiSetupTurn, aiStoryTurn, getSample, isPermanentAiError, MAX_CHARS, STANCE_START, toDraft, type AiDraftRaw, type NewCharacter, type StoryContext, type Turn } from './ai';
 import { initialStats } from '../server/src/life/stats';
 import { OPENING, TIME_PASSES } from '../server/src/content/lifeContent';
 import { createRng } from '../server/src/lib/rng';
@@ -31,7 +31,7 @@ import { genresOf, presentOf, statKeysOf, statsOf, worldOf, type StoryRow, type 
 
 // ---------- Datenmodell ----------
 
-type Role = 'player' | 'narrator' | 'character' | 'event' | 'system' | 'scene';
+type Role = 'player' | 'narrator' | 'character' | 'event' | 'system' | 'scene' | 'chapter';
 interface Msg {
   id: number;
   turn: number;
@@ -477,6 +477,12 @@ function storyContext(st: Story, mode: StoryContext['mode'], action: string): St
       return `${who}: ${trunc(m.content, 500)}`;
     });
   const known = st.memories.filter((m) => knows(m, PLAYER) && m.kind !== 'setup' && m.kind !== 'location');
+  // Ausführlich nur, wer anwesend, wichtig oder gerade erwähnt ist – so bleibt der Prompt bei vielen Figuren kompakt.
+  const present = new Set(presentOf(s));
+  const lately = `${recent.slice(-6).join(' ')} ${action}`.toLowerCase();
+  const relevance = (c: LifeCharacterRow) =>
+    (present.has(c.id) ? 4 : 0) + (lately.includes(c.name.toLowerCase().split(/\s+/)[0]) ? 3 : 0) + (c.importance >= 3 ? 2 : 0) + (c.status === 'alive' ? 1 : 0);
+  const detailed = new Set([...st.chars].sort((a, b) => relevance(b) - relevance(a)).slice(0, 12).filter((c) => relevance(c) >= 2 || st.chars.length <= 12).map((c) => c.id));
   const facts = [...known.filter((m) => m.critical), ...known.filter((m) => !m.critical).slice(-14)].slice(-26).map((m) => m.content);
   return {
     title: s.title,
@@ -498,6 +504,7 @@ function storyContext(st: Story, mode: StoryContext['mode'], action: string): St
       goal: parse<string[]>(c.goals, []).join('; '),
       secret: parse<string[]>(c.secrets, []).join('; '),
       personality: parse<string[]>(c.personality, []).join(', '),
+      detailed: detailed.has(c.id),
     })),
     summary: st.summary ?? '',
     threads: st.threads ?? [],
@@ -507,6 +514,42 @@ function storyContext(st: Story, mode: StoryContext['mode'], action: string): St
     action,
     mode,
   };
+}
+
+/** Neue Figur dauerhaft anlegen (aus der Erzählung oder weil der Spieler sie beschrieben hat). */
+function addCharacter(st: Story, c: NewCharacter, turn: number): LifeCharacterRow | null {
+  if (st.chars.length >= MAX_CHARS || matchChar(st, c.name)?.name.toLowerCase() === c.name.toLowerCase()) return null;
+  const id = uid('lc');
+  const row: LifeCharacterRow = {
+    id,
+    story_id: st.row.id,
+    name: c.name,
+    role: c.role,
+    description: c.description,
+    personality: JSON.stringify(c.personality),
+    goals: JSON.stringify(c.goal ? [c.goal] : []),
+    secrets: JSON.stringify(c.secret ? [c.secret] : []),
+    appearance: JSON.stringify(deriveAppearance(`char:${c.name}`, { role: `${c.role} ${c.description}`, gender: c.gender, age: c.age })),
+    status: 'alive',
+    ...STANCE_START[c.stance],
+    stance: c.stance,
+    importance: 2,
+    social_character_id: null,
+    avatar_image_id: null,
+    status_turn: null,
+    status_note: '',
+    created_at: now(),
+  };
+  st.chars.push(row);
+  remember(st, { turn, kind: 'relationship', content: `${c.name} (${c.role}): ${c.description}`, importance: 3, critical: false, subjects: [id], knownBy: [PLAYER, id] });
+  if (c.secret) remember(st, { turn, kind: 'secret', content: `${c.name}: ${c.secret}`, importance: 4, critical: false, subjects: [id], knownBy: [id] });
+  return row;
+}
+
+/** Live-Anzeige der entstehenden Erzählung, ohne die ganze Seite neu aufzubauen. */
+function showLive(id: number, text: string): void {
+  const el = document.getElementById(`live-${id}`);
+  if (el && text) el.textContent = text;
 }
 
 /** Ein Zug mit KI. Bei dauerhaft fehlender Freigabe wechselt die Geschichte auf die regelbasierte Spiellogik. */
@@ -531,7 +574,12 @@ async function aiTurn(st: Story, mode: StoryContext['mode'], action: string): Pr
   save();
   render();
   try {
-    const r = await aiStoryTurn(sample, storyContext(st, mode, action), Boolean(st.quick), busyController.signal);
+    const r = await aiStoryTurn(sample, storyContext(st, mode, action), Boolean(st.quick), busyController.signal, (text) => {
+      narr.content = text;
+      showLive(narr.id, text);
+    });
+    // Neue Figuren zuerst, damit Dialoge und Änderungen sie schon finden.
+    const added = r.newCharacters.map((c) => addCharacter(st, c, turn)).filter((c): c is LifeCharacterRow => c !== null);
     // Werte (getrennte Bewertung)
     const changes: LifeStats = {};
     for (const x of r.stats) changes[x.stat] = (changes[x.stat] ?? 0) + x.change;
@@ -551,6 +599,12 @@ async function aiTurn(st: Story, mode: StoryContext['mode'], action: string): Pr
     if (r.summary) st.summary = r.summary;
     narr.content = r.narration;
     narr.pending = false;
+    if (r.scene) {
+      // Szenenüberschrift vor der Erzählung einfügen.
+      const at = st.messages.indexOf(narr);
+      st.messages.splice(at, 0, { id: st.nextMsg++, turn, role: 'chapter', content: r.scene });
+    }
+    if (added.length) push(st, { turn, role: 'event', title: added.length === 1 ? 'Neue Figur' : 'Neue Figuren', content: added.map((c) => `${c.name} (${c.role})`).join(', '), severity: 'minor' });
     narr.outcome = r.outcome;
     narr.evaluation = mode === 'opening' ? [] : r.stats.filter((x) => applied.applied[x.stat] !== undefined).map((x) => ({ stat: x.stat, change: x.change, reason: x.reason }));
     const died = (applied.stats.health ?? 1) <= 0;
@@ -619,7 +673,10 @@ async function sendSetupMessage(text: string): Promise<void> {
   const sample = su.aiOff ? null : await getSample();
   try {
     if (!sample) throw { code: 'not_granted' };
-    const { reply, draft } = await aiSetupTurn(sample, su.history, su.raw);
+    const { reply, draft } = await aiSetupTurn(sample, su.history, su.raw, (text) => {
+      const el = document.getElementById('setup-live');
+      if (el && text) el.textContent = text;
+    });
     su.raw = draft;
     const next = toDraft(draft, su.premise);
     if (su.statsEdited && su.draft) {
@@ -761,7 +818,7 @@ function renderDraftEditor(d: LifeSetupDraft): string {
         .join('')}
     </section>
     <section class="stack-sm">
-      <div class="row between"><h2 class="label">Figuren</h2><button class="btn ghost small" data-act="add-char" ${d.characters.length >= 10 ? 'disabled' : ''}>+ Figur</button></div>
+      <div class="row between"><h2 class="label">Figuren</h2><button class="btn ghost small" data-act="add-char" ${d.characters.length >= MAX_CHARS ? 'disabled' : ''}>+ Figur</button></div>
       ${d.characters
         .map(
           (c, i) => `<div class="card stack-sm char-edit">
@@ -784,7 +841,7 @@ function renderSetup(v: Extract<View, { name: 'setup' }>): string {
       <div class="msg them"><div class="bubble">Beschreibe die Situation, in der deine Geschichte beginnt: Wer bist du, wo lebst du, wer sind die wichtigen Menschen um dich herum, und was passiert gerade? Du kannst in mehreren Nachrichten ergänzen und ändern. ${su.aiOff ? '' : 'Ich frage nach und halte alles im Entwurf fest.'}</div></div>
       ${su.history.length === 0 ? `<div class="chips">${EXAMPLES.map(([label], i) => `<button class="chip" data-act="example" data-i="${i}">${esc(label)}</button>`).join('')}</div>` : ''}
       ${su.history.map((m) => `<div class="msg ${m.role === 'user' ? 'me' : 'them'}"><div class="bubble">${esc(m.content)}</div></div>`).join('')}
-      ${setupBusy ? '<div class="msg them"><div class="bubble typing">Denkt nach …</div></div>' : ''}
+      ${setupBusy ? '<div class="msg them"><div class="bubble typing" id="setup-live">Denkt nach …</div></div>' : ''}
     </div>`;
   return `
   <header class="top"><button class="icon" data-act="home" aria-label="Zurück">←</button><div class="grow"><strong>Vorbereitung</strong><span class="faint small block">Situation beschreiben, dann starten</span></div></header>
@@ -834,10 +891,13 @@ function renderMessage(st: Story, m: Msg): string {
       return `<div class="event ${m.severity ?? 'minor'}">${m.title ? `<b>${esc(m.title)}:</b> ` : ''}${esc(m.content)}</div>`;
     case 'system':
       return `<div class="ending">☠ ${esc(m.content)}</div>`;
+    case 'chapter':
+      return `<div class="chapter"><span>${esc(m.content)}</span></div>`;
     case 'scene':
       return `<figure class="scene"><div class="scene-art">${(m.scene?.ids ?? []).map((id) => avatar(st, id, 'lg')).join('')}</div><figcaption><b>${esc(m.scene?.location ?? '')}</b><span class="faint small">Szenenkarte</span></figcaption></figure>`;
     default: {
-      if (m.pending) return `<div class="narr pending"><p class="muted">Die Geschichte entwickelt sich … <button class="btn ghost small" data-act="stop">Stopp</button></p></div>`;
+      if (m.pending)
+        return `<div class="narr pending"><p class="live" id="live-${m.id}">${m.content ? esc(m.content) : 'Die Geschichte entwickelt sich …'}</p><button class="btn ghost small stop" data-act="stop">Stopp</button></div>`;
       const r = m.resolution;
       const tone = r ? (r.tier.includes('success') ? 'good' : r.tier === 'partial' ? 'warn' : 'bad') : '';
       const changes = r
@@ -1159,7 +1219,8 @@ function submitForm(kind: string | undefined): void {
   if (kind === 'setup') {
     const box = document.getElementById('setup-text') as HTMLTextAreaElement | null;
     const text = box?.value ?? '';
-    if (!text.trim()) return;
+    // Während die KI noch antwortet, bleibt der Text im Feld stehen.
+    if (!text.trim() || setupBusy) return;
     pendingSetupText = '';
     void sendSetupMessage(text);
     return;

@@ -60,6 +60,34 @@ export function aiErrorText(e: unknown): string {
 }
 export const isPermanentAiError = (e: unknown) => isAiError(e) && ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'].includes(e.code);
 
+/**
+ * Liest den bisher gestreamten Text eines JSON-Feldes (z. B. "narration"), auch wenn die Antwort noch
+ * unvollständig ist – so erscheint die Erzählung schon, während die KI schreibt.
+ */
+export function partialField(raw: string, field: string): string {
+  const m = new RegExp(`"${field}"\\s*:\\s*"`).exec(raw);
+  if (!m) return '';
+  let body = '';
+  for (let i = m.index + m[0].length; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '\\') {
+      if (i + 1 >= raw.length) break;
+      body += ch + raw[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === '"') break;
+    body += ch;
+  }
+  // Unvollständige \u-Folge am Ende abschneiden, dann wie JSON entschlüsseln.
+  body = body.replace(/\\u[0-9a-fA-F]{0,3}$/, '');
+  try {
+    return JSON.parse(`"${body}"`) as string;
+  } catch {
+    return body.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+  }
+}
+
 const STAT_LIST = LIFE_STATS.join(', ');
 const STANCE_LIST = CHARACTER_STANCES.join(', ');
 const SAFETY = 'Alle Figuren sind fiktive Erwachsene. Reale Personen nur als klar fiktive Simulation. Keine sexuellen Inhalte, Gewalt nicht ausgeschmückt.';
@@ -85,16 +113,19 @@ const SETUP_RULES = `Du bereitest mit dem Spieler eine interaktive, zusammenhän
 Der Spieler beschreibt nach und nach Hintergrund, seine Rolle, Figuren, Beziehungen und die Ausgangssituation.
 Deine Aufgabe in jeder Antwort:
 1. "reply": kurz (2-5 Sätze) sagen, was du verstanden hast, und 1-2 gezielte Rückfragen oder Vorschläge machen, die die Geschichte reicher machen. Sag am Ende, dass er mit "Passt – starten" beginnen kann, wenn alles stimmt.
-2. "draft": den VOLLSTÄNDIGEN aktuellen Entwurf zurückgeben – baue auf dem bisherigen Entwurf auf, übernimm alle Wünsche des Spielers, erfinde nur Fehlendes passend dazu (höchstens 2 zusätzliche Figuren).
+2. "draft": den VOLLSTÄNDIGEN aktuellen Entwurf zurückgeben – baue auf dem bisherigen Entwurf auf, übernimm alle Wünsche und alle genannten Personen des Spielers (beliebig viele), erfinde Fehlendes passend dazu (ruhig einige Nebenfiguren, die die Welt lebendig machen; insgesamt höchstens 25 Figuren).
 Startwerte ("stats", 0-100): wähle 6-10 passende aus [${STAT_LIST}], "health" immer. Sie folgen aus Rolle und Lage (ein gefürchteter Mafiaboss: hohe Macht und Autorität; eine verschuldete Kassiererin: wenig Vermögen, keine Macht). "heat" = Aufmerksamkeit von Polizei/Feinden (hoch = gefährlich). Hat der Spieler Werte genannt, übernimm sie.
 "stance" je Figur aus [${STANCE_LIST}] (Haltung zur Spielfigur). "threads": 2-4 offene Handlungsstränge zum Start. "genre" aus [${LIFE_GENRES.join(', ')}].
 ${SAFETY}
 Antworte NUR mit JSON: {"reply": string, "draft": {"title","playerName","playerRole","playerGender":"female|male|diverse","setting","location","opening","genre","characters":[{"name","role","description","personality":[string],"goal","secret","stance","gender","age"}],"stats":{"health":80,...},"threads":[string],"assets":[string]}}`;
 
-export async function aiSetupTurn(sample: SampleFn, history: Turn[], current: AiDraftRaw | null): Promise<{ reply: string; draft: AiDraftRaw }> {
+export async function aiSetupTurn(sample: SampleFn, history: Turn[], current: AiDraftRaw | null, onReply?: (text: string) => void): Promise<{ reply: string; draft: AiDraftRaw }> {
   const lead: Turn = { role: 'user', content: `${SETUP_RULES}\n\nBisheriger Entwurf: ${current ? JSON.stringify(current) : '(noch keiner)'}\n\nJetzt beginnt das Gespräch.` };
   const turns: Turn[] = [lead, { role: 'assistant', content: 'Verstanden. Beschreibe deine Geschichte.' }, ...history.slice(-12)];
-  const res = await sample.json<{ reply?: unknown; draft?: AiDraftRaw }>(turns, { cache: false });
+  const res = await sample.json<{ reply?: unknown; draft?: AiDraftRaw }>(turns, {
+    cache: false,
+    ...(onReply ? { onText: ({ text }: { text: string }) => onReply(partialField(text, 'reply')) } : {}),
+  });
   if (!res || typeof res !== 'object' || typeof res.reply !== 'string' || !res.draft || typeof res.draft !== 'object') throw { code: 'invalid_json' };
   return { reply: res.reply.slice(0, 1500), draft: res.draft };
 }
@@ -137,7 +168,7 @@ export function toDraft(raw: AiDraftRaw, premise: string): LifeSetupDraft {
       };
     })
     .filter((c) => c.name && c.name.toLowerCase() !== playerName.toLowerCase())
-    .slice(0, 10);
+    .slice(0, MAX_CHARS);
   return {
     title: str(raw.title, 80) || `${playerName} – ${role}`,
     premise: premise.slice(0, 8000),
@@ -160,6 +191,8 @@ export function toDraft(raw: AiDraftRaw, premise: string): LifeSetupDraft {
     source: 'ai',
   };
 }
+
+export const MAX_CHARS = 60;
 
 export const STANCE_START: Record<CharacterStance, { affinity: number; trust: number; loyalty: number; fear: number }> = {
   ally: { affinity: 35, trust: 60, loyalty: 65, fear: 5 },
@@ -184,7 +217,7 @@ export interface StoryContext {
   day: number;
   location: string;
   stats: { stat: string; label: string; value: number }[];
-  characters: { name: string; role: string; stance: string; status: string; affinity: number; trust: number; loyalty: number; fear: number; goal: string; secret: string; personality: string }[];
+  characters: { name: string; role: string; stance: string; status: string; affinity: number; trust: number; loyalty: number; fear: number; goal: string; secret: string; personality: string; detailed: boolean }[];
   summary: string;
   threads: string[];
   facts: string[];
@@ -194,8 +227,22 @@ export interface StoryContext {
   mode: 'opening' | 'turn' | 'time';
 }
 
+export interface NewCharacter {
+  name: string;
+  role: string;
+  description: string;
+  stance: CharacterStance;
+  gender: Gender | null;
+  age: number | null;
+  personality: string[];
+  goal: string;
+  secret: string;
+}
+
 export interface AiTurnResult {
   narration: string;
+  scene: string;
+  newCharacters: NewCharacter[];
   dialogue: { speaker: string; text: string }[];
   outcome: 'success' | 'partial' | 'failure' | 'none';
   stats: { stat: LifeStat; change: number; reason: string }[];
@@ -210,19 +257,24 @@ export interface AiTurnResult {
 }
 
 const STORY_RULES = `Du bist Erzähler und spielst alle Nebenfiguren einer fortlaufenden, zusammenhängenden Lebensgeschichte. Schreibe auf Deutsch und sprich die Spielfigur mit "du" an.
-Grundsätze:
-- Baue streng auf dem Bisherigen auf: "Bisher geschah", offene Handlungsstränge, Fakten und die letzten Nachrichten gelten. Keine Widersprüche, keine Wiederholung von Szenen.
-- Die Handlung des Spielers geschieht in der aktuellen Szene; erzähle, was daraus folgt, und treibe die Geschichte spürbar voran (neue Entwicklungen, Reaktionen, Konsequenzen). Greife Handlungsstränge auf und schließe sie irgendwann ab; eröffne neue, wenn alte enden.
-- Figuren handeln nach eigenen Zielen, Persönlichkeit und Beziehung zur Spielfigur; sie können ablehnen, lügen, verraten, überraschen. Tote, verschwundene oder inhaftierte Figuren handeln nicht.
-- Nicht alles gelingt: realistische Erfolge, Teilerfolge und Rückschläge.
-- "Regie" ist der Wunsch des Spielers für die Richtung: lenke sanft und glaubwürdig dorthin, ohne zu springen.
+Tempo und Erzählweise:
+- Erzähle zügig und offen: pro Zug 1-3 kurze, dichte Absätze. Überspringe Belangloses, fasse Wartezeiten zusammen.
+- Wechsle Szenen, Orte und Zeitpunkte, sobald eine Szene ihren Zweck erfüllt hat ("Am nächsten Morgen …", "Zwei Wochen später …"). Ein Zug darf mehrere Ereignisse umfassen. Gib jeder neuen Szene einen kurzen Titel in "scene" (sonst leer).
+- Wenn der Spieler eine Szene, einen Ort oder einen Zeitsprung beschreibt, setze ihn direkt um.
+Zusammenhang:
+- Baue auf "Bisher geschah", offenen Handlungssträngen, Fakten und den letzten Nachrichten auf. Keine Widersprüche, keine Wiederholungen.
+- Treibe die Geschichte spürbar voran; greife Handlungsstränge auf, schließe sie ab, eröffne neue.
+- Figuren handeln nach eigenen Zielen; sie können ablehnen, lügen, verraten, überraschen. Tote, verschwundene oder inhaftierte Figuren handeln nicht. Nicht alles gelingt.
+- "Regie" ist der Wunsch des Spielers für die Richtung: lenke glaubwürdig dorthin.
+Figuren:
+- Die Welt ist offen: Spricht der Spieler eine Person an, die noch nicht existiert, oder beschreibt er jemanden, oder braucht die Geschichte eine neue Figur, lege sie in "newCharacters" an (mit Rolle, kurzer Beschreibung, Haltung zur Spielfigur, Geschlecht, Alter, Art, Ziel, optional Geheimnis). Übernimm, was der Spieler über sie sagt. Bereits bekannte Figuren nie neu anlegen.
 - ${SAFETY}
-Bewertung (getrennt von der Erzählung): Lege fest, wie sich die Handlung auf die Werte auswirkt – nur betroffene Werte, je -15 bis +15, mit kurzer Begründung. Sinkt "health" auf 0, stirbt die Spielfigur endgültig; tue das nur, wenn es aus dem Geschehen folgt.
-Figurenänderungen: nur betroffene Figuren, Zuneigung/Vertrauen/Loyalität/Furcht je -25 bis +25, optional neuer Status (alive, dead, missing, imprisoned, gone).
-Vier nächste Handlungsmöglichkeiten: konkrete Dinge, die die Spielfigur JETZT in dieser Szene tun kann (max. 14 Wörter, in Du-Form oder als Handlung), je eine Art: "smart" (klug), "alternative", "risky" (riskant), "surprising" (überraschend). Sie beziehen sich auf die Situation, nicht auf Werte, und wiederholen nichts.
-"summary": "Bisher geschah" aktualisiert, höchstens 140 Wörter, das Wichtigste der ganzen Geschichte. "threads": aktuelle offene Handlungsstränge (max. 5). "facts": neue wichtige Fakten dieser Szene (Versprechen, Enthüllungen, Entscheidungen, Todesfälle), "critical": true für Unvergessliches.
-Antworte NUR mit JSON:
-{"narration": "2-5 kurze Absätze", "dialogue": [{"speaker": "Name", "text": "..."}], "outcome": "success|partial|failure|none", "stats": [{"stat": "power", "change": -5, "reason": "..."}], "characters": [{"name": "...", "affinity": 0, "trust": 0, "loyalty": 0, "fear": 0, "status": "alive", "note": "..."}], "facts": [{"text": "...", "critical": false}], "threads": ["..."], "summary": "...", "location": "...", "present": ["Namen"], "days_passed": 0, "suggestions": [{"kind": "smart", "text": "..."}]}`;
+Bewertung (getrennt von der Erzählung): nur betroffene Werte, je -15 bis +15, mit kurzer Begründung. Sinkt "health" auf 0, stirbt die Spielfigur endgültig – nur wenn es aus dem Geschehen folgt.
+Figurenänderungen: nur betroffene bekannte Figuren, Zuneigung/Vertrauen/Loyalität/Furcht je -25 bis +25, optional neuer Status (alive, dead, missing, imprisoned, gone).
+Vier nächste Handlungsmöglichkeiten: konkrete Dinge, die die Spielfigur jetzt tun kann – gern auch ein Szenen- oder Zeitwechsel (max. 14 Wörter), je eine Art: "smart", "alternative", "risky", "surprising". Sie beziehen sich auf die Situation, nicht auf Werte.
+"summary": "Bisher geschah" aktualisiert, höchstens 140 Wörter. "threads": offene Handlungsstränge (max. 5). "facts": neue wichtige Fakten, "critical": true für Unvergessliches.
+Antworte NUR mit JSON in genau dieser Reihenfolge (die Erzählung zuerst):
+{"narration": "...", "scene": "", "dialogue": [{"speaker": "Name", "text": "..."}], "newCharacters": [{"name": "...", "role": "...", "description": "...", "stance": "neutral", "gender": "female", "age": 30, "personality": ["..."], "goal": "...", "secret": ""}], "outcome": "success|partial|failure|none", "stats": [{"stat": "power", "change": -5, "reason": "..."}], "characters": [{"name": "...", "affinity": 0, "trust": 0, "loyalty": 0, "fear": 0, "status": "alive", "note": ""}], "facts": [{"text": "...", "critical": false}], "threads": ["..."], "summary": "...", "location": "...", "present": ["Namen"], "days_passed": 0, "suggestions": [{"kind": "smart", "text": "..."}]}`;
 
 function contextText(c: StoryContext): string {
   const lines = [
@@ -231,11 +283,12 @@ function contextText(c: StoryContext): string {
     `Schauplatz: ${c.setting.slice(0, 300)} · Tag ${c.day} · Aktueller Ort: ${c.location || 'unbekannt'}`,
     `## Spielfigur: ${c.player.name}, ${c.player.role}`,
     `Werte (0-100): ${c.stats.map((s) => `${s.label} (${s.stat}) ${s.value}`).join(', ')}`,
-    '## Figuren',
-    ...c.characters.map(
+    '## Figuren (ausführlich: anwesend oder wichtig)',
+    ...c.characters.filter((x) => x.detailed).map(
       (x) =>
         `- ${x.name} (${x.role}) – Haltung: ${x.stance}, Status: ${x.status}, Zuneigung ${x.affinity}, Vertrauen ${x.trust}, Loyalität ${x.loyalty}, Furcht ${x.fear}. ${x.personality ? `Art: ${x.personality}. ` : ''}${x.goal ? `Ziel: ${x.goal}. ` : ''}${x.secret ? `Geheimnis (nur Erzähler, nicht verraten, bis es im Spiel herauskommt): ${x.secret}` : ''}`,
     ),
+    c.characters.some((x) => !x.detailed) ? `## Weitere bekannte Figuren\n${c.characters.filter((x) => !x.detailed).map((x) => `${x.name} (${x.role}, ${x.stance}${x.status !== 'alive' ? `, ${x.status}` : ''})`).join('; ')}` : '',
     `## Bisher geschah\n${c.summary || '(Die Geschichte beginnt.)'}`,
     `## Offene Handlungsstränge\n${c.threads.length ? c.threads.map((t) => `- ${t}`).join('\n') : '(noch keine)'}`,
     `## Wichtige Fakten\n${c.facts.length ? c.facts.map((f) => `- ${f}`).join('\n') : '(noch keine)'}`,
@@ -244,7 +297,7 @@ function contextText(c: StoryContext): string {
     c.mode === 'opening'
       ? '## Jetzt\nEröffne die Geschichte mit der Ausgangssituation: eine lebendige erste Szene, die die Handlungsstränge anlegt. "outcome": "none", keine Wertänderungen.'
       : c.mode === 'time'
-        ? '## Jetzt\nEinige Tage vergehen (1-3). Erzähle, was in dieser Zeit passiert – Figuren handeln eigenständig, Handlungsstränge entwickeln sich weiter. "days_passed" angeben.'
+        ? '## Jetzt\nSpringe in der Zeit nach vorn (Tage bis Wochen, passend zur Geschichte). Erzähle knapp, was in dieser Zeit passiert – Figuren handeln eigenständig, Handlungsstränge entwickeln sich weiter – und beginne dann eine neue Szene mit Titel. "days_passed" angeben (höchstens 30).'
         : `## Handlung des Spielers jetzt\n${c.action}`,
   ];
   return lines.filter(Boolean).join('\n');
@@ -256,8 +309,13 @@ const num = (v: unknown, lim: number) => {
   return Number.isFinite(n) ? Math.max(-lim, Math.min(lim, n)) : 0;
 };
 
-export async function aiStoryTurn(sample: SampleFn, ctx: StoryContext, quick: boolean, signal?: AbortSignal): Promise<AiTurnResult> {
-  const raw = await sample.json<Record<string, unknown>>(`${STORY_RULES}\n\n${contextText(ctx)}`, { cache: false, modelTier: quick ? 'quick' : 'default', ...(signal ? { signal } : {}) });
+export async function aiStoryTurn(sample: SampleFn, ctx: StoryContext, quick: boolean, signal?: AbortSignal, onNarration?: (text: string) => void): Promise<AiTurnResult> {
+  const raw = await sample.json<Record<string, unknown>>(`${STORY_RULES}\n\n${contextText(ctx)}`, {
+    cache: false,
+    modelTier: quick ? 'quick' : 'default',
+    ...(signal ? { signal } : {}),
+    ...(onNarration ? { onText: ({ text }: { text: string }) => onNarration(partialField(text, 'narration')) } : {}),
+  });
   const narration = str(raw?.narration, 4000).length ? String(raw.narration).trim().slice(0, 4000) : '';
   if (!narration) throw { code: 'invalid_json' };
   const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -265,8 +323,29 @@ export async function aiStoryTurn(sample: SampleFn, ctx: StoryContext, quick: bo
     const s = arr<{ kind?: unknown; text?: unknown }>(raw.suggestions).find((x) => x?.kind === kind && str(x.text, 160));
     return s ? { kind, text: str(s.text, 160) } : null;
   }).filter((s): s is { kind: SuggestionKind; text: string } => s !== null);
+  const known = new Set(ctx.characters.map((c) => c.name.toLowerCase()));
+  known.add(ctx.player.name.toLowerCase());
+  const newCharacters: NewCharacter[] = arr<Record<string, unknown>>(raw.newCharacters)
+    .map((c) => {
+      const age = Math.round(Number(c?.age));
+      return {
+        name: str(c?.name, 50),
+        role: str(c?.role, 80),
+        description: str(c?.description, 300),
+        stance: ((CHARACTER_STANCES as readonly string[]).includes(String(c?.stance)) ? c.stance : 'neutral') as CharacterStance,
+        gender: asGender(c?.gender),
+        age: Number.isFinite(age) ? Math.max(18, Math.min(95, age)) : null,
+        personality: arr<unknown>(c?.personality).map((p) => str(p, 30)).filter(Boolean).slice(0, 4),
+        goal: str(c?.goal, 160),
+        secret: str(c?.secret, 200),
+      };
+    })
+    .filter((c) => c.name && !known.has(c.name.toLowerCase()) && known.add(c.name.toLowerCase()))
+    .slice(0, 6);
   return {
     narration,
+    scene: str(raw.scene, 80),
+    newCharacters,
     dialogue: arr<{ speaker?: unknown; text?: unknown }>(raw.dialogue)
       .map((d) => ({ speaker: str(d?.speaker, 60), text: str(d?.text, 600) }))
       .filter((d) => d.speaker && d.text)
@@ -297,7 +376,7 @@ export async function aiStoryTurn(sample: SampleFn, ctx: StoryContext, quick: bo
     summary: str(raw.summary, 1400),
     location: str(raw.location, 80),
     present: arr<unknown>(raw.present).map((x) => str(x, 60)).filter(Boolean).slice(0, 6),
-    days: Math.max(0, Math.min(3, Math.round(Number(raw.days_passed) || 0))),
+    days: Math.max(0, Math.min(30, Math.round(Number(raw.days_passed) || 0))),
     suggestions,
   };
 }
