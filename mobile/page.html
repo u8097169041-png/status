@@ -147,6 +147,11 @@ details.eval summary::-webkit-details-marker { display: none; }
 details.eval ul { margin: 6px 0 0; padding-left: 1.1em; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
 .narr p + p { margin-top: 2px; }
 .narr.pending { border-left-color: var(--faint); }
+.narr .live { white-space: pre-wrap; }
+.narr.pending .live:empty::before { content: "…"; }
+.narr .stop { align-self: flex-start; }
+.chapter { display: flex; align-items: center; gap: 10px; margin: 6px 0 -2px; font: 700 12px/1.2 var(--font-body); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.chapter::before, .chapter::after { content: ""; flex: 1; height: 1px; background: var(--border-strong); }
 .narr.pending p { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .bubble.typing { color: var(--muted); font-style: italic; }
 .av.blank { display: inline-block; background: var(--surface-3); }
