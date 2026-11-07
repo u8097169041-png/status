@@ -117,6 +117,10 @@ standardmäßig ausgeschaltet.
 
 ### Lebensmodus
 
+> **Handy-Version ohne Installation:** `npm run build:mobile` erzeugt `dist/mobile/socialverse-leben.html` – eine einzelne
+> Seite mit derselben Spiellogik (Einrichtung, Würfelsystem, Ereignisse, vier Vorschläge, Gedächtnis, permanenter Tod),
+> aber ohne Social-Welten, Sprach-KI und Bild-KI. Der Spielstand liegt nur im Browser.
+
 Über den Umschalter **Social | Leben** (Seitenleiste bzw. Kopfzeile auf dem Handy) wechselst du in den Lebensmodus.
 Beide Modi teilen Figuren, Bilder und KI, haben aber eigene Mechaniken.
 
