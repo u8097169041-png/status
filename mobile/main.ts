@@ -1,7 +1,8 @@
 /**
  * SocialVerse Leben – eigenständige Handy-Version des Lebensmodus.
- * Nutzt dieselbe Spiellogik wie die App (Würfelsystem, Ereignisse, Vorschläge, regelbasierte Erzählung, Einrichtung).
- * Ohne Server: keine Sprach- oder Bild-KI; der Spielstand liegt im Browser (localStorage).
+ * Mit KI (Claude-Funktion der Seite, Konto des Spielers): Vorbereitungs-Gespräch, zusammenhängende Erzählung,
+ * getrennte Bewertung der Werte, Handlungsstränge und Regie. Ohne KI: die regelbasierte Spiellogik der App
+ * (Würfelsystem, Ereignisse, Vorschläge). Der Spielstand liegt im Browser (localStorage).
  */
 import { deriveAppearance, normalizeAppearance, portraitSvg, type Appearance } from '../shared/appearance';
 import {
@@ -16,6 +17,8 @@ import {
   type OutcomeTier,
 } from '../shared/life';
 import { de } from '../client/src/i18n/de';
+import { aiErrorText, aiSetupTurn, aiStoryTurn, getSample, isPermanentAiError, toDraft, type AiDraftRaw, type StoryContext, type Turn } from './ai';
+import { initialStats } from '../server/src/life/stats';
 import { OPENING, TIME_PASSES } from '../server/src/content/lifeContent';
 import { createRng } from '../server/src/lib/rng';
 import { fill } from '../server/src/lib/text';
@@ -40,6 +43,12 @@ interface Msg {
   suggestions?: LifeSuggestion[];
   resolution?: { tier: OutcomeTier; chance: number; changes: LifeStats; target: string | null };
   scene?: { location: string; ids: string[] };
+  /** KI-Bewertung des Zugs (getrennt von der Erzählung). */
+  evaluation?: { stat: string; change: number; reason: string }[];
+  outcome?: 'success' | 'partial' | 'failure' | 'none';
+  pending?: boolean;
+  /** Freier Sprecher (KI-Dialog einer nicht angelegten Figur). */
+  speakerName?: string;
 }
 interface Ev {
   id: string;
@@ -66,10 +75,25 @@ interface Story {
   events: Ev[];
   memories: Mem[];
   nextMsg: number;
+  /** 'ai': KI erzählt; 'rules': regelbasiert (ohne KI oder ohne Freigabe). */
+  mode?: 'ai' | 'rules';
+  summary?: string;
+  threads?: string[];
+  direction?: string;
+  quick?: boolean;
+}
+interface SetupState {
+  history: Turn[];
+  premise: string;
+  raw: AiDraftRaw | null;
+  draft: LifeSetupDraft | null;
+  statsEdited: boolean;
+  aiOff?: boolean;
 }
 interface State {
   version: 1;
   stories: Story[];
+  setup?: SetupState | null;
 }
 
 const EVERYONE = '*';
@@ -429,22 +453,238 @@ function advanceTime(st: Story): void {
   if (ending) push(st, { turn, role: 'system', content: ending });
 }
 
-function addScene(st: Story): void {
+
+// ---------- KI-Spielzug ----------
+
+let busyStory: string | null = null;
+let busyController: AbortController | null = null;
+let aiNotice = '';
+
+const matchChar = (st: Story, name: string) => {
+  const n = name.trim().toLowerCase();
+  return st.chars.find((c) => c.name.toLowerCase() === n) ?? st.chars.find((c) => c.name.toLowerCase().split(/\s+/)[0] === n.split(/\s+/)[0]);
+};
+
+function storyContext(st: Story, mode: StoryContext['mode'], action: string): StoryContext {
   const s = st.row;
-  const present = new Set(presentOf(s));
-  const ids = ['player', ...st.chars.filter((c) => c.status === 'alive' && present.has(c.id)).map((c) => c.id)].slice(0, 4);
-  push(st, { turn: s.turn, role: 'scene', content: `Szene: ${s.location || worldOf(s).setting}`, scene: { location: s.location || worldOf(s).setting, ids } });
+  const stats = statsOf(s);
+  const name = (id: string | null | undefined) => (id ? (st.chars.find((c) => c.id === id)?.name ?? '?') : '?');
+  const recent = st.messages
+    .filter((m) => !m.pending && ['player', 'narrator', 'character', 'event'].includes(m.role) && m.content)
+    .slice(-14)
+    .map((m) => {
+      const who = m.role === 'player' ? s.player_name : m.role === 'character' ? (m.speakerName ?? name(m.speakerId)) : m.role === 'event' ? 'Ereignis' : 'Erzähler';
+      return `${who}: ${trunc(m.content, 500)}`;
+    });
+  const known = st.memories.filter((m) => knows(m, PLAYER) && m.kind !== 'setup' && m.kind !== 'location');
+  const facts = [...known.filter((m) => m.critical), ...known.filter((m) => !m.critical).slice(-14)].slice(-26).map((m) => m.content);
+  return {
+    title: s.title,
+    premise: s.premise,
+    setting: worldOf(s).setting,
+    player: { name: s.player_name, role: s.player_role },
+    day: s.day,
+    location: s.location,
+    stats: statKeysOf(s).map((k) => ({ stat: k, label: statLabel(k), value: stats[k] ?? 0 })),
+    characters: st.chars.map((c) => ({
+      name: c.name,
+      role: c.role,
+      stance: c.stance,
+      status: c.status,
+      affinity: c.affinity,
+      trust: c.trust,
+      loyalty: c.loyalty,
+      fear: c.fear,
+      goal: parse<string[]>(c.goals, []).join('; '),
+      secret: parse<string[]>(c.secrets, []).join('; '),
+      personality: parse<string[]>(c.personality, []).join(', '),
+    })),
+    summary: st.summary ?? '',
+    threads: st.threads ?? [],
+    facts,
+    direction: st.direction ?? '',
+    recent,
+    action,
+    mode,
+  };
+}
+
+/** Ein Zug mit KI. Bei dauerhaft fehlender Freigabe wechselt die Geschichte auf die regelbasierte Spiellogik. */
+async function aiTurn(st: Story, mode: StoryContext['mode'], action: string): Promise<void> {
+  const sample = await getSample();
+  if (!sample) {
+    st.mode = 'rules';
+    aiNotice = 'Die KI ist in dieser Ansicht nicht verfügbar. Es geht regelbasiert weiter.';
+    if (mode === 'turn') takeTurn(st, { text: action });
+    else if (mode === 'time') advanceTime(st);
+    save();
+    render();
+    return;
+  }
+  const s = st.row;
+  const turn = mode === 'opening' ? s.turn : s.turn + 1;
+  if (mode === 'turn') push(st, { turn, role: 'player', content: action });
+  const narr = push(st, { turn, role: 'narrator', content: '', pending: true });
+  busyStory = s.id;
+  busyController = new AbortController();
+  aiNotice = '';
+  save();
+  render();
+  try {
+    const r = await aiStoryTurn(sample, storyContext(st, mode, action), Boolean(st.quick), busyController.signal);
+    // Werte (getrennte Bewertung)
+    const changes: LifeStats = {};
+    for (const x of r.stats) changes[x.stat] = (changes[x.stat] ?? 0) + x.change;
+    const applied = applyStats(statsOf(s), mode === 'opening' ? {} : changes);
+    // Figuren
+    for (const c of r.characters) {
+      const ch = matchChar(st, c.name);
+      if (!ch) continue;
+      changeChar(ch, c, null, turn, c.status && c.status !== ch.status ? { status: c.status as LifeCharacterStatus, note: c.note } : null);
+      if (c.status === 'dead') remember(st, { turn, kind: 'death', content: `${ch.name} ist tot.${c.note ? ` ${c.note}` : ''}`, importance: 5, critical: true, subjects: [ch.id], knownBy: [EVERYONE] });
+    }
+    for (const f of r.facts) {
+      remember(st, { turn, kind: f.critical ? 'event' : 'fact', content: f.text, importance: f.critical ? 5 : 3, critical: f.critical, subjects: [], knownBy: [PLAYER] });
+      if (f.critical) st.events.unshift({ id: uid('ev'), turn, day: s.day + r.days, title: trunc(f.text, 60), description: f.text, severity: 'major' });
+    }
+    if (r.threads.length) st.threads = r.threads;
+    if (r.summary) st.summary = r.summary;
+    narr.content = r.narration;
+    narr.pending = false;
+    narr.outcome = r.outcome;
+    narr.evaluation = mode === 'opening' ? [] : r.stats.filter((x) => applied.applied[x.stat] !== undefined).map((x) => ({ stat: x.stat, change: x.change, reason: x.reason }));
+    const died = (applied.stats.health ?? 1) <= 0;
+    narr.suggestions = died ? [] : r.suggestions.map((x, i) => ({ id: `${turn}-${i}`, kind: x.kind, text: x.text, category: 'talk' as const, risk: 1 as const, targetId: null }));
+    for (const d of r.dialogue) {
+      const ch = matchChar(st, d.speaker);
+      if (ch && ch.status !== 'alive') continue;
+      if (d.speaker.toLowerCase() === s.player_name.toLowerCase()) continue;
+      push(st, { turn, role: 'character', speakerId: ch?.id ?? null, speakerName: ch ? undefined : d.speaker, content: d.text });
+    }
+    const presentIds = r.present.map((n) => matchChar(st, n)?.id).filter((x): x is string => Boolean(x));
+    const world = worldOf(s);
+    world.lastChanges = applied.applied;
+    Object.assign(s, {
+      stats: JSON.stringify(applied.stats),
+      turn,
+      day: s.day + r.days,
+      location: r.location || s.location,
+      present: JSON.stringify(presentIds.length ? presentIds : presentOf(s)),
+      updated_at: now(),
+    });
+    setWorld(s, world);
+    if (died) {
+      s.status = 'ended';
+      s.ending = finishDeath(st, turn, null);
+      push(st, { turn, role: 'system', content: s.ending });
+    }
+  } catch (e) {
+    st.messages = st.messages.filter((m) => m !== narr && !(mode === 'turn' && m.turn === turn && m.role === 'player' && m.content === action && m.id === narr.id - 1));
+    if (isPermanentAiError(e)) {
+      st.mode = 'rules';
+      aiNotice = aiErrorText(e);
+      if (mode === 'turn') takeTurn(st, { text: action });
+      else if (mode === 'time') advanceTime(st);
+    } else {
+      aiNotice = aiErrorText(e);
+      if (mode === 'turn') pendingDraftText = action;
+    }
+  } finally {
+    busyStory = null;
+    busyController = null;
+    save();
+    render();
+  }
+}
+
+// ---------- Vorbereitung (Gespräch + Entwurf) ----------
+
+let setupBusy = false;
+let setupNotice = '';
+
+function setupFallbackReply(d: LifeSetupDraft): string {
+  const chars = d.characters.map((c) => c.name).join(', ');
+  return `Verstanden: Du spielst ${d.playerName} (${d.playerRole}).${chars ? ` Figuren: ${chars}.` : ''}${d.opening ? ` Start: ${d.opening}` : ''} Ergänze gern Details – oder tippe auf „Passt – starten“. (Ohne KI ausgewertet.)`;
+}
+
+async function sendSetupMessage(text: string): Promise<void> {
+  const su = state.setup;
+  if (!su || !text.trim() || setupBusy) return;
+  su.history.push({ role: 'user', content: text.trim() });
+  su.premise = `${su.premise}\n${text.trim()}`.trim();
+  setupBusy = true;
+  setupNotice = '';
+  save();
+  render();
+  const sample = su.aiOff ? null : await getSample();
+  try {
+    if (!sample) throw { code: 'not_granted' };
+    const { reply, draft } = await aiSetupTurn(sample, su.history, su.raw);
+    su.raw = draft;
+    const next = toDraft(draft, su.premise);
+    if (su.statsEdited && su.draft) {
+      next.stats = { ...next.stats, ...su.draft.stats };
+      next.statKeys = [...new Set([...next.statKeys, ...su.draft.statKeys])];
+    }
+    su.draft = next;
+    su.history.push({ role: 'assistant', content: reply });
+  } catch (e) {
+    if (isPermanentAiError(e) || !sample) {
+      su.aiOff = true;
+      const d = ruleDraftCore({ prompt: su.premise }, 'de', []);
+      if (su.statsEdited && su.draft) d.stats = { ...d.stats, ...su.draft.stats };
+      su.draft = d;
+      su.history.push({ role: 'assistant', content: setupFallbackReply(d) });
+      if (sample) setupNotice = aiErrorText(e);
+    } else {
+      su.history.pop();
+      su.premise = su.premise.slice(0, Math.max(0, su.premise.length - text.trim().length)).trim();
+      setupNotice = aiErrorText(e);
+      pendingSetupText = text;
+    }
+  } finally {
+    setupBusy = false;
+    save();
+    render();
+  }
+}
+
+function startFromSetup(): void {
+  const su = state.setup;
+  if (!su?.draft) return;
+  const d = su.draft;
+  if (!d.title.trim() || !d.playerName.trim() || !d.characters.some((c) => c.name.trim())) {
+    setupNotice = 'Für den Start braucht der Entwurf einen Titel, den Namen deiner Figur und mindestens eine weitere Figur.';
+    render();
+    return;
+  }
+  const st = createStory(d);
+  const ai = !su.aiOff;
+  st.mode = ai ? 'ai' : 'rules';
+  st.threads = su.raw?.threads?.filter((x) => typeof x === 'string').slice(0, 5) ?? [];
+  st.summary = '';
+  st.direction = '';
+  state.stories.push(st);
+  state.setup = null;
+  view = { name: 'story', id: st.row.id, tab: 'story' };
+  if (ai) {
+    st.messages = [];
+    void aiTurn(st, 'opening', '');
+  } else {
+    save();
+    render();
+  }
 }
 
 // ---------- Oberfläche ----------
 
-type View = { name: 'home' } | { name: 'setup' } | { name: 'draft'; draft: LifeSetupDraft } | { name: 'story'; id: string; tab: Tab; confirmDelete?: boolean };
+type View = { name: 'home' } | { name: 'setup'; tab: 'talk' | 'draft' } | { name: 'story'; id: string; tab: Tab; confirmDelete?: boolean; direction?: boolean };
 type Tab = 'story' | 'status' | 'people' | 'events' | 'memory';
 let view: View = { name: 'home' };
-let setupText = '';
-let setupName = '';
 let memoryQuery = '';
 let showAllMessages = false;
+let pendingDraftText = '';
+let pendingSetupText = '';
 
 const app = document.getElementById('app')!;
 
@@ -474,8 +714,11 @@ function renderHome(): string {
   <main class="wrap stack">
     <section class="intro">
       <h1>Lebensgeschichten</h1>
-      <p>${esc(t.life.intro)}</p>
-      <button class="btn primary" data-act="new">+ Neue Geschichte</button>
+      <p>Beschreibe dein Leben im Gespräch – als Mafiaboss, Politikerin, Gründer, Star oder ganz normaler Mensch. Wenn alles passt, startest du, und die Geschichte entwickelt sich Zug um Zug weiter: zusammenhängend, mit Rückschlägen, Verrat und echten Konsequenzen.</p>
+      <div class="row">
+        <button class="btn primary" data-act="new">+ Neue Geschichte</button>
+        ${state.setup ? '<button class="btn ghost" data-act="resume-setup">Vorbereitung fortsetzen</button>' : ''}
+      </div>
     </section>
     ${
       list.length
@@ -485,7 +728,7 @@ function renderHome(): string {
               const stats = statsOf(s);
               const keys = statKeysOf(s).filter((k) => k !== 'health').slice(0, 3);
               return `<li><button class="card story-card ${s.status}" data-act="open" data-id="${esc(s.id)}">
-                <span class="row between"><span class="tag">${esc((t.lifeGenres as Record<string, string>)[genresOf(s)[0]] ?? '')}</span><span class="pill ${s.status === 'ended' ? 'bad' : 'good'}">${s.status === 'ended' ? 'Beendet' : 'Läuft'}</span></span>
+                <span class="row between"><span class="tag">${st.mode === 'ai' ? 'KI-Erzählung' : 'Regelbasiert'}</span><span class="pill ${s.status === 'ended' ? 'bad' : 'good'}">${s.status === 'ended' ? 'Beendet' : 'Läuft'}</span></span>
                 <strong class="story-title">${esc(s.title)}</strong>
                 <span class="muted small">${esc(s.player_name)} – ${esc(s.player_role)}</span>
                 <span class="faint small">Tag ${s.day} · Zug ${s.turn}${s.location ? ` · ${esc(s.location)}` : ''}</span>
@@ -493,47 +736,28 @@ function renderHome(): string {
               </button></li>`;
             })
             .join('')}</ul>`
-        : `<div class="empty"><strong>Noch keine Lebensgeschichte</strong><span class="muted">Starte mit einem der Beispiele oder deiner eigenen Beschreibung.</span></div>`
+        : `<div class="empty"><strong>Noch keine Lebensgeschichte</strong><span class="muted">Tippe auf „Neue Geschichte“ und beschreibe die Situation.</span></div>`
     }
     ${storageOk ? '' : '<p class="note warn">Der Browser erlaubt kein Speichern. Der Spielstand geht beim Schließen verloren.</p>'}
-    <p class="faint small center">Handy-Version ohne KI: regelbasierte Erzählung, gezeichnete Porträts. Der Spielstand liegt nur in diesem Browser.</p>
+    <p class="faint small center">Die KI läuft über dein Claude-Konto (beim ersten Mal fragt die Seite nach Erlaubnis). Ohne KI wird regelbasiert erzählt. Der Spielstand liegt nur in diesem Browser.</p>
   </main>`;
 }
 
-function renderSetup(): string {
+function renderDraftEditor(d: LifeSetupDraft): string {
   return `
-  <header class="top"><button class="icon" data-act="home" aria-label="Zurück">←</button><strong>Neue Geschichte</strong><span></span></header>
-  <main class="wrap stack">
-    <p class="muted">${esc(t.life.setupIntro)}</p>
-    <div class="chips">${EXAMPLES.map(([label], i) => `<button class="chip" data-act="example" data-i="${i}">${esc(label)}</button>`).join('')}</div>
-    <label class="field"><span>Deine Geschichte</span>
-      <textarea id="setup-text" rows="10" maxlength="6000" placeholder="${esc(t.life.promptPlaceholder)}">${esc(setupText)}</textarea>
-    </label>
-    <label class="field"><span>Name deiner Figur (optional)</span><input id="setup-name" maxlength="60" value="${esc(setupName)}" /></label>
-    <p class="faint small">Tipp: Figuren als Liste angeben, z. B. „- Marco Bellini: meine rechte Hand“. Rolle und Startwerte bestimmt das Spielsystem.</p>
-    <button class="btn primary" data-act="draft">Entwurf erstellen</button>
-    <p id="setup-error" class="note warn" hidden></p>
-  </main>`;
-}
-
-function renderDraft(d: LifeSetupDraft): string {
-  return `
-  <header class="top"><button class="icon" data-act="setup" aria-label="Zurück">←</button><strong>Entwurf prüfen</strong><span></span></header>
-  <main class="wrap stack">
     <section class="card stack-sm">
       <label class="field"><span>Titel</span><input data-draft="title" maxlength="80" value="${esc(d.title)}" /></label>
       <label class="field"><span>Name deiner Figur</span><input data-draft="playerName" maxlength="60" value="${esc(d.playerName)}" /></label>
       <label class="field"><span>Rolle</span><input data-draft="playerRole" maxlength="80" value="${esc(d.playerRole)}" /></label>
       <label class="field"><span>Rollentyp</span><select data-draft="archetype">${LIFE_ARCHETYPES.map((a) => `<option value="${a}" ${a === d.archetype ? 'selected' : ''}>${esc((t.lifeArchetypes as Record<string, string>)[a])}</option>`).join('')}</select></label>
-      <label class="field"><span>Ausgangssituation</span><textarea data-draft="opening" rows="2" maxlength="800">${esc(d.opening)}</textarea></label>
+      <label class="field"><span>Schauplatz</span><textarea data-draft="setting" rows="2" maxlength="600">${esc(d.setting)}</textarea></label>
+      <label class="field"><span>Ausgangssituation</span><textarea data-draft="opening" rows="3" maxlength="800">${esc(d.opening)}</textarea></label>
     </section>
     <section class="card stack-sm">
-      <h2 class="label">Startwerte</h2>
-      <p class="faint small">${esc(t.life.startValuesHint)}</p>
+      <div class="row between"><h2 class="label">Startwerte</h2><button class="btn ghost small" data-act="auto-stats">Automatisch</button></div>
+      <p class="faint small">Aus deiner Beschreibung erstellt. Du kannst sie hier einmal festlegen; im Spiel bewertet die KI jede Handlung und passt sie an.</p>
       ${d.statKeys
-        .map(
-          (k) => `<label class="meter-row"><span>${esc(statLabel(k))}</span><input type="range" min="0" max="100" data-stat="${k}" value="${d.stats[k] ?? 0}" /><b>${d.stats[k] ?? 0}</b></label>`,
-        )
+        .map((k) => `<label class="meter-row"><span>${esc(statLabel(k))}</span><input type="range" min="0" max="100" data-stat="${k}" value="${d.stats[k] ?? 0}" /><b>${d.stats[k] ?? 0}</b></label>`)
         .join('')}
     </section>
     <section class="stack-sm">
@@ -544,12 +768,41 @@ function renderDraft(d: LifeSetupDraft): string {
             <div class="row between"><strong>${esc(c.name || 'Neue Figur')}</strong><button class="icon small" data-act="del-char" data-i="${i}" aria-label="Figur entfernen">✕</button></div>
             <input data-char="${i}" data-f="name" maxlength="50" placeholder="Name" value="${esc(c.name)}" />
             <input data-char="${i}" data-f="role" maxlength="80" placeholder="Rolle" value="${esc(c.role)}" />
+            <textarea data-char="${i}" data-f="description" rows="2" maxlength="400" placeholder="Beschreibung">${esc(c.description)}</textarea>
             <select data-char="${i}" data-f="stance">${CHARACTER_STANCES.map((s) => `<option value="${s}" ${s === c.stance ? 'selected' : ''}>${esc(stanceLabel(s))}</option>`).join('')}</select>
           </div>`,
         )
         .join('')}
-    </section>
-    <button class="btn primary" data-act="start">Geschichte starten</button>
+    </section>`;
+}
+
+function renderSetup(v: Extract<View, { name: 'setup' }>): string {
+  const su = state.setup!;
+  const d = su.draft;
+  const talk = `
+    <div class="feed">
+      <div class="msg them"><div class="bubble">Beschreibe die Situation, in der deine Geschichte beginnt: Wer bist du, wo lebst du, wer sind die wichtigen Menschen um dich herum, und was passiert gerade? Du kannst in mehreren Nachrichten ergänzen und ändern. ${su.aiOff ? '' : 'Ich frage nach und halte alles im Entwurf fest.'}</div></div>
+      ${su.history.length === 0 ? `<div class="chips">${EXAMPLES.map(([label], i) => `<button class="chip" data-act="example" data-i="${i}">${esc(label)}</button>`).join('')}</div>` : ''}
+      ${su.history.map((m) => `<div class="msg ${m.role === 'user' ? 'me' : 'them'}"><div class="bubble">${esc(m.content)}</div></div>`).join('')}
+      ${setupBusy ? '<div class="msg them"><div class="bubble typing">Denkt nach …</div></div>' : ''}
+    </div>`;
+  return `
+  <header class="top"><button class="icon" data-act="home" aria-label="Zurück">←</button><div class="grow"><strong>Vorbereitung</strong><span class="faint small block">Situation beschreiben, dann starten</span></div></header>
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="${v.tab === 'talk'}" data-act="setup-tab" data-tab="talk">Gespräch</button>
+    <button role="tab" aria-selected="${v.tab === 'draft'}" data-act="setup-tab" data-tab="draft" ${d ? '' : 'disabled'}>Entwurf${d ? ` · ${d.characters.length} Figuren` : ''}</button>
+  </nav>
+  <main class="wrap story-main story">
+    ${v.tab === 'talk' || !d ? talk : `<div class="stack">${renderDraftEditor(d)}</div>`}
+    <div class="dock">
+      ${setupNotice ? `<p class="note warn">${esc(setupNotice)}</p>` : ''}
+      ${d ? '<button class="btn primary" data-act="start">Passt – starten</button>' : ''}
+      ${
+        v.tab === 'talk' || !d
+          ? `<form class="composer" data-form="setup"><textarea id="setup-text" rows="2" maxlength="3000" placeholder="${su.history.length ? 'Ergänzen oder ändern …' : 'z. B. Ich bin Don Salvatore Greco, der gefürchtete Mafiaboss von Palermo …'}" aria-label="Beschreibung">${esc(pendingSetupText)}</textarea><button class="btn primary" aria-label="Senden" ${setupBusy ? 'disabled' : ''}>➤</button></form>`
+          : ''
+      }
+    </div>
   </main>`;
 }
 
@@ -560,21 +813,31 @@ function avatar(st: Story, id: string, size = 'sm'): string {
   return `<img class="av ${size} ${c.status !== 'alive' ? 'gone' : ''}" alt="" src="${portrait(c.id, charAppearance(c), c.name)}" />`;
 }
 
+function paragraphs(text: string): string {
+  return text
+    .split(/\n{2,}|\n/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => `<p>${esc(p)}</p>`)
+    .join('');
+}
+
 function renderMessage(st: Story, m: Msg): string {
   switch (m.role) {
     case 'player':
       return `<div class="msg me"><div class="bubble">${esc(m.content)}</div></div>`;
     case 'character': {
       const c = st.chars.find((x) => x.id === m.speakerId);
-      return `<div class="msg them">${avatar(st, m.speakerId ?? '')}<div><span class="speaker">${esc(c?.name ?? '?')}</span><div class="bubble">${esc(m.content)}</div></div></div>`;
+      return `<div class="msg them">${c ? avatar(st, c.id) : '<span class="av sm blank"></span>'}<div><span class="speaker">${esc(c?.name ?? m.speakerName ?? '?')}</span><div class="bubble">${esc(m.content)}</div></div></div>`;
     }
     case 'event':
       return `<div class="event ${m.severity ?? 'minor'}">${m.title ? `<b>${esc(m.title)}:</b> ` : ''}${esc(m.content)}</div>`;
     case 'system':
       return `<div class="ending">☠ ${esc(m.content)}</div>`;
     case 'scene':
-      return `<figure class="scene"><div class="scene-art">${(m.scene?.ids ?? []).map((id) => avatar(st, id, 'lg')).join('')}</div><figcaption><b>${esc(m.scene?.location ?? '')}</b><span class="faint small">Szenenkarte (ohne Bild-KI)</span></figcaption></figure>`;
+      return `<figure class="scene"><div class="scene-art">${(m.scene?.ids ?? []).map((id) => avatar(st, id, 'lg')).join('')}</div><figcaption><b>${esc(m.scene?.location ?? '')}</b><span class="faint small">Szenenkarte</span></figcaption></figure>`;
     default: {
+      if (m.pending) return `<div class="narr pending"><p class="muted">Die Geschichte entwickelt sich … <button class="btn ghost small" data-act="stop">Stopp</button></p></div>`;
       const r = m.resolution;
       const tone = r ? (r.tier.includes('success') ? 'good' : r.tier === 'partial' ? 'warn' : 'bad') : '';
       const changes = r
@@ -583,7 +846,12 @@ function renderMessage(st: Story, m: Msg): string {
             .map(([k, v]) => `<span class="delta ${(k === 'heat' ? v! < 0 : v! > 0) ? 'up' : 'down'}">${esc(statLabel(k))} ${v! > 0 ? '+' : ''}${v}</span>`)
             .join('')
         : '';
-      return `<div class="narr">${r ? `<div class="res ${tone}"><b>${esc(t.lifeTiers[r.tier])} · Chance ${Math.round(r.chance * 100)} %</b>${changes}</div>` : ''}<p>${esc(m.content)}</p></div>`;
+      const evaluation = m.evaluation?.length
+        ? `<details class="eval"><summary>${m.evaluation
+            .map((x) => `<span class="delta ${(x.stat === 'heat' ? x.change < 0 : x.change > 0) ? 'up' : 'down'}">${esc(statLabel(x.stat))} ${x.change > 0 ? '+' : ''}${x.change}</span>`)
+            .join('')}<span class="faint small">Warum?</span></summary><ul>${m.evaluation.map((x) => `<li><b>${esc(statLabel(x.stat))}:</b> ${esc(x.reason)}</li>`).join('')}</ul></details>`
+        : '';
+      return `<div class="narr">${r ? `<div class="res ${tone}"><b>${esc(t.lifeTiers[r.tier])} · Chance ${Math.round(r.chance * 100)} %</b>${changes}</div>` : ''}${paragraphs(m.content)}${evaluation}</div>`;
     }
   }
 }
@@ -603,10 +871,11 @@ function renderStatus(st: Story): string {
         return `<div class="meter-row"><span>${esc(statLabel(k))}</span><span class="bar ${meterTone(k, v)}"><i style="width:${v}%"></i></span><b>${v}${d ? `<span class="delta ${up ? 'up' : 'down'}">${d > 0 ? '+' : ''}${d}</span>` : ''}</b></div>`;
       })
       .join('')}
-    <p class="faint small">Das Spielsystem berechnet die Werte – sie beeinflussen Erfolgschancen und wie Figuren reagieren.</p>
+    <p class="faint small">${st.mode === 'ai' ? 'Die KI bewertet jede Handlung getrennt von der Erzählung und passt die Werte an (je höchstens ±15).' : 'Das Spielsystem berechnet die Werte – sie beeinflussen Erfolgschancen und wie Figuren reagieren.'}</p>
     ${assets.length ? `<h3 class="label">Besitz</h3><div class="chips">${assets.map((a) => `<span class="tag">${esc(a)}</span>`).join('')}</div>` : ''}
-    <h3 class="label">Offene Versprechen</h3>
-    ${promises.length ? `<ul class="list">${promises.map((p) => `<li>${esc(p.content)}</li>`).join('')}</ul>` : '<p class="faint small">Keine offenen Versprechen.</p>'}
+    ${st.summary ? `<h3 class="label">Bisher geschah</h3><p class="small">${esc(st.summary)}</p>` : ''}
+    ${st.threads?.length ? `<h3 class="label">Offene Handlungsstränge</h3><ul class="list">${st.threads.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    ${promises.length ? `<h3 class="label">Offene Versprechen</h3><ul class="list">${promises.map((p) => `<li>${esc(p.content)}</li>`).join('')}</ul>` : ''}
   </section>`;
 }
 
@@ -641,7 +910,7 @@ function renderMemory(st: Story): string {
   const list = (q.length ? known.filter((m) => q.some((w) => keywordsOf(m.content).includes(w))) : known).sort((a, b) => Number(b.critical) - Number(a.critical) || b.turn - a.turn).slice(0, 120);
   const name = (k: string) => (k === EVERYONE ? 'alle' : k === PLAYER ? 'du' : (st.chars.find((c) => c.id === k)?.name ?? '?'));
   return `<section class="card stack-sm"><h2 class="label">Was du weißt</h2>
-    <p class="faint small">${esc(t.life.memoryHint)}</p>
+    <p class="faint small">Das Gedächtnis der Geschichte aus deiner Sicht. Kritische Fakten gibt die Erzählung bei jedem Zug mit.</p>
     <input id="memory-q" type="search" placeholder="Erinnerungen durchsuchen" value="${esc(memoryQuery)}" />
     ${list.length ? `<ul class="memories">${list.map((m) => `<li class="${m.critical ? 'critical' : ''}"><span class="row small"><span class="tag">${esc((t.lifeMemoryKinds as Record<string, string>)[m.kind] ?? m.kind)}</span>${m.critical ? '<span class="pill bad">kritisch</span>' : ''}<span class="faint">Zug ${m.turn}</span></span><span>${esc(m.content)}</span><span class="faint small">Bekannt: ${esc(m.knownBy.map(name).join(', '))}</span></li>`).join('')}</ul>` : '<p class="faint small">Keine passenden Erinnerungen.</p>'}
   </section>`;
@@ -650,8 +919,9 @@ function renderMemory(st: Story): string {
 function renderStory(st: Story, v: Extract<View, { name: 'story' }>): string {
   const s = st.row;
   const ended = s.status === 'ended';
+  const busy = busyStory === s.id;
   const lastNarr = [...st.messages].reverse().find((m) => m.role === 'narrator');
-  const suggestions = ended ? [] : (lastNarr?.suggestions ?? []);
+  const suggestions = ended || busy || lastNarr?.pending ? [] : (lastNarr?.suggestions ?? []);
   const messages = showAllMessages ? st.messages : st.messages.slice(-80);
   const tabs: [Tab, string][] = [
     ['story', 'Geschichte'],
@@ -667,10 +937,13 @@ function renderStory(st: Story, v: Extract<View, { name: 'story' }>): string {
         ${
           ended
             ? `<div class="card ended-card stack-sm"><strong>Diese Geschichte ist beendet</strong><span class="muted small">Der Tod ist endgültig – es gibt keine Wiederbelebung.</span><button class="btn primary" data-act="new">Neues Leben beginnen</button></div>`
-            : `<div class="dock"><div class="sugg">${suggestions
-                .map((x) => `<button class="sg ${x.kind}" data-act="suggest" data-sid="${esc(x.id)}"><span class="k">${kindIcon[x.kind] ?? ''} ${esc(t.lifeKinds[x.kind])}</span><span>${esc(x.text)}</span></button>`)
-                .join('')}</div>
-              <form class="composer" data-form="act"><textarea id="act-text" rows="1" maxlength="600" placeholder="Was tust du? (frei formulieren)" aria-label="Deine Handlung"></textarea><button class="btn primary" aria-label="Handeln">➤</button></form></div>`
+            : `<div class="dock">
+                ${aiNotice ? `<p class="note warn">${esc(aiNotice)}</p>` : ''}
+                ${st.direction ? `<p class="faint small">🎬 Regie: ${esc(trunc(st.direction, 120))}</p>` : ''}
+                <div class="sugg">${suggestions
+                  .map((x) => `<button class="sg ${x.kind}" data-act="suggest" data-sid="${esc(x.id)}"><span class="k">${kindIcon[x.kind] ?? ''} ${esc(t.lifeKinds[x.kind])}</span><span>${esc(x.text)}</span></button>`)
+                  .join('')}</div>
+              <form class="composer" data-form="act"><textarea id="act-text" rows="1" maxlength="600" placeholder="Was tust du?" aria-label="Deine Handlung" ${busy ? 'disabled' : ''}>${esc(pendingDraftText)}</textarea><button class="btn primary" aria-label="Handeln" ${busy ? 'disabled' : ''}>➤</button></form></div>`
         }`
       : v.tab === 'status'
         ? renderStatus(st)
@@ -682,12 +955,19 @@ function renderStory(st: Story, v: Extract<View, { name: 'story' }>): string {
   return `
   <header class="top story-top">
     <button class="icon" data-act="home" aria-label="Zurück">←</button>
-    <div class="grow min0"><strong class="ellipsis block">${esc(s.title)}</strong><span class="faint small ellipsis block">Tag ${s.day} · Zug ${s.turn}${s.location ? ` · ${esc(s.location)}` : ''}</span></div>
-    <button class="icon" data-act="scene" ${ended ? 'disabled' : ''} aria-label="Szene festhalten" title="Szene festhalten">▣</button>
-    <button class="icon" data-act="advance" ${ended ? 'disabled' : ''} aria-label="Zeit vergehen lassen" title="Zeit vergehen lassen">⏩</button>
+    <div class="grow min0"><strong class="ellipsis block">${esc(s.title)}</strong><span class="faint small ellipsis block">Tag ${s.day} · Zug ${s.turn}${s.location ? ` · ${esc(s.location)}` : ''}${st.mode === 'ai' ? '' : ' · regelbasiert'}</span></div>
+    <button class="icon" data-act="direction" ${ended ? 'disabled' : ''} aria-label="Regie" title="Regie: Richtung vorgeben">🎬</button>
+    <button class="icon" data-act="advance" ${ended || busy ? 'disabled' : ''} aria-label="Zeit vergehen lassen" title="Zeit vergehen lassen">⏩</button>
     <button class="icon" data-act="ask-delete" aria-label="Geschichte löschen" title="Geschichte löschen">🗑</button>
   </header>
   ${v.confirmDelete ? `<div class="confirm"><span>„${esc(s.title)}“ endgültig löschen?</span><button class="btn danger small" data-act="delete">Löschen</button><button class="btn ghost small" data-act="cancel-delete">Abbrechen</button></div>` : ''}
+  ${
+    v.direction
+      ? `<form class="direction" data-form="direction"><label class="field"><span>Regie: Wohin soll sich die Geschichte entwickeln?</span><textarea id="direction-text" rows="3" maxlength="500" placeholder="z. B. Ich will, dass Viktor sich als Verräter entpuppt und Lucia und ich uns näherkommen.">${esc(st.direction ?? '')}</textarea></label>
+        ${st.mode === 'ai' ? `<label class="check"><input type="checkbox" id="quick" ${st.quick ? 'checked' : ''} /> Schnelle Antworten (kürzer nachgedacht)</label>` : ''}
+        <div class="row"><button class="btn primary small">Übernehmen</button><button type="button" class="btn ghost small" data-act="close-direction">Schließen</button></div></form>`
+      : ''
+  }
   <nav class="tabs" role="tablist">${tabs.map(([id, label]) => `<button role="tab" aria-selected="${v.tab === id}" data-act="tab" data-tab="${id}">${label}</button>`).join('')}</nav>
   <main class="wrap story-main ${v.tab}">${body}</main>`;
 }
@@ -696,9 +976,14 @@ function render(): void {
   const active = document.activeElement as HTMLElement | null;
   const focusId = active?.id;
   if (view.name === 'home') app.innerHTML = renderHome();
-  else if (view.name === 'setup') app.innerHTML = renderSetup();
-  else if (view.name === 'draft') app.innerHTML = renderDraft(view.draft);
-  else {
+  else if (view.name === 'setup') {
+    if (!state.setup) {
+      view = { name: 'home' };
+      return render();
+    }
+    app.innerHTML = renderSetup(view);
+    if (view.tab === 'talk') document.querySelector('.feed')?.lastElementChild?.scrollIntoView({ block: 'end' });
+  } else {
     const v = view;
     const st = state.stories.find((x) => x.row.id === v.id);
     if (!st) {
@@ -706,16 +991,25 @@ function render(): void {
       return render();
     }
     app.innerHTML = renderStory(st, v);
-    if (v.tab === 'story') {
-      const feed = document.getElementById('feed');
-      feed?.lastElementChild?.scrollIntoView({ block: 'end' });
-    }
+    if (v.tab === 'story') document.getElementById('feed')?.lastElementChild?.scrollIntoView({ block: 'end' });
   }
   if (focusId) document.getElementById(focusId)?.focus();
 }
 
 function currentStory(): Story | undefined {
   return view.name === 'story' ? state.stories.find((x) => x.row.id === (view as { id: string }).id) : undefined;
+}
+
+function playAction(st: Story, text?: string, suggestion?: LifeSuggestion): void {
+  if (busyStory || st.row.status === 'ended') return;
+  pendingDraftText = '';
+  if (st.mode === 'ai') {
+    void aiTurn(st, 'turn', clean(suggestion?.text ?? text ?? '').slice(0, 600));
+    return;
+  }
+  takeTurn(st, { text, suggestion });
+  save();
+  render();
 }
 
 app.addEventListener('click', (e) => {
@@ -727,47 +1021,50 @@ app.addEventListener('click', (e) => {
     case 'home':
       view = { name: 'home' };
       showAllMessages = false;
+      aiNotice = '';
       break;
     case 'new':
-    case 'setup':
-      view = { name: 'setup' };
+      state.setup = { history: [], premise: '', raw: null, draft: null, statsEdited: false };
+      setupNotice = '';
+      pendingSetupText = '';
+      save();
+      view = { name: 'setup', tab: 'talk' };
+      break;
+    case 'resume-setup':
+      view = { name: 'setup', tab: 'talk' };
+      break;
+    case 'setup-tab':
+      if (view.name === 'setup') view = { name: 'setup', tab: el.dataset.tab as 'talk' | 'draft' };
       break;
     case 'example':
-      setupText = EXAMPLES[Number(el.dataset.i)][1];
+      pendingSetupText = EXAMPLES[Number(el.dataset.i)][1];
       break;
-    case 'draft': {
-      setupText = (document.getElementById('setup-text') as HTMLTextAreaElement).value;
-      setupName = (document.getElementById('setup-name') as HTMLInputElement).value;
-      if (setupText.trim().length < 20) {
-        const err = document.getElementById('setup-error')!;
-        err.textContent = 'Beschreibe deine Geschichte etwas ausführlicher (mindestens ein bis zwei Sätze).';
-        err.hidden = false;
-        return;
+    case 'auto-stats': {
+      const su = state.setup;
+      if (su?.draft) {
+        const fresh = su.raw && !su.aiOff ? toDraft(su.raw, su.premise) : initialStatsDraft(su.draft, su.premise);
+        su.draft.stats = fresh.stats;
+        su.draft.statKeys = fresh.statKeys;
+        su.statsEdited = false;
+        save();
       }
-      view = { name: 'draft', draft: ruleDraftCore({ prompt: setupText, playerName: setupName.trim() || undefined }, 'de', []) };
       break;
     }
     case 'add-char':
-      if (view.name === 'draft') view.draft.characters.push({ name: '', role: '', description: '', personality: [], goals: [], secrets: [], stance: 'neutral', affinity: 0, trust: 35, loyalty: 20, fear: 0 } as LifeSetupCharacter);
+      state.setup?.draft?.characters.push({ name: '', role: '', description: '', personality: [], goals: [], secrets: [], stance: 'neutral', affinity: 0, trust: 35, loyalty: 20, fear: 0 } as LifeSetupCharacter);
+      save();
       break;
     case 'del-char':
-      if (view.name === 'draft') view.draft.characters.splice(Number(el.dataset.i), 1);
+      state.setup?.draft?.characters.splice(Number(el.dataset.i), 1);
+      save();
       break;
     case 'start':
-      if (view.name === 'draft') {
-        const d = view.draft;
-        if (!d.title.trim() || !d.playerName.trim() || !d.characters.some((c) => c.name.trim())) return;
-        const story = createStory(d);
-        state.stories.push(story);
-        save();
-        setupText = '';
-        setupName = '';
-        view = { name: 'story', id: story.row.id, tab: 'story' };
-      }
-      break;
+      startFromSetup();
+      return;
     case 'open':
       view = { name: 'story', id: el.dataset.id!, tab: 'story' };
       showAllMessages = false;
+      aiNotice = '';
       break;
     case 'tab':
       if (view.name === 'story') view = { ...view, tab: el.dataset.tab as Tab };
@@ -776,21 +1073,26 @@ app.addEventListener('click', (e) => {
       if (st) {
         const last = [...st.messages].reverse().find((m) => m.role === 'narrator');
         const sg = last?.suggestions?.find((x) => x.id === el.dataset.sid);
-        if (sg) takeTurn(st, { suggestion: sg });
-        save();
+        if (sg) playAction(st, undefined, sg);
       }
-      break;
+      return;
     case 'advance':
-      if (st) {
-        advanceTime(st);
-        save();
+      if (st && !busyStory) {
+        if (st.mode === 'ai') void aiTurn(st, 'time', '');
+        else {
+          advanceTime(st);
+          save();
+        }
       }
       break;
-    case 'scene':
-      if (st) {
-        addScene(st);
-        save();
-      }
+    case 'stop':
+      busyController?.abort();
+      return;
+    case 'direction':
+      if (view.name === 'story') view = { ...view, direction: !view.direction };
+      break;
+    case 'close-direction':
+      if (view.name === 'story') view = { ...view, direction: false };
       break;
     case 'older':
       showAllMessages = true;
@@ -814,18 +1116,26 @@ app.addEventListener('click', (e) => {
   render();
 });
 
+function initialStatsDraft(d: LifeSetupDraft, premise: string): { stats: LifeSetupDraft['stats']; statKeys: LifeStat[] } {
+  return initialStats(d.archetype, premise, d.genres);
+}
+
 app.addEventListener('input', (e) => {
   const el = e.target as HTMLInputElement;
-  if (view.name === 'draft') {
-    const d = view.draft;
+  const d = state.setup?.draft;
+  if (view.name === 'setup' && d) {
     if (el.dataset.draft) (d as unknown as Record<string, string>)[el.dataset.draft] = el.value;
     if (el.dataset.stat) {
       d.stats[el.dataset.stat as LifeStat] = Number(el.value);
+      state.setup!.statsEdited = true;
       const b = el.nextElementSibling;
       if (b) b.textContent = el.value;
     }
     if (el.dataset.char !== undefined && el.dataset.f) (d.characters[Number(el.dataset.char)] as unknown as Record<string, string>)[el.dataset.f] = el.value;
+    save();
   }
+  if (el.id === 'setup-text') pendingSetupText = el.value;
+  if (el.id === 'act-text') pendingDraftText = el.value;
   if (el.id === 'memory-q') {
     memoryQuery = el.value;
     const pos = el.selectionStart;
@@ -833,35 +1143,51 @@ app.addEventListener('input', (e) => {
     const again = document.getElementById('memory-q') as HTMLInputElement | null;
     again?.setSelectionRange(pos, pos);
   }
-  if (el.id === 'setup-text') setupText = el.value;
-  if (el.id === 'setup-name') setupName = el.value;
 });
 
 app.addEventListener('change', (e) => {
   const el = e.target as HTMLSelectElement;
-  if (view.name !== 'draft') return;
-  if (el.dataset.draft === 'archetype') view.draft.archetype = el.value as LifeSetupDraft['archetype'];
-  if (el.dataset.char !== undefined && el.dataset.f === 'stance') view.draft.characters[Number(el.dataset.char)].stance = el.value as LifeSetupCharacter['stance'];
+  const d = state.setup?.draft;
+  if (view.name === 'setup' && d) {
+    if (el.dataset.draft === 'archetype') d.archetype = el.value as LifeSetupDraft['archetype'];
+    if (el.dataset.char !== undefined && el.dataset.f === 'stance') d.characters[Number(el.dataset.char)].stance = el.value as LifeSetupCharacter['stance'];
+    save();
+  }
 });
 
-function submitAction(): void {
+function submitForm(kind: string | undefined): void {
+  if (kind === 'setup') {
+    const box = document.getElementById('setup-text') as HTMLTextAreaElement | null;
+    const text = box?.value ?? '';
+    if (!text.trim()) return;
+    pendingSetupText = '';
+    void sendSetupMessage(text);
+    return;
+  }
   const st = currentStory();
+  if (!st) return;
+  if (kind === 'direction') {
+    st.direction = ((document.getElementById('direction-text') as HTMLTextAreaElement | null)?.value ?? '').trim().slice(0, 500);
+    st.quick = Boolean((document.getElementById('quick') as HTMLInputElement | null)?.checked);
+    if (view.name === 'story') view = { ...view, direction: false };
+    save();
+    render();
+    return;
+  }
   const box = document.getElementById('act-text') as HTMLTextAreaElement | null;
-  if (!st || !box || !box.value.trim()) return;
-  takeTurn(st, { text: box.value });
-  save();
-  render();
+  if (!box || !box.value.trim()) return;
+  playAction(st, box.value);
 }
 
 app.addEventListener('submit', (e) => {
   e.preventDefault();
-  submitAction();
+  submitForm((e.target as HTMLFormElement).dataset.form);
 });
 app.addEventListener('keydown', (e) => {
   const el = e.target as HTMLElement;
-  if (el.id === 'act-text' && e.key === 'Enter' && !e.shiftKey) {
+  if ((el.id === 'act-text' || el.id === 'setup-text') && e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    submitAction();
+    submitForm(el.id === 'act-text' ? 'act' : 'setup');
   }
 });
 
@@ -875,7 +1201,9 @@ const hot = (window as unknown as { claude?: { hot?: Hot } }).claude?.hot;
 hot?.snapshot?.(() => ({ view }));
 const start = (data: unknown) => {
   const v = (data as { view?: View } | undefined)?.view;
-  if (v && (v.name !== 'story' || state.stories.some((s) => s.row.id === v.id))) view = v;
+  if (v && (v.name !== 'story' || state.stories.some((s) => s.row.id === v.id)) && (v.name !== 'setup' || state.setup)) view = v;
+  // Ein Zug, der beim Schließen noch lief, wird verworfen (kein hängender Platzhalter).
+  for (const st of state.stories) st.messages = st.messages.filter((m) => !m.pending);
   render();
 };
 if (hot?.ready) hot.ready(start);
